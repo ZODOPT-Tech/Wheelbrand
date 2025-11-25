@@ -5,26 +5,24 @@ from io import BytesIO
 
 st.set_page_config(page_title="ZODOPT MEETEASE", layout="wide")
 
-# ---------------- ROUTING ----------------
-query_params = st.query_params
+# ---------------- ROUTING (NO app() required) ----------------
+params = st.query_params
 
-# If user clicks a button, switch page
-if "page" in query_params:
-    page = query_params["page"]
-
-    if page == "visit":
-        st.switch_page("visitor.py")   # No app() call needed
-    elif page == "conference":
-        st.switch_page("conference.py")
+if "page" in params and params["page"] == "visit":
+    with open("visitor.py", "r") as f:
+        code = f.read()
+        exec(code)    # Load visitor.py as full page
+    st.stop()
 
 # ---------------- DEFAULT HOME SCREEN ----------------
 
+# Load new logo image
 logo = Image.open("zodopt.png")
 buf = BytesIO()
 logo.save(buf, format="PNG")
 logo_base64 = base64.b64encode(buf.getvalue()).decode()
 
-# ---------------- HEADER STYLES ----------------
+# ---------------- HEADER STYLE ----------------
 st.markdown("""
 <style>
 .header {
@@ -37,12 +35,8 @@ st.markdown("""
     justify-content: space-between;
     align-items: center;
 }
-.header-title {
-    font-size: 34px;
-    font-weight: 700;
-}
+.header-title { font-size: 34px; font-weight: 700; }
 .logo-img { height: 70px; }
-
 .card {
     background-color: white;
     padding: 60px;
@@ -50,16 +44,14 @@ st.markdown("""
     box-shadow: 0px 8px 20px rgba(0,0,0,0.08);
     text-align: center;
     width: 100%;
-    transition: .2s ease-in-out;
+    transition: .2s;
     cursor: pointer;
     display: block;
-    text-decoration: none !important;
 }
 .card:hover {
     transform: translateY(-5px);
     box-shadow: 0px 12px 25px rgba(0,0,0,0.12);
 }
-
 .icon-circle {
     width: 110px;
     height: 110px;
@@ -72,22 +64,10 @@ st.markdown("""
     color: white;
 }
 .violet { background: linear-gradient(135deg, #4d7cff, #b312ff); }
-.green  { background: #00a884; }
-
-.title-text {
-    font-size: 24px;
-    font-weight: 600;
-    margin-top: 10px;
-}
-.line {
-    width: 60px;
-    height: 6px;
-    border-radius: 4px;
-    margin: 12px auto 0 auto;
-}
+.title-text { font-size: 24px; font-weight: 600; margin-top: 10px; }
+.line { width: 60px; height: 6px; border-radius: 4px; margin: 12px auto 0 auto; }
 .violet-line { background: #b312ff; }
-.green-line  { background: #00a884; }
-
+a { text-decoration: none; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -114,18 +94,6 @@ with col1:
             <div class="icon-circle violet">🗓️</div>
             <div class="title-text">Visitplan</div>
             <div class="line violet-line"></div>
-        </a>
-        """,
-        unsafe_allow_html=True
-    )
-
-with col2:
-    st.markdown(
-        """
-        <a class="card" href="?page=conference" target="_self">
-            <div class="icon-circle green">📅</div>
-            <div class="title-text">Conference Booking</div>
-            <div class="line green-line"></div>
         </a>
         """,
         unsafe_allow_html=True
