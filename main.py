@@ -2,42 +2,29 @@ import streamlit as st
 from PIL import Image
 import base64
 from io import BytesIO
-import importlib
 
 st.set_page_config(page_title="ZODOPT MEETEASE", layout="wide")
 
-# ---------------- PAGE ROUTING ----------------
+# ---------------- ROUTING ----------------
 query_params = st.query_params
 
+# If user clicks a button, switch page
 if "page" in query_params:
     page = query_params["page"]
 
     if page == "visit":
-        visitor = importlib.import_module("visitor")
-        if hasattr(visitor, "app"):
-            visitor.app()
-        else:
-            st.write("Loading visitor page...")
-            st.experimental_rerun()
-        st.stop()
-
+        st.switch_page("visitor.py")   # No app() call needed
     elif page == "conference":
-        conf = importlib.import_module("conference")
-        if hasattr(conf, "app"):
-            conf.app()
-        else:
-            st.write("Loading conference page...")
-            st.experimental_rerun()
-        st.stop()
+        st.switch_page("conference.py")
 
-# ---------------- DEFAULT MAIN SCREEN ----------------
+# ---------------- DEFAULT HOME SCREEN ----------------
 
 logo = Image.open("zodopt.png")
-buffer = BytesIO()
-logo.save(buffer, format="PNG")
-logo_base64 = base64.b64encode(buffer.getvalue()).decode()
+buf = BytesIO()
+logo.save(buf, format="PNG")
+logo_base64 = base64.b64encode(buf.getvalue()).decode()
 
-# ---------------- HEADER STYLE ----------------
+# ---------------- HEADER STYLES ----------------
 st.markdown("""
 <style>
 .header {
@@ -63,7 +50,7 @@ st.markdown("""
     box-shadow: 0px 8px 20px rgba(0,0,0,0.08);
     text-align: center;
     width: 100%;
-    transition: .2s;
+    transition: .2s ease-in-out;
     cursor: pointer;
     display: block;
     text-decoration: none !important;
@@ -72,6 +59,7 @@ st.markdown("""
     transform: translateY(-5px);
     box-shadow: 0px 12px 25px rgba(0,0,0,0.12);
 }
+
 .icon-circle {
     width: 110px;
     height: 110px;
@@ -100,7 +88,6 @@ st.markdown("""
 .violet-line { background: #b312ff; }
 .green-line  { background: #00a884; }
 
-a { text-decoration: none; }
 </style>
 """, unsafe_allow_html=True)
 
