@@ -14,7 +14,7 @@ st.set_page_config(page_title="ZODOPT Admin", layout="wide")
 
 # ---------------- CONFIG ----------------
 # Local path to logo (use the path from your runtime / repository)
-LOGO_PATH = "/mnt/data/zodopt.png"   # <--- local path from conversation history
+LOGO_PATH = "zodopt.png"   # <--- local path from conversation history
 
 AWS_SECRET_NAME = "wheelbrand"
 AWS_REGION = "ap-south-1"  # Mumbai
