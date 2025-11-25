@@ -33,7 +33,7 @@ def load_page():
     except Exception as e:
         st.error(f"Error loading page: {e}")
 
-# -------------------- HOME PAGE --------------------
+# -------------------- HOME PAGE STYLE LIKE YOUR SCREENSHOT --------------------
 def render_home():
 
     # Load Logo
@@ -46,55 +46,76 @@ def render_home():
     st.markdown("""
     <style>
 
-    /* Full-width container */
+    /* Full width layout */
     .block-container {
         max-width: 100% !important;
-        padding-top: 0rem !important;
-        padding-left: 2rem !important;
-        padding-right: 2rem !important;
+        padding: 0 !important;
+        margin: 0 !important;
     }
 
-    /* Header full width */
-    .header {
-        width: 100vw;
-        margin-left: calc(-50vw + 50%);
-        padding: 20px 40px;
-        background: linear-gradient(90deg,#1e62ff,#8a2eff);
-        color:white;
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        margin-bottom:40px;
-    }
-    .header-title { font-size: 30px; font-weight:800; }
-
-    /* CARD (45% width look) */
-    .clean-card {
-        background:white;
-        padding:60px 20px;
-        border-radius:32px;
-        text-align:center;
-        box-shadow:0px 12px 35px rgba(0,0,0,0.08);
-        width:100%;
-        min-height:380px;
-        transition:0.2s;
+    /* Rounded Gradient Banner (Like Screenshot) */
+    .top-banner {
+        width: 92%;
+        margin: 30px auto;
+        padding: 35px 55px;
+        border-radius: 35px;
+        background: linear-gradient(90deg, #1e62ff, #8a2eff);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        color: white;
     }
 
-    .clean-card:hover {
+    .banner-title {
+        font-size: 42px;
+        font-weight: 900;
+        letter-spacing: 1px;
+    }
+
+    /* Main content wrapper */
+    .content-wrapper {
+        width: 92%;
+        margin: 30px auto;
+        padding: 40px;
+        background: white;
+        border-radius: 25px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+    }
+
+    /* Page section title */
+    .section-title {
+        font-size: 32px;
+        font-weight: 800;
+        margin-bottom: 20px;
+        color: #222;
+    }
+
+    /* Cards container */
+    .card-box {
+        background: #ffffff;
+        padding: 50px 20px;
+        border-radius: 25px;
+        box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+        text-align: center;
+        min-height: 350px;
+        transition: .25s;
+    }
+
+    .card-box:hover {
         transform: translateY(-4px);
-        box-shadow:0px 18px 45px rgba(0,0,0,0.12);
+        box-shadow: 0 14px 35px rgba(0,0,0,0.12);
     }
 
-    .icon-emoji {
-        font-size:95px;
-        display:block;
-        margin-bottom:20px;
+    .emoji {
+        font-size: 85px;
+        margin-bottom: 10px;
     }
 
-    .title {
-        font-size:26px;
-        font-weight:700;
-        margin-bottom:30px;
+    .card-title {
+        font-size: 26px;
+        font-weight: 700;
+        margin-bottom: 20px;
+        color: #333;
     }
 
     /* Gradient buttons */
@@ -111,40 +132,45 @@ def render_home():
     </style>
     """, unsafe_allow_html=True)
 
-    # ---------------- HEADER ----------------
+    # -------------------- LARGE TOP BANNER --------------------
     st.markdown(
         f"""
-        <div class="header">
-            <div class="header-title">ZODOPT MEETEASE</div>
-            <img src="data:image/png;base64,{logo_b64}" style="height:58px;">
+        <div class="top-banner">
+            <div class="banner-title">ZODOPT MEETEASE</div>
+            <img src="data:image/png;base64,{logo_b64}" style="height:80px;">
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # ---------------- 45% + 45% CARDS ----------------
+    # -------------------- MAIN WHITE CONTENT AREA --------------------
+    st.markdown('<div class="content-wrapper">', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-title">Admin Access</div>', unsafe_allow_html=True)
+
     col1, col2 = st.columns([1, 1], gap="large")
 
-    # Visit Plan
+    # Visit Plan Card
     with col1:
         st.markdown("""
-        <div class="clean-card">
-            <div class="icon-emoji">📅</div>
-            <div class="title">Visit Plan</div>
+        <div class="card-box">
+            <div class="emoji">📅</div>
+            <div class="card-title">Visit Plan</div>
         </div>
         """, unsafe_allow_html=True)
-        st.button("Open Visit Plan", key="visit", on_click=lambda: navigate_to("visit"))
+        st.button("Open Visit Plan", key="visit_btn", on_click=lambda: navigate_to("visit"))
 
-    # Conference Booking
+    # Conference Card
     with col2:
         st.markdown("""
-        <div class="clean-card">
-            <div class="icon-emoji">📘</div>
-            <div class="title">Conference Booking</div>
+        <div class="card-box">
+            <div class="emoji">📘</div>
+            <div class="card-title">Conference Booking</div>
         </div>
         """, unsafe_allow_html=True)
-        st.button("Open Conference Booking", key="conference", on_click=lambda: navigate_to("conference"))
+        st.button("Open Conference Booking", key="conf_btn", on_click=lambda: navigate_to("conference"))
 
+    st.markdown('</div>', unsafe_allow_html=True)  # End content wrapper
 
-# Run App
+# Run app
 load_page()
