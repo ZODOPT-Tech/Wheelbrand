@@ -26,7 +26,7 @@ except ImportError as e:
 # ======================================================================
 
 # NOTE: Ensure the path below is correct for your local environment
-LOGO_PATH = "zodopt.png" 
+LOGO_PATH = "C:\\Users\\DELL\\Documents\\zodopt\\images\\zodopt.png" 
 
 # Define a standard background color
 BACKGROUND_COLOR = "#f0f2f6" 
@@ -50,12 +50,12 @@ st.set_page_config(
 
 
 # ======================================================================
-# --- 2. DATABASE CONNECTOR LOGIC (INTEGRATED) ---
+# --- 2. DATABASE CONNECTOR LOGIC (INTEGRATED AND FIXED) ---
 # ======================================================================
 
-# --- AWS SECRETS MANAGER CONFIG ---
-HARDCODED_SECRET_NAME = 'Wheelbrand-zM6npS' 
-HARDCODED_REGION = 'ap-south-1' # Mumbai region 
+# --- AWS SECRETS MANAGER CONFIG (FIXED SECRET NAME) ---
+HARDCODED_SECRET_NAME = 'Wheelbrand' # <--- FIXED based on the image provided
+HARDCODED_REGION = 'ap-south-1' 
 SECRET_KEYS = {
     'host_key': 'DB_HOST',
     'database_key': 'DB_NAME',
@@ -75,7 +75,8 @@ def get_secret():
     try:
         get_secret_value_response = client.get_secret_value(SecretId=secret_name)
     except ClientError as e:
-        st.error(f"Error accessing AWS Secrets Manager: {e.response['Error']['Code']}")
+        # ResourceNotFoundException is handled here
+        st.error(f"Error accessing AWS Secrets Manager. Check the secret name ('{secret_name}') and region ('{region_name}'): {e.response['Error']['Code']}")
         st.stop()
         return None
 
@@ -93,7 +94,7 @@ def get_secret():
         if all(db_credentials.values()):
             return db_credentials
         else:
-            st.error("Error: Database credentials incomplete in Secrets Manager.")
+            st.error("Error: Database credentials incomplete in Secrets Manager. Check the key names (DB_HOST, etc.).")
             st.stop()
             return None
     else:
@@ -116,7 +117,7 @@ def get_mysql_connection():
         )
         return conn
     except mysql.connector.Error as err:
-        st.error(f"MySQL Connection Error: {err}")
+        st.error(f"MySQL Connection Error: Ensure the EC2 security group allows your IP/Streamlit server access to the RDS database (host: {credentials.get('host', 'N/A')}). Error: {err}")
         st.stop()
         return None
 
@@ -137,7 +138,6 @@ def fetch_all_recent_visitor_logs():
     TABLE_NAME = 'visitor_log' 
     today = datetime.now().strftime('%Y-%m-%d')
     
-    # Query: Fetch 'In Office' OR Signed Out Today
     query = f"""
     SELECT 
         log_id, visitor_name, host, company, status, time_in_logic, time_out_logic 
@@ -154,7 +154,7 @@ def fetch_all_recent_visitor_logs():
         
         # Post-process for display
         for log in result:
-            # Assumes time_in_logic is a valid string
+            # Convert DB fields to display format
             log['time_in_display'] = datetime.strptime(str(log['time_in_logic']), LOGIC_TIME_FORMAT).strftime(DISPLAY_TIME_FORMAT)
             
             # Handle time_out_logic
@@ -348,6 +348,7 @@ def main_dashboard_content():
     if visitor_log and isinstance(visitor_log, list) and visitor_log:
         log_df = pd.DataFrame(visitor_log)
     else:
+        # Define necessary columns for an empty DataFrame to prevent errors
         log_df = pd.DataFrame(columns=['log_id', 'visitor_name', 'host', 'company', 'status', 'time_in_logic', 'time_out_logic', 'time_in_display', 'time_out_display'])
         
     current_visitors_df = log_df[log_df['status'] == 'In Office'] if not log_df.empty and 'status' in log_df.columns else pd.DataFrame()
@@ -399,6 +400,7 @@ def main_dashboard_content():
 
         if not log_df.empty and log_df.shape[0] > 0:
             try:
+                # Sorting logic to ensure 'In Office' appears first
                 if 'time_in_logic' in log_df.columns and 'status' in log_df.columns:
                     log_df['sort_key'] = log_df['status'].apply(lambda x: 0 if x == 'In Office' else 1)
                     display_df = log_df.sort_values(by=['sort_key', 'time_in_logic'], ascending=[True, False]).reset_index(drop=True).copy()
@@ -408,6 +410,7 @@ def main_dashboard_content():
                 col_spec = [1.5, 2.5, 2, 2, 1.5, 1.5, 1.5] 
                 cols_header = st.columns(col_spec)
                 
+                # Column headers matching the data keys
                 for c, name in zip(cols_header, ["Time In", "Name", "Host", "Company", "Status", "Time Out", "Action"]):
                     c.markdown(f"**{name}**")
                     
@@ -419,6 +422,7 @@ def main_dashboard_content():
                     
                     cols = st.columns(col_spec)
                     
+                    # Display data comes from the processed fields
                     cols[0].write(row['time_in_display'])
                     cols[1].write(row['visitor_name'])
                     cols[2].write(row['host'])
