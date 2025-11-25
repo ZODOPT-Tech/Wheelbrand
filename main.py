@@ -5,22 +5,21 @@ from PIL import Image
 import base64
 from io import BytesIO
 
-# -------------------- Session --------------------
+# ---------------- SESSION NAVIGATION ----------------
 if "current_page" not in st.session_state:
     st.session_state.current_page = "home"
 
-
-def navigate_to(page):
-    st.session_state.current_page = page
+def navigate_to(page_name):
+    st.session_state.current_page = page_name
     st.rerun()
 
 
-# -------------------- Loader --------------------
+# ---------------- PAGE LOADER ----------------
 def load_page():
-    pages = {
-        "home": None,
-        "visit": ("visitor", "render_visitor_page"),
-        "conference": ("conference_page", "render_conference_page")
+    routes = {
+        "home": {"module": None, "fn": None},
+        "visit": {"module": "visitor", "fn": "visitor_main"},
+        "conference": {"module": "conference_page", "fn": "conference_main"},
     }
 
     current = st.session_state.current_page
@@ -29,16 +28,16 @@ def load_page():
         render_home()
         return
 
-    module_name, fn_name = pages[current]
-    module = importlib.import_module(module_name)
-    fn = getattr(module, fn_name)
-    fn(navigate_to)
+    info = routes.get(current)
+    module = importlib.import_module(info["module"])
+    page_fn = getattr(module, info["fn"])
+    page_fn(navigate_to)
 
 
-# ==============================
-#         HOME PAGE UI
-# ==============================
+# ---------------- HOME PAGE UI ----------------
 def render_home():
+
+    st.set_page_config(page_title="ZODOPT MEETEASE", layout="wide")
 
     # Load logo
     logo = Image.open("zodopt.png")
@@ -46,8 +45,7 @@ def render_home():
     logo.save(buf, format="PNG")
     logo_b64 = base64.b64encode(buf.getvalue()).decode()
 
-    st.set_page_config(layout="wide")
-
+    # ---------------- STYLE ----------------
     st.markdown("""
     <style>
     .header {
@@ -62,91 +60,81 @@ def render_home():
         margin-bottom: 40px;
     }
     .header-title {
-        font-size: 34px;
-        font-weight: 700;
+        font-size: 36px;
+        font-weight: 800;
     }
-
     .card {
         background: white;
-        padding: 70px;
+        padding: 80px 40px;
         border-radius: 30px;
-        box-shadow: 0px 10px 30px rgba(0,0,0,0.10);
+        box-shadow: 0 12px 32px rgba(0,0,0,0.10);
         text-align: center;
-        transition: 0.2s;
-        cursor: pointer;
         width: 100%;
+        cursor: pointer;
+        transition: 0.2s;
+        border: 3px solid transparent;
     }
     .card:hover {
-        transform: translateY(-6px);
-        box-shadow: 0px 18px 35px rgba(0,0,0,0.15);
+        transform: translateY(-8px);
+        border: 3px solid #8a2eff;
     }
-
     .icon-circle {
-        width: 170px; height: 170px;
+        width: 160px;
+        height: 160px;
         border-radius: 50%;
+        margin: auto;
         display: flex;
         justify-content: center;
         align-items: center;
-        font-size: 70px;
         color: white;
-        margin: auto;
+        font-size: 70px;
     }
     .violet { background: linear-gradient(135deg,#4d7cff,#b312ff); }
     .green { background: #00a884; }
-
     .title-text {
         font-size: 34px;
         font-weight: 700;
         margin-top: 25px;
     }
-
-    /* Make the entire block clickable */
-    .clickable {
-        text-decoration: none !important;
-    }
     </style>
     """, unsafe_allow_html=True)
 
-    # -------- Header --------
+    # ---------------- HEADER ----------------
     st.markdown(
         f"""
         <div class="header">
             <div class="header-title">ZODOPT MEETEASE</div>
-            <img src="data:image/png;base64,{logo_b64}" height="70">
+            <img src="data:image/png;base64,{logo_b64}" style="height:80px;">
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # -------- Wide Cards --------
-    col1, col2 = st.columns([1, 1], gap="large")  # wide & equal spacing
+    # ---------------- WIDE TWO CARDS ----------------
+    col1, col2 = st.columns(2, gap="large")
 
     with col1:
-        clicked = st.container().markdown(
-            """
-            <a href="?page=visit" class="clickable">
-                <div class="card">
-                    <div class="icon-circle violet">📅</div>
-                    <div class="title-text">Visit Plan</div>
-                </div>
-            </a>
-            """,
-            unsafe_allow_html=True
-        )
+        if st.container().button(" ", key="visit_card_btn", help="Open Visit Plan"):
+            navigate_to("visit")
+
+        st.markdown("""
+            <div class="card">
+                <div class="icon-circle violet">📅</div>
+                <div class="title-text">Visit Plan</div>
+            </div>
+        """, unsafe_allow_html=True)
 
     with col2:
-        clicked = st.container().markdown(
-            """
-            <a href="?page=conference" class="clickable">
-                <div class="card">
-                    <div class="icon-circle green">📗</div>
-                    <div class="title-text">Conference Booking</div>
-                </div>
-            </a>
-            """,
-            unsafe_allow_html=True
-        )
+        if st.container().button(" ", key="conf_card_btn", help="Open Conference"):
+            navigate_to("conference")
+
+        st.markdown("""
+            <div class="card">
+                <div class="icon-circle green">📘</div>
+                <div class="title-text">Conference Booking</div>
+            </div>
+        """, unsafe_allow_html=True)
 
 
-# -------------------- RUN --------------------
+# ---------------- RUN APP ----------------
 load_page()
