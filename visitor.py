@@ -8,6 +8,7 @@ import json
 import boto3 # AWS SDK
 
 # --- HARDCODED CONFIGURATION (Backend) ---
+# These constants define where the application retrieves database credentials.
 HARDCODED_SECRET_NAME = 'Wheelbrand'
 HARDCODED_REGION = 'ap-south-1' # Mumbai region
 # ----------------------------------------
@@ -26,8 +27,11 @@ SECRET_KEYS = {
 
 # --- SESSION STATE INITIALIZATION (FOR UI FLOW ONLY) ---
 
+# Configuration State is assumed verified since it's hardcoded.
 if 'config_verified' not in st.session_state:
     st.session_state['config_verified'] = True 
+    
+# UI Flow States
 if 'visitor_form_step' not in st.session_state:
     st.session_state['visitor_form_step'] = 1
 if 'temp_visitor_data' not in st.session_state:
@@ -39,20 +43,28 @@ if 'visitor_logged_in' not in st.session_state:
 if 'auth_mode' not in st.session_state:
     st.session_state['auth_mode'] = 'login' 
 
-# --- DATABASE CONNECTION & OPERATIONS (Functions remain unchanged) ---
+# --- DATABASE CONNECTION & OPERATIONS ---
 
 def fetch_db_credentials_from_secrets_manager():
-    """Fetches credentials using hardcoded constants."""
+    """
+    Fetches database credentials from AWS Secrets Manager using the
+    HARDCODED constants defined at the top of the script.
+    """
     secret_name = HARDCODED_SECRET_NAME
     region_name = HARDCODED_REGION
 
     try:
         session = boto3.session.Session()
-        client = session.client(service_name='secretsmanager', region_name=region_name)
+        client = session.client(
+            service_name='secretsmanager',
+            region_name=region_name
+        )
+        
         secret_response = client.get_secret_value(SecretId=secret_name)
         
         if 'SecretString' in secret_response:
             secret_data = json.loads(secret_response['SecretString'])
+            
             db_config = {
                 'host': secret_data[SECRET_KEYS['host_key']],
                 'database': secret_data[SECRET_KEYS['database_key']],
@@ -61,7 +73,7 @@ def fetch_db_credentials_from_secrets_manager():
             }
             return db_config, None
         else:
-            raise ValueError("SecretString not found in the secret payload.")
+            raise ValueError("SecretString not found in the secret payload. Check your secret type.")
 
     except client.exceptions.ResourceNotFoundException:
         return None, f"AWS Error: Secret '{secret_name}' not found in region {region_name}. Check IAM."
@@ -84,14 +96,17 @@ def get_db_connection():
         return None
 
 def verify_admin_login(email, password):
-    # Function to verify admin credentials against the DB
+    """Checks admin credentials against the 'admin' table."""
     conn = get_db_connection()
-    if conn is None: return False, None
+    if conn is None:
+        return False, None
     try:
         cursor = conn.cursor(dictionary=True)
         query = "SELECT 1 FROM admin WHERE email = %s AND password_hash = %s" 
         cursor.execute(query, (email, password))
-        if cursor.fetchone(): return True, None
+        
+        if cursor.fetchone():
+            return True, None
         return False, None
     except Error as e:
         st.error(f"Database error during login: {e}")
@@ -102,9 +117,10 @@ def verify_admin_login(email, password):
             conn.close()
 
 def register_admin_user(name, email, password):
-    # Function to register a new admin user
+    """Registers a new admin user into the 'admin' table."""
     conn = get_db_connection()
-    if conn is None: return False, "Database connection failed."
+    if conn is None:
+        return False, "Database connection failed."
     try:
         cursor = conn.cursor()
         query = "INSERT INTO admin (full_name, email, password_hash) VALUES (%s, %s, %s)"
@@ -121,11 +137,15 @@ def register_admin_user(name, email, password):
             conn.close()
 
 def save_new_visitor(data):
-    # Function to save new visitor details and log check-in
+    """Saves visitor details to 'visitors' and logs the check-in to 'visitor_log'."""
     conn = get_db_connection()
-    if conn is None: return False, None
+    if conn is None:
+        return False, None
+
     try:
         cursor = conn.cursor()
+        
+        # 1. Insert into 'visitors' table
         visitor_insert_query = """
         INSERT INTO visitors (
             full_name, email, phone, company, designation, department, gender, 
@@ -142,10 +162,13 @@ def save_new_visitor(data):
             data.get('signature')
         )
         cursor.execute(visitor_insert_query, visitor_data)
+        
         new_visitor_id = cursor.lastrowid
         
+        # 2. Insert into 'visitor_log' table
         current_time = datetime.now()
         log_key = str(current_time.timestamp()) 
+
         log_insert_query = """
         INSERT INTO visitor_log (
             visitor_id, visitor_name, host, company, 
@@ -158,6 +181,7 @@ def save_new_visitor(data):
             'In Office', log_key
         )
         cursor.execute(log_insert_query, log_data)
+
         conn.commit()
         return True, data.get('name') 
     except Error as e:
@@ -240,7 +264,7 @@ def load_custom_css():
         /* Button styling - using a consistent purple for all primary actions */
         div.stButton > button[kind="primary"] {
             width: 100%; height: 48px; font-weight: 600;
-            background-color: #7C4AE2; /* Solid purple from your image/gradient */
+            background-color: #7C4AE2; /* Solid purple */
             border: none; color: white; border-radius: 8px;
             transition: background-color 0.2s;
         }
@@ -300,6 +324,7 @@ def render_tabs(current_step):
 def auth_screen():
     load_custom_css()
     
+    # Center the auth card
     col1, col2, col3 = st.columns([0.2, 5, 0.2])
     
     with col2:
@@ -315,6 +340,7 @@ def auth_screen():
             # --- VIEW: LOGIN ---
             if st.session_state['auth_mode'] == 'login':
                 
+                # 1. Start Form
                 with st.form("login_form"): 
                     st.markdown("<div class='white-container'>", unsafe_allow_html=True) # White container start
                     st.markdown("<br>", unsafe_allow_html=True)
@@ -333,7 +359,7 @@ def auth_screen():
                         else:
                             st.error("Invalid email or password")
                             
-                # View Switch Button (MUST be outside st.form)
+                # 2. View Switch Button (MUST be outside st.form)
                 st.markdown("<div class='action-container' style='border-top: none; padding-top: 0;'>", unsafe_allow_html=True)
                 if st.button("Don't have an account? Register", key="login_to_register_btn", type="secondary", use_container_width=True):
                     st.session_state['auth_mode'] = 'register'
@@ -343,6 +369,7 @@ def auth_screen():
             # --- VIEW: REGISTER ---
             elif st.session_state['auth_mode'] == 'register':
                 
+                # 1. Start Form
                 with st.form("register_form"):
                     st.markdown("<div class='white-container'>", unsafe_allow_html=True) # White container start
                     st.markdown("<br>", unsafe_allow_html=True)
@@ -372,7 +399,7 @@ def auth_screen():
                         else:
                             st.error("Please fill in all fields.")
                             
-                # View Switch Button (MUST be outside st.form)
+                # 2. View Switch Button (MUST be outside st.form)
                 st.markdown("<div class='action-container' style='border-top: none; padding-top: 0;'>", unsafe_allow_html=True)
                 if st.button("Already have an account? Sign In", key="register_to_login_btn", type="secondary", use_container_width=True):
                     st.session_state['auth_mode'] = 'login'
@@ -525,4 +552,50 @@ def success_screen():
             
             b1, b2 = st.columns(2)
             
+            # --- Indentation corrected here ---
             with b1:
+                if st.button("New Visitor Check-in", type="primary", use_container_width=True):
+                    st.session_state['registration_complete'] = False
+                    st.session_state['visitor_form_step'] = 1
+                    st.session_state['temp_visitor_data'] = {}
+                    st.rerun()
+            with b2:
+                if st.button("Log Out (Admin)", type="secondary", use_container_width=True):
+                    go_back_to_login()
+                    st.rerun()
+            # ---------------------------------
+            
+            st.markdown("</div>", unsafe_allow_html=True)
+
+
+# --- Main App Execution Flow ---
+
+def visitor_page():
+    
+    # Check for hardcoded config errors first
+    if not st.session_state['config_verified']:
+        st.title("Fatal Error: Database Initialization Failed")
+        st.error("The application could not retrieve database credentials using the hardcoded configuration. Check your AWS credentials, IAM permissions, and network connectivity.")
+        st.info(f"Attempted Secret: **{HARDCODED_SECRET_NAME}** in Region: **{HARDCODED_REGION}**")
+        return
+
+    # Main application routing
+    if st.session_state['registration_complete']:
+        success_screen() 
+    elif st.session_state['visitor_logged_in']:
+        registration_form_screen() 
+    else:
+        auth_screen() 
+
+if __name__ == "__main__":
+    st.set_page_config(layout="wide", page_title="Visitor Management")
+    
+    # Run the config check only once at startup
+    if not st.session_state['config_verified']:
+        db_config, error_msg = fetch_db_credentials_from_secrets_manager()
+        if db_config:
+            st.session_state['config_verified'] = True
+        else:
+            st.session_state['config_verified'] = False 
+
+    visitor_page()
