@@ -24,13 +24,14 @@ SECRET_KEYS = {
     'password_key': 'DB_PASSWORD'
 }
 
-# --- SESSION STATE INITIALIZATION (FIXED: All state keys initialized here) ---
+# --- SESSION STATE INITIALIZATION (FIXED: All state keys initialized at the top) ---
 
-# All session state variables must be initialized at the top level.
-# The actual value of config_verified is set in the __main__ block, but the key must exist first.
+# All session state variables must be initialized at the top level to prevent KeyError on reruns.
+# config_verified is set to True initially. It will be set to False only if the config check fails later.
 if 'config_verified' not in st.session_state:
-    # Initialize it to True. It will be set to False only if the config check fails later.
     st.session_state['config_verified'] = True 
+if 'config_check_performed' not in st.session_state:
+    st.session_state['config_check_performed'] = False
     
 # UI Flow States
 if 'visitor_form_step' not in st.session_state:
@@ -44,7 +45,7 @@ if 'visitor_logged_in' not in st.session_state:
 if 'auth_mode' not in st.session_state:
     st.session_state['auth_mode'] = 'login' 
 
-# --- DATABASE CONNECTION & OPERATIONS (Functions remain unchanged) ---
+# --- DATABASE CONNECTION & OPERATIONS ---
 
 def fetch_db_credentials_from_secrets_manager():
     """
@@ -79,8 +80,7 @@ def fetch_db_credentials_from_secrets_manager():
     except client.exceptions.ResourceNotFoundException:
         return None, f"AWS Error: Secret '{secret_name}' not found in region {region_name}. Check IAM."
     except KeyError as e:
-        # Catch the specific error from the previous attempt (missing key in JSON)
-        return None, f"Configuration Error: Missing required key {e} in the AWS Secret JSON."
+        return None, f"Configuration Error: Missing required key {e} in the AWS Secret JSON. Keys must be '{SECRET_KEYS['host_key']}', '{SECRET_KEYS['database_key']}', etc."
     except Exception as e:
         return None, f"AWS/Boto3 Error: Failed to retrieve credentials. Details: {e}"
 
@@ -100,6 +100,7 @@ def get_db_connection():
         return None
 
 def verify_admin_login(email, password):
+    """Checks admin credentials against the 'admin' table."""
     conn = get_db_connection()
     if conn is None: return False, None
     try:
@@ -117,6 +118,7 @@ def verify_admin_login(email, password):
             conn.close()
 
 def register_admin_user(name, email, password):
+    """Registers a new admin user into the 'admin' table."""
     conn = get_db_connection()
     if conn is None: return False, "Database connection failed."
     try:
@@ -135,11 +137,14 @@ def register_admin_user(name, email, password):
             conn.close()
 
 def save_new_visitor(data):
+    """Saves visitor details to 'visitors' and logs the check-in to 'visitor_log'."""
     conn = get_db_connection()
     if conn is None: return False, None
+
     try:
         cursor = conn.cursor()
         
+        # 1. Insert into 'visitors' table
         visitor_insert_query = """
         INSERT INTO visitors (
             full_name, email, phone, company, designation, department, gender, 
@@ -159,6 +164,7 @@ def save_new_visitor(data):
         
         new_visitor_id = cursor.lastrowid
         
+        # 2. Insert into 'visitor_log' table
         current_time = datetime.now()
         log_key = str(current_time.timestamp()) 
 
@@ -186,7 +192,7 @@ def save_new_visitor(data):
             cursor.close()
             conn.close()
 
-# --- HELPER FUNCTIONS (Unchanged) ---
+# --- HELPER FUNCTIONS ---
 
 def go_back_to_login():
     """Resets UI state and redirects to login."""
@@ -196,7 +202,7 @@ def go_back_to_login():
     st.session_state['registration_complete'] = False
     st.session_state['auth_mode'] = 'login'
 
-# --- CSS STYLING & UI COMPONENTS (Unchanged) ---
+# --- CSS STYLING & UI COMPONENTS ---
 
 def load_custom_css():
     st.markdown("""
@@ -312,7 +318,7 @@ def render_tabs(current_step):
     with c3: st.markdown(get_tab_html("IDENTITY", 3), unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-# --- SCREENS (Unchanged Logic) ---
+# --- SCREENS ---
 
 def auth_screen():
     load_custom_css()
@@ -556,9 +562,10 @@ def success_screen():
 
 def visitor_page():
     
-    # Check for hardcoded config errors first
+    # Check for hardcoded config errors first. The key 'config_verified' is guaranteed to exist now.
     if not st.session_state['config_verified']:
         st.title("Fatal Error: Database Initialization Failed")
+        # Display the stored error message from the initial check
         st.error(st.session_state.get('config_error_message', "The application could not retrieve database credentials."))
         st.info(f"Attempted Secret: **{HARDCODED_SECRET_NAME}** in Region: **{HARDCODED_REGION}**")
         return
@@ -575,8 +582,7 @@ if __name__ == "__main__":
     st.set_page_config(layout="wide", page_title="Visitor Management")
     
     # Run the config check only ONCE on the first run.
-    # The 'config_verified' key is guaranteed to exist now (initialized at the top).
-    if st.session_state['config_verified'] and not st.session_state.get('config_check_performed'):
+    if not st.session_state['config_check_performed']:
         db_config, error_msg = fetch_db_credentials_from_secrets_manager()
         if db_config:
             st.session_state['config_verified'] = True
