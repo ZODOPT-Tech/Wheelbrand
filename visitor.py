@@ -8,7 +8,6 @@ import json
 import boto3 # AWS SDK
 
 # --- HARDCODED CONFIGURATION (Backend) ---
-# The application will use these values directly for secure DB access.
 HARDCODED_SECRET_NAME = 'Wheelbrand'
 HARDCODED_REGION = 'ap-south-1' # Mumbai region
 # ----------------------------------------
@@ -27,9 +26,7 @@ SECRET_KEYS = {
 
 # --- SESSION STATE INITIALIZATION (FOR UI FLOW ONLY) ---
 
-# Authentication and Form Flow States
 if 'config_verified' not in st.session_state:
-    # Assume verified since configuration is hardcoded
     st.session_state['config_verified'] = True 
 if 'visitor_form_step' not in st.session_state:
     st.session_state['visitor_form_step'] = 1
@@ -42,55 +39,40 @@ if 'visitor_logged_in' not in st.session_state:
 if 'auth_mode' not in st.session_state:
     st.session_state['auth_mode'] = 'login' 
 
-# --- DATABASE CONNECTION & OPERATIONS ---
+# --- DATABASE CONNECTION & OPERATIONS (Functions remain unchanged) ---
 
 def fetch_db_credentials_from_secrets_manager():
-    """
-    Fetches database credentials from AWS Secrets Manager using the
-    HARDCODED constants.
-    """
+    """Fetches credentials using hardcoded constants."""
     secret_name = HARDCODED_SECRET_NAME
     region_name = HARDCODED_REGION
 
     try:
-        # 1. Initialize AWS Secrets Manager client
         session = boto3.session.Session()
-        client = session.client(
-            service_name='secretsmanager',
-            region_name=region_name
-        )
-        
-        # 2. Retrieve the secret value
+        client = session.client(service_name='secretsmanager', region_name=region_name)
         secret_response = client.get_secret_value(SecretId=secret_name)
         
         if 'SecretString' in secret_response:
-            secret_string = secret_response['SecretString']
+            secret_data = json.loads(secret_response['SecretString'])
+            db_config = {
+                'host': secret_data[SECRET_KEYS['host_key']],
+                'database': secret_data[SECRET_KEYS['database_key']],
+                'user': secret_data[SECRET_KEYS['user_key']],
+                'password': secret_data[SECRET_KEYS['password_key']]
+            }
+            return db_config, None
         else:
-            raise ValueError("SecretString not found in the secret payload. Check your secret type.")
-
-        # 3. Parse the JSON string
-        secret_data = json.loads(secret_string)
-        
-        # 4. Map the keys to the format needed for mysql.connector
-        db_config = {
-            'host': secret_data[SECRET_KEYS['host_key']],
-            'database': secret_data[SECRET_KEYS['database_key']],
-            'user': secret_data[SECRET_KEYS['user_key']],
-            'password': secret_data[SECRET_KEYS['password_key']]
-        }
-        return db_config, None
+            raise ValueError("SecretString not found in the secret payload.")
 
     except client.exceptions.ResourceNotFoundException:
         return None, f"AWS Error: Secret '{secret_name}' not found in region {region_name}. Check IAM."
     except Exception as e:
-        return None, f"AWS/Boto3 Error: Failed to retrieve credentials. Check IAM permissions and secret format. Details: {e}"
+        return None, f"AWS/Boto3 Error: Failed to retrieve credentials. Details: {e}"
 
 def get_db_connection():
     """Establishes and returns a connection to the MySQL database."""
     db_config, error_msg = fetch_db_credentials_from_secrets_manager()
     
     if db_config is None:
-        # Configuration error is fatal here, stop execution and show error
         st.error(f"FATAL DATABASE CONFIGURATION ERROR: {error_msg}")
         return None
         
@@ -102,17 +84,14 @@ def get_db_connection():
         return None
 
 def verify_admin_login(email, password):
-    """Checks admin credentials against the 'admin' table."""
+    # Function to verify admin credentials against the DB
     conn = get_db_connection()
-    if conn is None:
-        return False, None
+    if conn is None: return False, None
     try:
         cursor = conn.cursor(dictionary=True)
         query = "SELECT 1 FROM admin WHERE email = %s AND password_hash = %s" 
         cursor.execute(query, (email, password))
-        
-        if cursor.fetchone():
-            return True, None
+        if cursor.fetchone(): return True, None
         return False, None
     except Error as e:
         st.error(f"Database error during login: {e}")
@@ -123,10 +102,9 @@ def verify_admin_login(email, password):
             conn.close()
 
 def register_admin_user(name, email, password):
-    """Registers a new admin user into the 'admin' table."""
+    # Function to register a new admin user
     conn = get_db_connection()
-    if conn is None:
-        return False, "Database connection failed."
+    if conn is None: return False, "Database connection failed."
     try:
         cursor = conn.cursor()
         query = "INSERT INTO admin (full_name, email, password_hash) VALUES (%s, %s, %s)"
@@ -143,15 +121,11 @@ def register_admin_user(name, email, password):
             conn.close()
 
 def save_new_visitor(data):
-    """Saves visitor details to 'visitors' and logs the check-in to 'visitor_log'."""
+    # Function to save new visitor details and log check-in
     conn = get_db_connection()
-    if conn is None:
-        return False, None
-
+    if conn is None: return False, None
     try:
         cursor = conn.cursor()
-        
-        # 1. Insert into 'visitors' table
         visitor_insert_query = """
         INSERT INTO visitors (
             full_name, email, phone, company, designation, department, gender, 
@@ -159,7 +133,6 @@ def save_new_visitor(data):
             has_documents, has_powerbank, has_other_bags, digital_signature
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        # Prepare visitor data (mapping booleans to 1/0 for tinyint(1) columns)
         visitor_data = (
             data.get('name'), data.get('email'), data.get('phone'), data.get('company'), 
             data.get('designation'), data.get('department'), data.get('gender', 'Prefer not to say'), 
@@ -169,13 +142,10 @@ def save_new_visitor(data):
             data.get('signature')
         )
         cursor.execute(visitor_insert_query, visitor_data)
-        
         new_visitor_id = cursor.lastrowid
         
-        # 2. Insert into 'visitor_log' table
         current_time = datetime.now()
         log_key = str(current_time.timestamp()) 
-
         log_insert_query = """
         INSERT INTO visitor_log (
             visitor_id, visitor_name, host, company, 
@@ -188,7 +158,6 @@ def save_new_visitor(data):
             'In Office', log_key
         )
         cursor.execute(log_insert_query, log_data)
-
         conn.commit()
         return True, data.get('name') 
     except Error as e:
@@ -210,23 +179,20 @@ def go_back_to_login():
     st.session_state['registration_complete'] = False
     st.session_state['auth_mode'] = 'login'
 
-# --- CSS STYLING & UI COMPONENTS ---
+# --- CSS STYLING & UI COMPONENTS (Removed sidebar hide, changed button styling slightly) ---
 
 def load_custom_css():
-    # Hide the sidebar and Streamlit footer/header
     st.markdown("""
         <style>
-        /* Hide the Streamlit main sidebar */
-        [data-testid="stSidebar"] {
-            display: none
-        } 
+        /* Hide Streamlit header/footer */
+        header, footer { visibility: hidden; }
+        
         /* Ensure the main content uses full width */
         .block-container {
             padding-top: 2rem !important; 
             padding-bottom: 2rem !important; 
             max-width: 100% !important; 
         }
-        header, footer { visibility: hidden; }
         
         /* General styling retained */
         .stApp { background-color: #F4F7FE; }
@@ -235,12 +201,30 @@ def load_custom_css():
             padding: 25px; border-radius: 12px 12px 0 0; color: white;
             margin: -2.5rem -2.5rem 2rem -2.5rem; 
         }
-        /* ... other styles ... */
+        /* Styling for the unified action container */
+        .action-container {
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+            margin-top: 15px;
+        }
+        
+        /* Ensure primary button takes full width of its column */
+        div.stButton > button[kind="primary"] {
+            width: 100%; 
+            height: 48px;
+            font-weight: 600;
+        }
+        /* Ensure secondary button takes full width of its column */
+        div.stButton > button[kind="secondary"] {
+            width: 100%; 
+            height: 48px;
+            font-weight: 500;
+        }
         </style>
     """, unsafe_allow_html=True)
 
 def render_auth_header(icon, title, subtitle):
-    """Renders the header with the icon next to the heading."""
+    # Renders the authentication screen header
     st.markdown(f"""
         <div class="visitor-header">
             <div style="display: flex; align-items: center; justify-content: flex-start;">
@@ -254,7 +238,7 @@ def render_auth_header(icon, title, subtitle):
     """, unsafe_allow_html=True)
 
 def render_custom_header(title, subtitle="Please fill in your details"):
-    """Renders the standard registration header."""
+    # Renders the registration header
     st.markdown(f"""
         <div class="visitor-header">
             <h2 style="margin:0; padding:0; font-weight:600;">{title}</h2>
@@ -263,7 +247,7 @@ def render_custom_header(title, subtitle="Please fill in your details"):
     """, unsafe_allow_html=True)
 
 def render_tabs(current_step):
-    """Renders the navigation tabs for the multi-step form."""
+    # Renders the form tabs
     c1, c2, c3 = st.columns(3)
     def get_tab_html(label, step_num):
         active_class = "active" if current_step == step_num else ""
@@ -299,22 +283,31 @@ def auth_screen():
                     email = st.text_input("Email Address", placeholder="you@company.com")
                     password = st.text_input("Password", type="password", placeholder="Enter your password")
                     
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown("<div class='action-container'>", unsafe_allow_html=True)
                     
-                    if st.form_submit_button("Sign In →", type="primary", use_container_width=True):
+                    # Unified Button Container
+                    b1, b2 = st.columns(2)
+                    
+                    with b1:
+                        # Primary action button
+                        submit = st.form_submit_button("Sign In →", type="primary", use_container_width=True)
+                    
+                    with b2:
+                        # Secondary action button
+                        if st.button("Register Account", key="login_to_register_btn", type="secondary", use_container_width=True):
+                            st.session_state['auth_mode'] = 'register'
+                            st.rerun()
+
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                    if submit:
                         is_valid, _ = verify_admin_login(email, password)
-                        
                         if is_valid:
                             st.session_state['visitor_logged_in'] = True
                             st.rerun()
                         else:
                             st.error("Invalid email or password")
-                
-                st.markdown("---")
-                if st.button("Don't have an account? Register", type="secondary", use_container_width=True):
-                    st.session_state['auth_mode'] = 'register'
-                    st.rerun()
-
+                            
             # --- VIEW: REGISTER ---
             elif st.session_state['auth_mode'] == 'register':
                 
@@ -325,9 +318,24 @@ def auth_screen():
                     reg_pass = st.text_input("Password", type="password", placeholder="Create a password")
                     reg_confirm = st.text_input("Confirm Password", type="password", placeholder="Confirm your password")
                     
-                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown("<div class='action-container'>", unsafe_allow_html=True)
                     
-                    if st.form_submit_button("Register & Login →", type="primary", use_container_width=True):
+                    # Unified Button Container
+                    b1, b2 = st.columns(2)
+                    
+                    with b1:
+                        # Primary action button
+                        submit = st.form_submit_button("Register & Login →", type="primary", use_container_width=True)
+                    
+                    with b2:
+                        # Secondary action button
+                        if st.button("Back to Login", key="register_to_login_btn", type="secondary", use_container_width=True):
+                            st.session_state['auth_mode'] = 'login'
+                            st.rerun()
+                            
+                    st.markdown("</div>", unsafe_allow_html=True)
+
+                    if submit:
                         if reg_name and reg_email and reg_pass:
                             if reg_pass == reg_confirm:
                                 success, message = register_admin_user(reg_name, reg_email, reg_pass)
@@ -344,11 +352,6 @@ def auth_screen():
                         else:
                             st.error("Please fill in all fields.")
 
-                st.markdown("---")
-                if st.button("Already have an account? Sign In", type="secondary", use_container_width=True):
-                    st.session_state['auth_mode'] = 'login'
-                    st.rerun()
-
 def registration_form_screen():
     load_custom_css()
     
@@ -362,20 +365,17 @@ def registration_form_screen():
             temp = st.session_state['temp_visitor_data']
             step = st.session_state['visitor_form_step']
 
-            # --- STEP 1: PRIMARY DETAILS (Full form structure included for completeness) ---
+            # --- STEP 1: PRIMARY DETAILS ---
             if step == 1:
                 with st.form("step1_form", clear_on_submit=False):
                     
                     st.markdown("##### Contact Information")
-                    st.markdown("<br>", unsafe_allow_html=True)
-                    
                     name = st.text_input("Full Name", value=temp.get('name', ''), placeholder="John Doe")
                     email = st.text_input("Email Address", value=temp.get('email', ''), placeholder="your.email@example.com")
                     phone = st.text_input("Phone Number", value=temp.get('phone', ''), placeholder="81234 56789")
-
-                    st.markdown("<br><br>", unsafe_allow_html=True)
                     
-                    b1, b2 = st.columns([1, 1])
+                    st.markdown("<div class='action-container'>", unsafe_allow_html=True)
+                    b1, b2 = st.columns(2)
                     with b1:
                         if st.form_submit_button("Reset Form", type="secondary", use_container_width=True):
                             st.session_state['temp_visitor_data'] = {}
@@ -388,6 +388,7 @@ def registration_form_screen():
                                 st.rerun()
                             else:
                                 st.warning("Please fill in all required fields.")
+                    st.markdown("</div>", unsafe_allow_html=True)
 
             # --- STEP 2: SECONDARY DETAILS ---
             elif step == 2:
@@ -421,9 +422,8 @@ def registration_form_screen():
                     with cb3: power = st.checkbox("Power Bank", value=temp.get('power', False))
                     with cb4: other = st.checkbox("Other Bags", value=temp.get('other', False))
                     
-                    st.markdown("<br><br>", unsafe_allow_html=True)
-                    
-                    b1, b2 = st.columns([1, 1])
+                    st.markdown("<div class='action-container'>", unsafe_allow_html=True)
+                    b1, b2 = st.columns(2)
                     with b1:
                         if st.form_submit_button("← Back", type="secondary", use_container_width=True):
                             st.session_state['visitor_form_step'] = 1
@@ -442,6 +442,7 @@ def registration_form_screen():
                                 st.rerun()
                             else:
                                 st.error("Please enter the **Person to Visit** (Host).")
+                    st.markdown("</div>", unsafe_allow_html=True)
 
             # --- STEP 3: IDENTITY ---
             elif step == 3:
@@ -453,9 +454,8 @@ def registration_form_screen():
                     st.info(f"Confirming check-in as: **{temp.get('name')}**")
                     signature = st.text_area("**Digital Signature (Type Full Name)**", value=temp.get('signature', ''), placeholder="Type your full name as signature")
                     
-                    st.markdown("<br><br>", unsafe_allow_html=True)
-                    
-                    b1, b2 = st.columns([1, 1])
+                    st.markdown("<div class='action-container'>", unsafe_allow_html=True)
+                    b1, b2 = st.columns(2)
                     with b1:
                         if st.form_submit_button("← Back", type="secondary", use_container_width=True):
                             st.session_state['visitor_form_step'] = 2
@@ -465,7 +465,6 @@ def registration_form_screen():
                             if signature.strip() != "":
                                 st.session_state['temp_visitor_data']['signature'] = signature
                                 
-                                # --- DB SAVE ACTION ---
                                 success, last_registered_name = save_new_visitor(st.session_state['temp_visitor_data'])
                                 
                                 if success:
@@ -477,6 +476,7 @@ def registration_form_screen():
 
                             else:
                                 st.error("Digital Signature required to complete check-in.")
+                    st.markdown("</div>", unsafe_allow_html=True)
 
 def success_screen():
     load_custom_css()
@@ -489,30 +489,35 @@ def success_screen():
             st.markdown(f"<h2 style='text-align: center;'>Welcome, {welcome_name}!</h2>", unsafe_allow_html=True)
             st.markdown("<p style='text-align: center; color: #666;'>Your details have been successfully logged.</p>", unsafe_allow_html=True)
             
-            st.markdown("<br>", unsafe_allow_html=True)
+            st.markdown("<div class='action-container'>", unsafe_allow_html=True)
             
-            if st.button("New Visitor Check-in", type="primary", use_container_width=True):
-                st.session_state['registration_complete'] = False
-                st.session_state['visitor_form_step'] = 1
-                st.session_state['temp_visitor_data'] = {}
-                st.rerun()
-            if st.button("Log Out (Admin)", type="secondary", use_container_width=True):
-                go_back_to_login()
-                st.rerun()
+            b1, b2 = st.columns(2)
+            
+            with b1:
+                if st.button("New Visitor Check-in", type="primary", use_container_width=True):
+                    st.session_state['registration_complete'] = False
+                    st.session_state['visitor_form_step'] = 1
+                    st.session_state['temp_visitor_data'] = {}
+                    st.rerun()
+            with b2:
+                if st.button("Log Out (Admin)", type="secondary", use_container_width=True):
+                    go_back_to_login()
+                    st.rerun()
+            st.markdown("</div>", unsafe_allow_html=True)
 
 
 # --- Main App Execution Flow ---
 
 def visitor_page():
-    # If the database connection fails on startup, this will be False.
-    # Otherwise, it skips straight to the login screen.
+    
+    # Check for hardcoded config errors first
     if not st.session_state['config_verified']:
-        # This message is displayed if the application fails to connect to AWS Secrets Manager
         st.title("Fatal Error: Database Initialization Failed")
         st.error("The application could not retrieve database credentials using the hardcoded configuration. Check your AWS credentials, IAM permissions, and network connectivity.")
         st.info(f"Attempted Secret: **{HARDCODED_SECRET_NAME}** in Region: **{HARDCODED_REGION}**")
         return
 
+    # Main application routing
     if st.session_state['registration_complete']:
         success_screen() 
     elif st.session_state['visitor_logged_in']:
@@ -523,14 +528,15 @@ def visitor_page():
 if __name__ == "__main__":
     st.set_page_config(layout="wide", page_title="Visitor Management")
     
-    # Check the configuration once at startup
+    # Run the config check only once at startup
     if not st.session_state['config_verified']:
         db_config, error_msg = fetch_db_credentials_from_secrets_manager()
         if db_config:
             st.session_state['config_verified'] = True
         else:
-            # Store error message in a temporary state for the UI to display
             st.session_state['config_verified'] = False 
-            st.session_state['startup_error'] = error_msg
+            # Note: The error is already shown by get_db_connection() or fetch_db_credentials_from_secrets_manager()
+            # on the first run, but we set the state here to handle subsequent reruns.
+            pass
 
     visitor_page()
