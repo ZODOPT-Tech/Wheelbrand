@@ -15,9 +15,9 @@ def navigate_to(page):
 # -------------------- Router --------------------
 def load_page():
     routes = {
-        "home": None,
-        "visit": ("visitor", "visitor_main"),
-        "conference": ("conference_page", "conference_main"),
+        "home":      None,
+        "visit":     ("visitor", "visitor_main"),
+        "conference":("conference_page", "conference_main"),
     }
 
     page = st.session_state.current_page
@@ -26,14 +26,16 @@ def load_page():
         render_home()
         return
 
-    try:
-        module_name, fn_name = routes[page]
-        module = importlib.import_module(module_name)
-        getattr(module, fn_name)(navigate_to)
-    except Exception as e:
-        st.error(f"Error loading page: {e}")
+    module_name, fn_name = routes.get(page, (None, None))
+    if not module_name:
+        st.error("Invalid Route")
+        return
 
-# -------------------- HOME PAGE STYLE LIKE YOUR SCREENSHOT --------------------
+    module = importlib.import_module(module_name)
+    page_fn = getattr(module, fn_name)
+    page_fn(navigate_to)
+
+# -------------------- HOME PAGE --------------------
 def render_home():
 
     # Load Logo
@@ -42,135 +44,95 @@ def render_home():
     logo.save(buf, format="PNG")
     logo_b64 = base64.b64encode(buf.getvalue()).decode()
 
-    # -------------------- CSS --------------------
+    # CSS
     st.markdown("""
     <style>
-
-    /* Full width layout */
-    .block-container {
-        max-width: 100% !important;
-        padding: 0 !important;
-        margin: 0 !important;
-    }
-
-    /* Rounded Gradient Banner (Like Screenshot) */
-    .top-banner {
-        width: 92%;
-        margin: 30px auto;
-        padding: 35px 55px;
-        border-radius: 35px;
-        background: linear-gradient(90deg, #1e62ff, #8a2eff);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        color: white;
-    }
-
-    .banner-title {
-        font-size: 42px;
-        font-weight: 900;
-        letter-spacing: 1px;
-    }
-
-    /* Main content wrapper */
-    .content-wrapper {
-        width: 92%;
-        margin: 30px auto;
-        padding: 40px;
-        background: white;
+    .header {
+        width: 100%;
+        padding: 25px 40px;
         border-radius: 25px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+        background: linear-gradient(90deg,#1e62ff,#8a2eff);
+        color:white;
+        display:flex;justify-content:space-between;align-items:center;
+        margin-bottom:30px;
+    }
+    .header-title { font-size: 34px; font-weight:bold; }
+
+    .card {
+        background:white;
+        padding:50px;
+        border-radius:25px;
+        width:100%;
+        height:100%;
+        box-shadow:0 8px 20px rgba(0,0,0,0.08);
+        cursor:pointer;
+        transition:0.2s;
+        text-align:center;
+    }
+    .card:hover {
+        transform: translateY(-5px);
+        box-shadow:0 15px 28px rgba(0,0,0,0.15);
     }
 
-    /* Page section title */
-    .section-title {
-        font-size: 32px;
-        font-weight: 800;
-        margin-bottom: 20px;
-        color: #222;
+    .icon-circle {
+        width:130px;height:130px;border-radius:50%;
+        display:flex;justify-content:center;align-items:center;
+        margin:auto;
+        font-size:55px;color:white;
     }
+    .violet { background: linear-gradient(135deg,#4d7cff,#b312ff); }
+    .green { background:#00a884; }
 
-    /* Cards container */
-    .card-box {
-        background: #ffffff;
-        padding: 50px 20px;
-        border-radius: 25px;
-        box-shadow: 0 8px 25px rgba(0,0,0,0.08);
-        text-align: center;
-        min-height: 350px;
-        transition: .25s;
+    .title { font-size:26px;font-weight:700;margin-top:20px; }
+    .btn-bottom {
+        margin-top:25px;
+        padding:14px;
+        width:80%;
+        font-size:18px;
+        border:none;
+        border-radius:12px;
+        background:#f0f0f0;
+        font-weight:600;
     }
-
-    .card-box:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 14px 35px rgba(0,0,0,0.12);
-    }
-
-    .emoji {
-        font-size: 85px;
-        margin-bottom: 10px;
-    }
-
-    .card-title {
-        font-size: 26px;
-        font-weight: 700;
-        margin-bottom: 20px;
-        color: #333;
-    }
-
-    /* Gradient buttons */
-    .stButton>button {
-        background: linear-gradient(90deg,#1e62ff,#8a2eff) !important;
-        color:white !important;
-        padding:14px !important;
-        border-radius:14px !important;
-        font-size:18px !important;
-        font-weight:600 !important;
-        width:100% !important;
-    }
-
     </style>
     """, unsafe_allow_html=True)
 
-    # -------------------- LARGE TOP BANNER --------------------
+    # HEADER
     st.markdown(
         f"""
-        <div class="top-banner">
-            <div class="banner-title">ZODOPT MEETEASE</div>
-            <img src="data:image/png;base64,{logo_b64}" style="height:80px;">
+        <div class="header">
+            <div class="header-title">ZODOPT MEETEASE</div>
+            <img src="data:image/png;base64,{logo_b64}" style="height:70px;">
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # -------------------- MAIN WHITE CONTENT AREA --------------------
-    st.markdown('<div class="content-wrapper">', unsafe_allow_html=True)
-
-    st.markdown('<div class="section-title">Admin Access</div>', unsafe_allow_html=True)
-
+    # CARDS
     col1, col2 = st.columns([1, 1], gap="large")
 
-    # Visit Plan Card
+    # Visit Plan card
     with col1:
         st.markdown("""
-        <div class="card-box">
-            <div class="emoji">📅</div>
-            <div class="card-title">Visit Plan</div>
+        <div class="card">
+            <div class="icon-circle violet">🗓️</div>
+            <div class="title">Visit Plan</div>
         </div>
         """, unsafe_allow_html=True)
-        st.button("Open Visit Plan", key="visit_btn", on_click=lambda: navigate_to("visit"))
+        if st.button("Open Visit Plan", use_container_width=True):
+            navigate_to("visit")
 
-    # Conference Card
+    # Conference card
     with col2:
         st.markdown("""
-        <div class="card-box">
-            <div class="emoji">📘</div>
-            <div class="card-title">Conference Booking</div>
+        <div class="card">
+            <div class="icon-circle green">📅</div>
+            <div class="title">Conference Booking</div>
         </div>
         """, unsafe_allow_html=True)
-        st.button("Open Conference Booking", key="conf_btn", on_click=lambda: navigate_to("conference"))
+        if st.button("Open Conference Booking", use_container_width=True):
+            navigate_to("conference")
 
-    st.markdown('</div>', unsafe_allow_html=True)  # End content wrapper
 
-# Run app
+# RUN
 load_page()
