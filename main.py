@@ -1,139 +1,149 @@
-# main.py
 import streamlit as st
 import importlib
 from PIL import Image
 import base64
 from io import BytesIO
 
-# -------------------- Session Init --------------------
+# -------------------- SESSION NAVIGATION --------------------
 if "current_page" not in st.session_state:
     st.session_state.current_page = "home"
 
-# -------------------- Navigation --------------------
-def navigate_to(page_name):
-    st.session_state.current_page = page_name
+def navigate_to(page):
+    st.session_state.current_page = page
     st.rerun()
 
-# -------------------- Page Loader --------------------
+# -------------------- PAGE LOADER --------------------
 def load_page():
     routes = {
-        "home":        None,
-        "visit":       ("visitor", "app"),
-        "conference":  ("conference_page", "app"),
+        "home": {"module": None, "function": None},
+        "visit": {"module": "visitor", "function": "visitor_main"},
+        "conference": {"module": "conference_page", "function": "conference_main"},
     }
 
     page = st.session_state.current_page
 
+    # HOME PAGE IS INSIDE THIS FILE
     if page == "home":
-        return render_home()
+        return render_home(navigate_to)
 
-    module_name, fn_name = routes.get(page)
+    # IMPORT OTHER PAGES
+    module_name = routes[page]["module"]
+    fn_name = routes[page]["function"]
+
     module = importlib.import_module(module_name)
     fn = getattr(module, fn_name)
     fn(navigate_to)
 
-# -----------------------------------------------------
-#                      HOME PAGE
-# -----------------------------------------------------
-def render_home():
+# ==================================================================
+#                         HOME UI
+# ==================================================================
+def render_home(navigate_to):
+    st.set_page_config(page_title="ZODOPT MEETEASE", layout="wide")
 
-    # ---------- LOAD LOGO ----------
+    # Load logo
     logo = Image.open("zodopt.png")
     buf = BytesIO()
     logo.save(buf, format="PNG")
     logo_b64 = base64.b64encode(buf.getvalue()).decode()
 
-    # ---------- STYLES ----------
+    # -------------------- CSS --------------------
     st.markdown("""
     <style>
     .header {
         width: 100%;
-        padding: 25px 40px;
-        border-radius: 25px;
+        padding: 30px 45px;
+        border-radius: 22px;
         background: linear-gradient(90deg,#1e62ff,#8a2eff);
         color: white;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 30px;
+        margin-bottom: 40px;
     }
-    .header-title { font-size: 34px; font-weight: 700; }
+    .header-title {
+        font-size: 40px;
+        font-weight: 800;
+    }
+    .logo-img {
+        height: 85px;
+    }
 
     .card {
         background: white;
-        padding: 60px;
-        border-radius: 25px;
-        box-shadow: 0px 8px 20px rgba(0,0,0,0.08);
+        padding: 80px;
+        border-radius: 28px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
         text-align: center;
+        width: 100%;
         cursor: pointer;
         transition: 0.25s;
     }
+
     .card:hover {
-        transform: translateY(-6px);
-        box-shadow: 0px 15px 28px rgba(0,0,0,0.18);
+        transform: scale(1.04);
+        box-shadow: 0px 20px 40px rgba(0,0,0,0.18);
     }
+
     .icon-circle {
-        width: 140px;
-        height: 140px;
+        width: 150px;
+        height: 150px;
         border-radius: 50%;
         display: flex;
-        align-items: center;
         justify-content: center;
-        margin: 0 auto 20px auto;
-        font-size: 50px;
+        align-items: center;
+        font-size: 70px;
         color: white;
+        margin: 0 auto 25px auto;
     }
+
     .violet { background: linear-gradient(135deg,#4d7cff,#b312ff); }
     .green { background: #00a884; }
-    .title-text { font-size: 28px; font-weight: 700; }
+
+    .title-text {
+        font-size: 32px;
+        font-weight: 700;
+        margin-top: 15px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
-    # ---------- HEADER ----------
+    # -------------------- HEADER --------------------
     st.markdown(
         f"""
         <div class="header">
             <div class="header-title">ZODOPT MEETEASE</div>
-            <img src="data:image/png;base64,{logo_b64}" style="height:70px;">
+            <img src="data:image/png;base64,{logo_b64}" class="logo-img">
         </div>
-        """, unsafe_allow_html=True
+        """,
+        unsafe_allow_html=True
     )
 
-    # ---------- FOOTER SPACE ----------
-    col1, col2 = st.columns(2, gap="large")
+    # -------------------- FULL WIDTH CARDS --------------------
+    col1, col2 = st.columns([1, 1], gap="large")
 
-    # ---------- VISIT CARD ----------
     with col1:
-        if st.button("", key="visit_btn"):
-            navigate_to("visit")
+        if st.markdown(
+            """
+            <div class="card" onclick="window.location.href='?page=visit'">
+                <div class="icon-circle violet">🗓️</div>
+                <div class="title-text">Visit Plan</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        ):
+            pass
 
-        st.markdown("""
-        <div class="card" onclick="window.location.href='/?page_trigger=visit'">
-            <div class="icon-circle violet">📅</div>
-            <div class="title-text">Visitplan</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # ---------- CONFERENCE CARD ----------
     with col2:
-        if st.button("", key="conf_btn"):
-            navigate_to("conference")
+        if st.markdown(
+            """
+            <div class="card" onclick="window.location.href='?page=conference'">
+                <div class="icon-circle green">📅</div>
+                <div class="title-text">Conference Booking</div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        ):
+            pass
 
-        st.markdown("""
-        <div class="card" onclick="window.location.href='/?page_trigger=conference'">
-            <div class="icon-circle green">📘</div>
-            <div class="title-text">Conference Booking</div>
-        </div>
-        """, unsafe_allow_html=True)
-
-    # Detect JS click events
-    qp = st.query_params
-    if "page_trigger" in qp:
-        if qp["page_trigger"] == "visit":
-            navigate_to("visit")
-        elif qp["page_trigger"] == "conference":
-            navigate_to("conference")
-
-
-# -------------------- RUN APP --------------------
+# Run application
 load_page()
