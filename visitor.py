@@ -10,81 +10,62 @@ import base64
 from datetime import datetime
 import bcrypt
 
+# ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="ZODOPT Admin", layout="wide")
 
-# ---------------- CONFIG ----------------
-# Local path to logo (use the path from your runtime / repository)
-LOGO_PATH = "zodopt.png"   # <--- local path from conversation history
-
+LOGO_PATH = "zodopt.png"
 AWS_SECRET_NAME = "wheelbrand"
-AWS_REGION = "ap-south-1"  # Mumbai
-
-DB_TABLE = "admin"  # table name requested by user
+AWS_REGION = "ap-south-1"       # Mumbai region
+DB_TABLE = "admin"
 
 # ---------------- HELPERS ----------------
 def is_valid_email(email: str) -> bool:
     return bool(re.match(r"[^@]+@[^@]+\.[^@]+", email))
 
-def make_bcrypt_hash(plain_password: str) -> str:
-    """Return bcrypt hash as UTF-8 string suitable for storing in VARCHAR(255)."""
-    salt = bcrypt.gensalt()
-    hashed = bcrypt.hashpw(plain_password.encode("utf-8"), salt)
-    return hashed.decode("utf-8")
+def make_bcrypt_hash(pwd: str) -> str:
+    return bcrypt.hashpw(pwd.encode(), bcrypt.gensalt()).decode()
 
-def check_bcrypt_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify bcrypt password. hashed_password is stored as UTF-8 string."""
+def check_bcrypt(pwd: str, hashed: str) -> bool:
     try:
-        return bcrypt.checkpw(plain_password.encode("utf-8"), hashed_password.encode("utf-8"))
-    except ValueError:
+        return bcrypt.checkpw(pwd.encode(), hashed.encode())
+    except:
         return False
 
-# ---------------- AWS SECRETS (key=value format) ----------------
+# ---------------- AWS SECRET MANAGER ----------------
 @st.cache_resource
 def get_db_credentials():
-    """
-    Fetch DB credentials from AWS Secrets Manager.
-    Expects secret's SecretString to be key=value lines like:
-        DB_HOST=...
-        DB_NAME=...
-        DB_USER=...
-        DB_PASSWORD=...
-    """
+    session = boto3.session.Session()
+    client = session.client("secretsmanager", region_name=AWS_REGION)
+
     try:
-        session = boto3.session.Session()
-        client = session.client(service_name="secretsmanager", region_name=AWS_REGION)
         resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
         secret_string = resp.get("SecretString")
         if not secret_string:
-            st.error("SecretString not found in Secrets Manager response.")
+            st.error("AWS secret string empty.")
             st.stop()
 
         creds = {}
-        # Parse key=value lines (supports newline or comma separated)
-        for part in re.split(r"[\r\n]+", secret_string):
-            if not part.strip():
-                continue
-            if "=" in part:
-                k, v = part.split("=", 1)
+
+        # Parse key=value format
+        for line in re.split(r"[\r\n]+", secret_string):
+            if "=" in line:
+                k, v = line.split("=", 1)
                 creds[k.strip()] = v.strip()
 
-        # Accept also JSON format (backwards compatibility)
+        # If JSON
         if not creds:
-            try:
-                creds_json = json.loads(secret_string)
-                creds.update(creds_json)
-            except Exception:
-                pass
+            creds.update(json.loads(secret_string))
 
-        # Basic validation
-        required_keys = ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD")
-        for key in required_keys:
-            if key not in creds:
-                st.error(f"Missing '{key}' in secret '{AWS_SECRET_NAME}'. Please store DB_HOST, DB_NAME, DB_USER, DB_PASSWORD.")
+        required = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]
+        for k in required:
+            if k not in creds:
+                st.error(f"Missing {k} in AWS secret.")
                 st.stop()
+
         return creds
 
     except ClientError as e:
-        st.error(f"Could not retrieve secret '{AWS_SECRET_NAME}': {e}")
+        st.error(f"AWS Error: {e}")
         st.stop()
 
 def get_connection():
@@ -98,213 +79,183 @@ def get_connection():
     )
 
 # ---------------- DB OPERATIONS ----------------
-def email_exists(email: str) -> bool:
+def email_exists(email):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(f"SELECT 1 FROM {DB_TABLE} WHERE email = %s LIMIT 1", (email,))
+    cur.execute(f"SELECT 1 FROM {DB_TABLE} WHERE email=%s LIMIT 1", (email,))
     exists = cur.fetchone() is not None
     cur.close()
     conn.close()
     return exists
 
-def create_admin(full_name: str, email: str, password: str) -> str:
+def create_admin(full, email, pwd):
     if email_exists(email):
-        return "Email already registered."
-    hashed = make_bcrypt_hash(password)
+        return "Email already exists."
+
+    hashed = make_bcrypt_hash(pwd)
+
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        f"INSERT INTO {DB_TABLE} (full_name, email, password_hash, created_at) VALUES (%s, %s, %s, %s)",
-        (full_name, email, hashed, datetime.utcnow())
+        f"INSERT INTO {DB_TABLE} (full_name, email, password_hash, created_at) VALUES (%s,%s,%s,%s)",
+        (full, email, hashed, datetime.utcnow())
     )
     conn.commit()
     cur.close()
     conn.close()
     return "SUCCESS"
 
-def verify_admin(email: str, password: str) -> str:
+def verify_admin(email, pwd):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(f"SELECT password_hash FROM {DB_TABLE} WHERE email = %s", (email,))
-    row = cur.fetchone()
+    cur.execute(f"SELECT password_hash FROM {DB_TABLE} WHERE email=%s", (email,))
+    rec = cur.fetchone()
     cur.close()
     conn.close()
-    if not row:
-        return "Email not found."
-    stored_hash = row[0]
-    if check_bcrypt_password(password, stored_hash):
-        return "SUCCESS"
-    return "Incorrect password."
 
-def update_password(email: str, new_password: str) -> str:
+    if not rec:
+        return "Email not found."
+
+    return "SUCCESS" if check_bcrypt(pwd, rec[0]) else "Incorrect password."
+
+def update_password(email, new_pwd):
     if not email_exists(email):
         return "Email not found."
-    hashed = make_bcrypt_hash(new_password)
+
+    hashed = make_bcrypt_hash(new_pwd)
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(f"UPDATE {DB_TABLE} SET password_hash = %s WHERE email = %s", (hashed, email))
+    cur.execute(f"UPDATE {DB_TABLE} SET password_hash=%s WHERE email=%s", (hashed, email))
     conn.commit()
     cur.close()
     conn.close()
     return "SUCCESS"
 
-# ---------------- LOGO (base64 embed) ----------------
-def load_logo_base64(path: str) -> str:
+# ---------------- LOGO HANDLING ----------------
+def load_logo(path):
     try:
         img = Image.open(path)
         buf = BytesIO()
         img.save(buf, format="PNG")
-        b64 = base64.b64encode(buf.getvalue()).decode("utf-8")
-        return b64
-    except Exception:
+        return base64.b64encode(buf.getvalue()).decode()
+    except:
         return ""
 
-logo_b64 = load_logo_base64(LOGO_PATH)
+logo_b64 = load_logo(LOGO_PATH)
 
-# ---------------- FRONTEND STYLE ----------------
-st.markdown(
-    """
-    <style>
-    .header {
-        width: 100%;
-        padding: 20px 30px;
-        border-radius: 18px;
-        background: linear-gradient(90deg, #1e62ff, #8a2eff);
-        color: white;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 25px;
-    }
-    .header-title { font-size: 28px; font-weight: 700; }
-    .card {
-        background-color: white;
-        padding: 28px;
-        border-radius: 14px;
-        box-shadow: 0px 8px 20px rgba(0,0,0,0.06);
-    }
-    .muted { color:#666; font-size:13px; }
-    .btn-primary {
-        background: linear-gradient(90deg,#1e62ff,#8a2eff);
-        color: white;
-        padding: 10px 18px;
-        border-radius: 10px;
-        border: none;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
-
-# ---------------- HEADER ----------------
-logo_img_html = f'<img src="data:image/png;base64,{logo_b64}" style="height:62px;"/>' if logo_b64 else ""
-st.markdown(f"""
-    <div class="header">
-        <div class="header-title">ZODOPT MEETEASE</div>
-        <div>{logo_img_html}</div>
-    </div>
+# ---------------- STYLES ----------------
+st.markdown("""
+<style>
+.header {
+    width: 100%;
+    padding: 20px 32px;
+    border-radius: 18px;
+    background: linear-gradient(90deg,#1e62ff,#8a2eff);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: white;
+}
+.header-title {
+    font-size: 30px;
+    font-weight: 700;
+}
+.card {
+    background: white;
+    padding: 30px;
+    border-radius: 16px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+}
+</style>
 """, unsafe_allow_html=True)
 
-# ---------------- NAV / PAGES ----------------
-if "admin_logged_in" not in st.session_state:
-    st.session_state["admin_logged_in"] = False
+# ---------------- HEADER ----------------
+st.markdown(f"""
+<div class="header">
+    <div class="header-title">ZODOPT MEETEASE – ADMIN</div>
+    <div><img src="data:image/png;base64,{logo_b64}" style="height:65px"></div>
+</div>
+""", unsafe_allow_html=True)
 
-page = st.radio("", ("Signup (Admin)", "Login", "Forgot Password"), horizontal=True)
+# ---------------- SESSION ----------------
+if "admin_logged" not in st.session_state:
+    st.session_state["admin_logged"] = False
 
-# ---------------- SIGNUP ----------------
-if page == "Signup (Admin)":
-    st.markdown('<div class="card">', unsafe_allow_html=True)
+page = st.radio("", ["Signup", "Login", "Forgot Password"], horizontal=True)
+
+# ---------------- SIGNUP PAGE ----------------
+if page == "Signup":
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+
     st.subheader("Create Admin Account")
-    full_name = st.text_input("Full name")
-    email = st.text_input("Email address")
-    password = st.text_input("Password", type="password")
-    confirm = st.text_input("Confirm password", type="password")
+    full = st.text_input("Full Name")
+    email = st.text_input("Email")
+    pwd = st.text_input("Password", type="password")
+    confirm = st.text_input("Confirm Password", type="password")
 
-    if st.button("Create Admin Account", key="create_admin"):
-        # validations
-        if not full_name.strip():
-            st.error("Full name is required.")
+    if st.button("Register Admin"):
+        if not full.strip():
+            st.error("Full name required.")
         elif not is_valid_email(email):
-            st.error("Enter a valid email address.")
-        elif len(password) < 6:
+            st.error("Invalid email.")
+        elif len(pwd) < 6:
             st.error("Password must be at least 6 characters.")
-        elif password != confirm:
+        elif pwd != confirm:
             st.error("Passwords do not match.")
         else:
-            try:
-                res = create_admin(full_name.strip(), email.strip().lower(), password)
-                if res == "SUCCESS":
-                    st.success("Admin registered successfully. Please login.")
-                else:
-                    st.error(res)
-            except Exception as e:
-                st.error(f"Error creating admin: {e}")
+            res = create_admin(full.strip(), email.strip().lower(), pwd)
+            st.success("Admin created! Please login.") if res == "SUCCESS" else st.error(res)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- LOGIN ----------------
+# ---------------- LOGIN PAGE ----------------
 elif page == "Login":
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("Admin Login")
-    email = st.text_input("Email address", key="login_email")
-    password = st.text_input("Password", type="password", key="login_pass")
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    if st.button("Login", key="login_btn"):
+    st.subheader("Admin Login")
+    email = st.text_input("Email")
+    pwd = st.text_input("Password", type="password")
+
+    if st.button("Login"):
         if not is_valid_email(email):
-            st.error("Enter a valid email address.")
-        elif not password:
-            st.error("Enter password.")
+            st.error("Invalid email.")
         else:
-            try:
-                result = verify_admin(email.strip().lower(), password)
-                if result == "SUCCESS":
-                    st.session_state["admin_logged_in"] = True
-                    # User selected option C earlier: show simple success page
-                    st.success("Login successful!")
-                    st.markdown("<br/>", unsafe_allow_html=True)
-                    st.info("You are now logged in as admin.")
-                else:
-                    st.error(result)
-            except Exception as e:
-                st.error(f"Login error: {e}")
+            res = verify_admin(email.lower(), pwd)
+            if res == "SUCCESS":
+                st.session_state["admin_logged"] = True
+                st.success("Login successful!")
+            else:
+                st.error(res)
+
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- FORGOT PASSWORD ----------------
 elif page == "Forgot Password":
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.subheader("Forgot Password / Reset")
-    fp_email = st.text_input("Enter your registered admin email", key="fp_email")
-    if st.button("Find account", key="fp_find"):
-        if not is_valid_email(fp_email):
-            st.error("Enter a valid email.")
-        else:
-            try:
-                if email_exists(fp_email.strip().lower()):
-                    st.success("Email found. Enter new password below.")
-                    new_pw = st.text_input("New password", type="password", key="fp_new")
-                    confirm_pw = st.text_input("Confirm new password", type="password", key="fp_confirm")
-                    if st.button("Update password", key="fp_update"):
-                        if not new_pw or not confirm_pw:
-                            st.error("Enter and confirm the new password.")
-                        elif new_pw != confirm_pw:
-                            st.error("Passwords do not match.")
-                        elif len(new_pw) < 6:
-                            st.error("Password must be at least 6 characters.")
-                        else:
-                            upd = update_password(fp_email.strip().lower(), new_pw)
-                            if upd == "SUCCESS":
-                                st.success("Password updated. Please login with your new password.")
-                            else:
-                                st.error(upd)
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+
+    st.subheader("Reset Password")
+    email = st.text_input("Registered Email")
+
+    if st.button("Verify Email"):
+        if email_exists(email.lower()):
+            st.success("Email found. Enter new password.")
+
+            new_pwd = st.text_input("New Password", type="password")
+            confirm = st.text_input("Confirm Password", type="password")
+
+            if st.button("Update Password"):
+                if new_pwd != confirm:
+                    st.error("Passwords do not match.")
+                elif len(new_pwd) < 6:
+                    st.error("Password too short.")
                 else:
-                    st.error("Email not found in system.")
-            except Exception as e:
-                st.error(f"Error: {e}")
+                    res = update_password(email.lower(), new_pwd)
+                    st.success("Password updated!") if res == "SUCCESS" else st.error(res)
+        else:
+            st.error("Email not registered.")
+
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- SHOW LOGIN STATE ----------------
-st.markdown("<div style='margin-top:18px'></div>", unsafe_allow_html=True)
-if st.session_state.get("admin_logged_in"):
-    st.success("Admin is logged in (session active).")
-
-# ---------------- END ----------------
+# ---------------- ADMIN ACTIVE STATUS ----------------
+if st.session_state["admin_logged"]:
+    st.success("Admin logged in – session active.")
