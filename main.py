@@ -4,7 +4,7 @@ from PIL import Image
 st.set_page_config(page_title="ZODOPT MEETEASE", layout="wide")
 
 # Load logo
-logo = Image.open("/mnt/data/logo.png")
+logo = "logo.png"
 
 # ---------------- HEADER STYLE ----------------
 st.markdown("""
