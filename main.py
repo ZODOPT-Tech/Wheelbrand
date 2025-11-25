@@ -21,7 +21,7 @@ def nav_card(title, icon, page_path, color_start, color_end, key):
         text-align: center;
         cursor: pointer;
         transition: transform 0.2s, box-shadow 0.2s;
-        border-top: 5px solid white; /* Placeholder for solid edge */
+        /* Increased height to match the vertical spacing in the image */
         margin-bottom: 20px;
         height: 250px;
         display: flex;
@@ -49,7 +49,8 @@ def nav_card(title, icon, page_path, color_start, color_end, key):
     .card-title-{{key}} {{
         font-size: 1.5rem;
         font-weight: 600;
-        color: #1f2937; /* Dark text */
+        color: #1f2937; /* Dark text, matching image aesthetics */
+        margin-top: 10px;
     }}
     .card-underline-{{key}} {{
         width: 40px;
@@ -92,44 +93,46 @@ def nav_card(title, icon, page_path, color_start, color_end, key):
 # --- Main Page Layout ---
 
 st.set_page_config(
-    page_title="ZODOPT Corporate Portal",
+    page_title="Corporate Portal",
     layout="centered",
     initial_sidebar_state="collapsed",
 )
 
-st.title("ZODOPT Corporate Portal")
-st.markdown("### Select an application to begin your work:")
+# Removed the st.title and st.markdown for a cleaner look matching the image
+# st.title("ZODOPT Corporate Portal")
+# st.markdown("### Select an application to begin your work:")
 
-# Create two columns for the card layout
-col1, col2 = st.columns(2)
+# Center the content better by using columns with padding
+col_spacer1, col_main, col_spacer2 = st.columns([1, 4, 1])
 
-# --- Visitplan Card (Left) ---
-with col1:
-    nav_card(
-        title="Visitplan",
-        icon="📋",
-        # Updated to point directly to visitors.py
-        page_path="visitors.py", 
-        color_start=VISITPLAN_COLOR_START,
-        color_end=VISITPLAN_COLOR_END,
-        key="visitplan_card"
-    )
+with col_main:
+    # Create two columns for the card layout
+    col1, col2 = st.columns(2)
 
-# --- Conference Booking Card (Right) ---
-with col2:
-    nav_card(
-        title="Conference Booking",
-        icon="🗓️",
-        # Updated to point directly to conference.py
-        page_path="conference.py",
-        color_start=CONFERENCE_COLOR_START,
-        color_end=CONFERENCE_COLOR_END,
-        key="conference_card"
-    )
+    # --- Visitplan Card (Left) ---
+    with col1:
+        # Note: The icon in the image is a generic window/app icon. Using a clipboard for "Visitplan" as a close text approximation.
+        nav_card(
+            title="Visitplan",
+            icon="📋",
+            # Updated to point directly to visitors.py
+            page_path="visitors.py", 
+            color_start=VISITPLAN_COLOR_START,
+            color_end=VISITPLAN_COLOR_END,
+            key="visitplan_card"
+        )
+
+    # --- Conference Booking Card (Right) ---
+    with col2:
+        # Note: The icon in the image is a calendar/date icon. Using a calendar emoji.
+        nav_card(
+            title="Conference Booking",
+            icon="🗓️",
+            # Updated to point directly to conference.py
+            page_path="conference.py",
+            color_start=CONFERENCE_COLOR_START,
+            color_end=CONFERENCE_COLOR_END,
+            key="conference_card"
+        )
     
-st.markdown("""
----
-<p style="text-align: center; color: #9ca3af;">
-    ZODOPT Internal Applications Suite
-</p>
-""", unsafe_allow_html=True)
+# Removed the trailing st.markdown footer for a clean look
