@@ -15,9 +15,9 @@ def navigate_to(page):
 # -------------------- Router --------------------
 def load_page():
     routes = {
-        "home":      None,
-        "visit":     ("visitor", "visitor_main"),
-        "conference":("conference_page", "conference_main"),
+        "home": None,
+        "visit": ("visitor", "visitor_main"),
+        "conference": ("conference_page", "conference_main"),
     }
 
     page = st.session_state.current_page
@@ -26,14 +26,23 @@ def load_page():
         render_home()
         return
 
-    module_name, fn_name = routes.get(page, (None, None))
-    if not module_name:
+    if page not in routes:
         st.error("Invalid Route")
         return
 
-    module = importlib.import_module(module_name)
-    page_fn = getattr(module, fn_name)
-    page_fn(navigate_to)
+    module_name, function_name = routes[page]
+
+    try:
+        module = importlib.import_module(module_name)
+        page_fn = getattr(module, function_name)
+        page_fn(navigate_to)
+
+    except ModuleNotFoundError:
+        st.error(f"Module '{module_name}' not found.")
+    except AttributeError:
+        st.error(f"Function '{function_name}' missing in module '{module_name}'.")
+    except Exception as e:
+        st.error(f"Error loading page: {e}")
 
 # -------------------- HOME PAGE --------------------
 def render_home():
@@ -44,20 +53,32 @@ def render_home():
     logo.save(buf, format="PNG")
     logo_b64 = base64.b64encode(buf.getvalue()).decode()
 
-    # CSS
+    # ---------- GLOBAL CSS (Full screen + Buttons) ----------
     st.markdown("""
     <style>
+    /* Full screen layout */
+    .main, .block-container {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+        padding-top: 0 !important;
+        max-width: 100% !important;
+    }
+
+    /* Header */
     .header {
         width: 100%;
         padding: 25px 40px;
-        border-radius: 25px;
+        border-radius: 0px;
         background: linear-gradient(90deg,#1e62ff,#8a2eff);
         color:white;
-        display:flex;justify-content:space-between;align-items:center;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
         margin-bottom:30px;
     }
     .header-title { font-size: 34px; font-weight:bold; }
 
+    /* Cards */
     .card {
         background:white;
         padding:50px;
@@ -65,13 +86,12 @@ def render_home():
         width:100%;
         height:100%;
         box-shadow:0 8px 20px rgba(0,0,0,0.08);
-        cursor:pointer;
-        transition:0.2s;
         text-align:center;
+        transition:0.2s;
     }
     .card:hover {
         transform: translateY(-5px);
-        box-shadow:0 15px 28px rgba(0,0,0,0.15);
+        box-shadow:0 18px 35px rgba(0,0,0,0.15);
     }
 
     .icon-circle {
@@ -84,20 +104,21 @@ def render_home():
     .green { background:#00a884; }
 
     .title { font-size:26px;font-weight:700;margin-top:20px; }
-    .btn-bottom {
-        margin-top:25px;
-        padding:14px;
-        width:80%;
-        font-size:18px;
-        border:none;
-        border-radius:12px;
-        background:#f0f0f0;
-        font-weight:600;
+
+    /* Colored Buttons */
+    .stButton>button {
+        background: linear-gradient(90deg,#1e62ff,#8a2eff) !important;
+        color:white !important;
+        padding:14px !important;
+        border-radius:12px !important;
+        font-size:18px !important;
+        font-weight:600 !important;
+        width:100% !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # HEADER
+    # ---------- HEADER ----------
     st.markdown(
         f"""
         <div class="header">
@@ -108,10 +129,10 @@ def render_home():
         unsafe_allow_html=True
     )
 
-    # CARDS
+    # ---------- CARDS ----------
     col1, col2 = st.columns([1, 1], gap="large")
 
-    # Visit Plan card
+    # Visit Plan Card
     with col1:
         st.markdown("""
         <div class="card">
@@ -119,10 +140,11 @@ def render_home():
             <div class="title">Visit Plan</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Visit Plan", use_container_width=True):
+
+        if st.button("Open Visit Plan", key="visit_btn"):
             navigate_to("visit")
 
-    # Conference card
+    # Conference Card
     with col2:
         st.markdown("""
         <div class="card">
@@ -130,9 +152,11 @@ def render_home():
             <div class="title">Conference Booking</div>
         </div>
         """, unsafe_allow_html=True)
-        if st.button("Open Conference Booking", use_container_width=True):
+
+        if st.button("Open Conference Booking", key="conf_btn"):
             navigate_to("conference")
 
 
 # RUN
 load_page()
+
