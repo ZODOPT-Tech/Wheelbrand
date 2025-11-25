@@ -29,8 +29,7 @@ def load_page():
     try:
         module_name, fn_name = routes[page]
         module = importlib.import_module(module_name)
-        page_fn = getattr(module, fn_name)
-        page_fn(navigate_to)
+        getattr(module, fn_name)(navigate_to)
     except Exception as e:
         st.error(f"Error loading page: {e}")
 
@@ -43,22 +42,23 @@ def render_home():
     logo.save(buf, format="PNG")
     logo_b64 = base64.b64encode(buf.getvalue()).decode()
 
-    # ---------- PROFESSIONAL CSS ----------
+    # -------------------- CSS --------------------
     st.markdown("""
     <style>
 
-    /* Limit content width for professional look */
+    /* Full-width container */
     .block-container {
-        max-width: 1050px !important;
-        padding-top: 1rem !important;
-        padding-bottom: 2rem !important;
+        max-width: 100% !important;
+        padding-top: 0rem !important;
+        padding-left: 2rem !important;
+        padding-right: 2rem !important;
     }
 
     /* Header full width */
     .header {
         width: 100vw;
         margin-left: calc(-50vw + 50%);
-        padding: 22px 40px;
+        padding: 20px 40px;
         background: linear-gradient(90deg,#1e62ff,#8a2eff);
         color:white;
         display:flex;
@@ -66,94 +66,85 @@ def render_home():
         align-items:center;
         margin-bottom:40px;
     }
+    .header-title { font-size: 30px; font-weight:800; }
 
-    .header-title {
-        font-size: 30px;
-        font-weight:800;
-    }
-
-    /* Cards */
-    .card {
+    /* CARD (45% width look) */
+    .clean-card {
         background:white;
-        padding:40px;
-        border-radius:20px;
-        width:100%;
-        min-height:330px;
-        box-shadow:0 8px 20px rgba(0,0,0,0.08);
+        padding:60px 20px;
+        border-radius:32px;
         text-align:center;
+        box-shadow:0px 12px 35px rgba(0,0,0,0.08);
+        width:100%;
+        min-height:380px;
         transition:0.2s;
     }
 
-    .card:hover {
+    .clean-card:hover {
         transform: translateY(-4px);
-        box-shadow:0 15px 32px rgba(0,0,0,0.12);
+        box-shadow:0px 18px 45px rgba(0,0,0,0.12);
     }
 
-    .icon-circle {
-        width:115px;height:115px;border-radius:50%;
-        display:flex;justify-content:center;align-items:center;
-        margin:auto;
-        font-size:48px;color:white;
+    .icon-emoji {
+        font-size:95px;
+        display:block;
+        margin-bottom:20px;
     }
 
-    .violet { background: linear-gradient(135deg,#4d7cff,#b312ff); }
-    .green { background:#00a884; }
-    
     .title {
-        font-size:23px;
+        font-size:26px;
         font-weight:700;
-        margin-top:20px;
+        margin-bottom:30px;
     }
 
-    /* Gradient Buttons */
+    /* Gradient buttons */
     .stButton>button {
         background: linear-gradient(90deg,#1e62ff,#8a2eff) !important;
         color:white !important;
-        padding:12px !important;
-        border-radius:12px !important;
-        font-size:17px !important;
+        padding:14px !important;
+        border-radius:14px !important;
+        font-size:18px !important;
         font-weight:600 !important;
+        width:100% !important;
     }
 
     </style>
     """, unsafe_allow_html=True)
 
-    # ---------- HEADER ----------
+    # ---------------- HEADER ----------------
     st.markdown(
         f"""
         <div class="header">
             <div class="header-title">ZODOPT MEETEASE</div>
-            <img src="data:image/png;base64,{logo_b64}" style="height:60px;">
+            <img src="data:image/png;base64,{logo_b64}" style="height:58px;">
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    # ---------- CARDS ----------
-    col1, col2 = st.columns(2, gap="large")
+    # ---------------- 45% + 45% CARDS ----------------
+    col1, col2 = st.columns([1, 1], gap="large")
 
-    # Visit Plan Card
+    # Visit Plan
     with col1:
         st.markdown("""
-        <div class="card">
-            <div class="icon-circle violet">🗓️</div>
+        <div class="clean-card">
+            <div class="icon-emoji">📅</div>
             <div class="title">Visit Plan</div>
         </div>
         """, unsafe_allow_html=True)
-
         st.button("Open Visit Plan", key="visit", on_click=lambda: navigate_to("visit"))
 
-    # Conference Booking Card
+    # Conference Booking
     with col2:
         st.markdown("""
-        <div class="card">
-            <div class="icon-circle green">📅</div>
+        <div class="clean-card">
+            <div class="icon-emoji">📘</div>
             <div class="title">Conference Booking</div>
         </div>
         """, unsafe_allow_html=True)
+        st.button("Open Conference Booking", key="conference", on_click=lambda: navigate_to("conference"))
 
-        st.button("Open Conference Booking", key="conf", on_click=lambda: navigate_to("conference"))
 
-
-# RUN
+# Run App
 load_page()
