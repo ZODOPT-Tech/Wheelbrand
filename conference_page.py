@@ -11,17 +11,18 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- CONFIGURATION ---
 
 # NOTE: ADJUST PATHS HERE if necessary
-# LOGO_PATH = "C:\\Users\\DELL\\Documents\\zodopt\\images\\zodopt.png" # Using placeholder
-LOGO_PATH = "placeholder_logo.png"
+# Assuming LOGO_PATH is a valid path on your system or the image is uploaded/accessible
+LOGO_PATH = "C:\\Users\\DELL\\Documents\\zodopt\\images\\zodopt.png"
 
 # UI Colors (Primary color is now the dark purple)
 PRIMARY_PURPLE = "#5b46b2"  
-HEADER_GRADIENT = "linear-gradient(90deg, #5b46b2 0%, #a855f7 100%)"  
-LOGIN_CARD_WIDTH = "450px"
+SECONDARY_GREY = "#4a4a4a"
+HEADER_GRADIENT = "linear-gradient(90deg, #5b46b2 0%, #a855f7 100%)" 
+LOGIN_CARD_WIDTH = "450px" 
 
 # Working Hours 
 WORKING_HOUR_START = 9      
-WORKING_MINUTE_START = 30
+WORKING_MINUTE_START = 30 
 WORKING_HOUR_END = 19       
 WORKING_MINUTE_END = 0
 
@@ -41,15 +42,14 @@ ATTENDEE_OPTIONS = ["Select"] + list(range(MIN_ATTENDEES, MAX_ATTENDEES + 1))
 def initialize_conference_state():
     """Initializes session state specific to the Conference Room Scheduler."""
     if "bookings" not in st.session_state or not isinstance(st.session_state.bookings, list):
-        st.session_state.bookings = []  
+        st.session_state.bookings = [] 
 
     if "users" not in st.session_state:
-        # Default test user for quick login
+        # Default user for testing
         st.session_state.users = {"testuser@zodopt.com": {"password": "password123", "dept": "IT"}}
     
-    # *** SET DEFAULT PAGE TO 'register' ***
     if "page" not in st.session_state:
-        st.session_state.page = "register"  
+        st.session_state.page = "register" 
         
     if "logged_in_user" not in st.session_state:
         st.session_state.logged_in_user = None
@@ -59,151 +59,126 @@ def initialize_conference_state():
 # --- UTILITY & UI FUNCTIONS ---
 
 def apply_visitplan_style():
-    """Applies CSS for purple buttons, card layout, and side-by-side footer links."""
+    """Applies CSS to reduce spacing, enhance professional look, and style input containers."""
     st.markdown(f"""
         <style>
-        /* 1. Global Background and Layout */
-        .stApp {{
-            background-color: #f0f2f6 !important;  
-            min-height: 100vh !important;  
+        /* 1. GLOBAL SPACING REDUCTION */
+        .stApp .main [data-testid="stVerticalBlock"] {{
+            gap: 0.2rem; 
+        }}
+        .stApp .main [data-testid="stForm"] {{
+            padding: 0;
+            margin: 0;
+        }}
+        .stApp [data-testid="stHorizontalBlock"] > div {{
+            gap: 0.8rem; 
+        }}
+        .stApp .main .block-container {{
+            padding-top: 15px; 
+            padding-bottom: 15px;
+            padding-left: 20px;
+            padding-right: 20px;
+        }}
+        
+        /* 2. CARD STYLING */
+        .login-card-container {{
+            max-width: {LOGIN_CARD_WIDTH};
+            margin: 0 auto; 
+            margin-top: 50px; 
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15); 
+            overflow: hidden; 
+            padding: 0;
+        }}
+        .login-header-bar {{
+            background: {HEADER_GRADIENT};
+            padding: 20px 25px; 
+        }}
+        .login-form-body {{
+            padding: 25px; 
+        }}
+        
+        /* 3. INPUT FIELD/CONTAINER STYLING (The White Box Effect) */
+        .stTextInput > div > div > input, 
+        .stSelectbox > div > button,
+        .stDateInput > div > div > input {{
+            background-color: white !important; /* Explicitly white background */
+            border: 1px solid #ddd !important; /* Light grey border */
+            border-radius: 6px;
+            padding: 10px 12px;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important; /* Subtle shadow */
         }}
 
-        /* 2. Primary Button Color (PURPLE) */
+        /* 4. TEXT SPACING */
+        .login-form-body p {{
+            margin-bottom: 5px !important; 
+            margin-top: 10px !important; 
+            font-size: 0.95rem; 
+            font-weight: 500;
+        }}
+        
+        /* 5. PRIMARY BUTTON STYLING */
         .stButton button, [data-testid="baseButton-primary"] {{
             background-color: {PRIMARY_PURPLE} !important;
             border-color: {PRIMARY_PURPLE} !important;
-            color: white !important;
-            border-radius: 4px;
             font-weight: 500;
-        }}
-        .stButton button:hover, [data-testid="baseButton-primary"]:hover {{
-            background-color: #4b3992 !important;  
-            border-color: #4b3992 !important;
+            height: 40px; 
         }}
         
-        /* 3. Input Field Styling */
-        .stTextInput > div > div > input,  
-        .stSelectbox > div > button,
-        .stDateInput > div > div > input {{
-            background-color: #f7f7f7 !important;  
-            border: 1px solid #ccc !important;
-            border-radius: 4px;
-            padding: 10px 12px;
-            box-shadow: none !important;
-        }}
-        
-        /* 4. Login Card Container Styling */
-        .login-card-container {{
-            max-width: {LOGIN_CARD_WIDTH};
-            margin: 0 auto;  
-            margin-top: 50px;  
-            background-color: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            overflow: hidden;  
-            padding: 0;
-        }}
-        
-        /* 5. Header Bar Styling */
-        .login-header-bar {{
-            background: {HEADER_GRADIENT};
-            padding: 20px 30px;
-            color: white;
-            border-radius: 8px 8px 0 0;
-        }}
-        .login-header-bar h2 {{
-            color: white !important;
-            text-shadow: none;
-            margin: 0;
-            font-size: 1.5rem;
-            display: flex;
-            align-items: center;
-        }}
-        .login-header-bar p {{
-            color: #d1d5db !important;
-            margin: 5px 0 0 0;
-            font-size: 0.9rem;
-        }}
-        .login-header-bar svg {{
-            margin-right: 15px;
-            font-size: 2.2rem;
-            fill: white;
-        }}
-        
-        /* 6. Form Body Padding */
-        .login-form-body {{
-            padding: 30px;
-        }}
-        
-        /* 7. Footer Styling (Side-by-side container) */
+        /* 6. FOOTER BUTTONS (Back to Dashboard, Sign In, Register) */
         .login-footer {{
-            display: flex;  
-            justify-content: space-between;  
+            display: flex; 
+            justify-content: space-between; 
             align-items: center;
-            padding: 15px 30px;  
+            padding: 12px 25px; 
             border-top: 1px solid #eee;
             background-color: #fafafa;
             border-radius: 0 0 8px 8px;
-            gap: 10px;  
         }}
-        .login-footer p {{
-            color: #4a4a4a;
-            margin: 0;
-            font-size: 0.9rem;
-            white-space: nowrap;  
+        .login-footer [data-testid="stVerticalBlock"] {{
+            gap: 0 !important;
         }}
-        .login-footer a {{
-            color: {PRIMARY_PURPLE};  
-            text-decoration: none;
-            font-weight: 500;
-        }}
-        
-        /* Style the 'Back to Dashboard' button using Streamlit button styling */
-        /* Targets the secondary button specifically in the footer */
+        /* Secondary style for navigation buttons in the footer */
         .login-footer [data-testid="stButton"] button {{
             background-color: #ffffff !important;
             border: 1px solid #ccc !important;
-            color: #4a4a4a !important;
+            color: {SECONDARY_GREY} !important;
             padding: 5px 10px;
-            height: 38px;
-            font-size: 0.9rem;
-        }}
-        .login-footer [data-testid="stButton"] button:hover {{
-            background-color: #f0f0f0 !important;
+            height: 36px; 
+            font-size: 0.85rem;
+            width: 100%; 
         }}
         
-        /* Ensure the right-aligned text is properly positioned */
-        .right-aligned-text {{
-            text-align: right;  
-            margin-top: 5px;
+        /* 7. Forgot Password Button (Targeted outside the form) */
+        .forgot-password-container .stButton button {{
+            background-color: transparent !important; /* No background */
+            border: none !important; /* No border */
+            color: {PRIMARY_PURPLE} !important; /* Purple text */
+            text-decoration: underline; 
+            font-size: 0.85rem;
+            height: 25px; 
+            padding: 0;
+            text-align: right;
+            justify-content: flex-end;
+            margin-top: 8px; /* Alignment fix */
+        }}
+        .forgot-password-container .stButton button:hover {{
+            color: #a855f7 !important; 
         }}
         
-        /* Specific styling to make the registration button look like a link */
-        #login_nav_to_register button {{
-            background-color: transparent !important;
-            border: none !important;
-            color: {PRIMARY_PURPLE} !important;
-            font-weight: 500 !important;
-            padding: 0 !important;
-            height: auto !important;
-        }}
-        #login_nav_to_register button:hover {{
-             background-color: transparent !important;
-             text-decoration: underline;
-        }}
-
-
         /* Ensure text is dark and readable everywhere else */
         h1, h2, h3, h4, h5, h6, p, label, .stMarkdown, .stText, div[data-testid="stCaption"] {{
-            color: #1f1f1f !important;  
-            text-shadow: none;  
+            color: #1f1f1f !important; 
+            text-shadow: none; 
         }}
+        
         </style>
     """, unsafe_allow_html=True)
 
 
 def time_slot_to_datetime(time_str, date_obj):
-    # ... (function body remains the same)
+    """Converts a time string (e.g., '09:30 AM') and a date object into a full datetime object."""
     if time_str == "Select":
         return None
     try:
@@ -213,7 +188,7 @@ def time_slot_to_datetime(time_str, date_obj):
         return None
 
 def generate_time_slots(current_date):
-    # ... (function body remains the same)
+    """Generates time slots in 15-minute intervals, filtering out past slots for the current date."""
     slots = ["Select"]
     start_time_marker = datetime(1, 1, 1, WORKING_HOUR_START, WORKING_MINUTE_START)
     end_time_marker = datetime(1, 1, 1, WORKING_HOUR_END, WORKING_MINUTE_END)
@@ -236,21 +211,21 @@ def generate_time_slots(current_date):
     return slots
 
 def prepare_events(bookings_list):
-    # ... (function body remains the same)
+    """Converts internal booking data to the format required by streamlit-calendar (ISO strings)."""
     events = []
     for i, booking in enumerate(bookings_list):
         events.append({
-            "id": str(i),  
+            "id": str(i), 
             "title": f"[{booking['dept']}] {booking['purpose']} ({booking.get('attendees', 'N/A')} ppl)",
-            "start": booking["start"].isoformat(),  
+            "start": booking["start"].isoformat(), 
             "end": booking["end"].isoformat(),    
-            "color": PRIMARY_PURPLE,  
-            "resourceId": "RoomA"  
+            "color": PRIMARY_PURPLE, 
+            "resourceId": "RoomA" 
         })
     return events
 
 def update_calendar_key():
-    # ... (function body remains the same)
+    """Generates a new, unique key for the calendar to force a full re-render after an update."""
     st.session_state.calendar_key = f"full_weekly_calendar_{uuid.uuid4()}"
 
 
@@ -275,20 +250,19 @@ def registration_page():
     st.markdown('<div class="login-form-body">', unsafe_allow_html=True)
     
     with st.form("registration_form"):
-        st.markdown('<p style="font-weight: 500; margin-bottom: 5px;">Email Address</p>', unsafe_allow_html=True)
-        new_email = st.text_input("", placeholder="you@zodopt.com", key="reg_email").strip().lower()
+        st.markdown('<p>Email Address</p>', unsafe_allow_html=True)
+        new_email = st.text_input("", placeholder="you@zodopt.com", key="reg_email", label_visibility="collapsed").strip().lower()
         
-        st.markdown('<p style="font-weight: 500; margin-bottom: 5px; margin-top: 15px;">Department</p>', unsafe_allow_html=True)
-        department = st.selectbox("", options=DEPARTMENT_OPTIONS, key="reg_department")
+        st.markdown('<p>Department</p>', unsafe_allow_html=True)
+        department = st.selectbox("", options=DEPARTMENT_OPTIONS, key="reg_department", label_visibility="collapsed")
         
-        st.markdown('<p style="font-weight: 500; margin-bottom: 5px; margin-top: 15px;">New Password</p>', unsafe_allow_html=True)
-        new_password = st.text_input("", type="password", placeholder="Enter your password", key="reg_password")
+        st.markdown('<p>New Password</p>', unsafe_allow_html=True)
+        new_password = st.text_input("", type="password", placeholder="Enter your password", key="reg_password", label_visibility="collapsed")
         
-        st.markdown('<p style="font-weight: 500; margin-bottom: 5px; margin-top: 15px;">Confirm Password</p>', unsafe_allow_html=True)
-        confirm_password = st.text_input("", type="password", placeholder="Confirm your password", key="reg_confirm_password")
+        st.markdown('<p>Confirm Password</p>', unsafe_allow_html=True)
+        confirm_password = st.text_input("", type="password", placeholder="Confirm your password", key="reg_confirm_password", label_visibility="collapsed")
         
-        st.write(" ")  
-        # Main registration button
+        st.write(" ") 
         register_button = st.form_submit_button("Register", type="primary", use_container_width=True)
 
     if register_button:
@@ -303,25 +277,24 @@ def registration_page():
         elif new_email in st.session_state.users:
             st.error(f"Email ID '{new_email}' is already taken.")
         else:
-            # Successful Registration
             st.session_state.users[new_email] = {
-                "password": new_password,  
+                "password": new_password, 
                 "dept": department
             }
             st.success(f"Registration successful for **{new_email}**! Redirecting to login...")
             st.session_state.page = "login"
-            st.rerun()  
+            st.rerun() 
             
     # Close Form Body Div
-    st.markdown("</div>", unsafe_allow_html=True)  
+    st.markdown("</div>", unsafe_allow_html=True) 
 
     # --- REFINED FOOTER SECTION ---
-    st.markdown('<div class="login-footer">', unsafe_allow_html=True)  
+    st.markdown('<div class="login-footer">', unsafe_allow_html=True) 
     
-    col_dash, col_login = st.columns([1, 1])
+    col_dash, col_login = st.columns([1.5, 1])
 
     with col_dash:
-        # Back to Dashboard button (Streamlit native)
+        # Back to Dashboard button 
         if st.button("⬅️ Back to Dashboard", key="reg_back_to_dash"):
             if 'current_page' in st.session_state:
                 st.session_state['current_page'] = 'main'
@@ -329,25 +302,18 @@ def registration_page():
             st.rerun()
 
     with col_login:
-        # Sign In button/link
-        st.markdown('<div class="right-aligned-text">', unsafe_allow_html=True)
-        # Use HTML/Markdown to display the descriptive text
-        st.markdown('<p>Already have an account? ', unsafe_allow_html=True) 
-        # Use a standard Streamlit button outside the form for reliable navigation, styled to look like a link
-        if st.button("Sign In", key="reg_nav_to_login"):
-            st.session_state.page = "login"
+        # Sign In button 
+        if st.button("Sign In", key="nav_to_login", help="Already have an account? Sign in."):
+            st.session_state.page = 'login'
             st.rerun()
-        st.markdown('</p>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-
-    # Close Footer and Card Container Divs
-    st.markdown("</div>", unsafe_allow_html=True)  
-    st.markdown("</div>", unsafe_allow_html=True)
     
+    # Close Footer and Card Container Divs
+    st.markdown("</div>", unsafe_allow_html=True) 
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 def login_page():
-    """Renders the login interface styled to resemble the Visitplan image, plus registration button."""
+    """Renders the login interface styled to resemble the Visitplan image."""
     
     st.markdown(f'<div class="login-card-container">', unsafe_allow_html=True)
 
@@ -366,28 +332,38 @@ def login_page():
     st.markdown('<div class="login-form-body">', unsafe_allow_html=True)
     
     with st.form("login_form"):
-        # ---------------------------------------------
-        # Fields to match the image structure
-        # ---------------------------------------------
-        st.markdown('<p style="font-weight: 500; margin-bottom: 5px;">Email Address</p>', unsafe_allow_html=True)
-        # To better match the image, we can optionally add a mailbox icon (but Streamlit doesn't support custom icons in text input directly)
-        email = st.text_input("", placeholder="you@company.com", key="login_email").strip().lower()
+        st.markdown('<p>Email Address</p>', unsafe_allow_html=True)
+        email = st.text_input("", placeholder="you@company.com", key="login_email", label_visibility="collapsed").strip().lower()
 
-        st.markdown('<p style="font-weight: 500; margin-bottom: 5px; margin-top: 15px;">Password</p>', unsafe_allow_html=True)
-        password = st.text_input("", type="password", placeholder="Enter your password", key="login_password")
+        st.markdown('<p>Password</p>', unsafe_allow_html=True)
+        password = st.text_input("", type="password", placeholder="Enter your password", key="login_password", label_visibility="collapsed")
         
-        # Checkbox and Forgot Password Link on the same row
-        col_check, col_forgot = st.columns([1, 1])
+        col_check, col_forgot_placeholder = st.columns([1, 1])
         with col_check:
-            st.checkbox("Remember me", key="remember_me", label_visibility="visible") # Added label_visibility to ensure checkbox shows
-        with col_forgot:
-            # Using Markdown to replicate the look of a hyperlink
-            st.markdown('<div style="text-align: right; margin-top: 8px;"><a href="#" style="color: #a855f7; text-decoration: none; font-weight: 500;">Forgot password?</a></div>', unsafe_allow_html=True)
+            st.checkbox("Remember me", key="remember_me")
         
-        st.write(" ")  
-        # Primary Sign In button
+        # Placeholder for alignment in the form (where the button used to be)
+        with col_forgot_placeholder:
+            st.markdown('<div style="height: 38px;"></div>', unsafe_allow_html=True) 
+
+        st.write(" ") 
         submit_button = st.form_submit_button("Sign In →", type="primary", use_container_width=True)
 
+    # --- FORGOT PASSWORD BUTTON IS MOVED HERE (OUTSIDE THE FORM) ---
+    # We place it outside the form to avoid the StreamlitAPIException.
+    # We use a container and columns to apply the required alignment and styling.
+    col_forgot_row = st.columns(1)[0]
+    with col_forgot_row:
+        # Use a div to apply the custom CSS targeting for the link-like button
+        st.markdown('<div class="forgot-password-container">', unsafe_allow_html=True)
+        # Add a column to push the button right
+        col_dummy, col_btn = st.columns([1, 1])
+        with col_btn:
+            if st.button("Forgot password?", key="forgot_password_btn_outside", help="Click here to reset your password."):
+                st.info("Forgot Password functionality is not yet implemented.")
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- Login Success/Error Logic ---
     if submit_button:
         if email in st.session_state.users and st.session_state.users[email]["password"] == password:
             st.session_state.logged_in_user = email
@@ -398,15 +374,15 @@ def login_page():
             st.error("Invalid Email Address or password.")
 
     # Close Form Body Div
-    st.markdown("</div>", unsafe_allow_html=True)  
+    st.markdown("</div>", unsafe_allow_html=True) 
 
     # --- REFINED FOOTER SECTION ---
     st.markdown('<div class="login-footer">', unsafe_allow_html=True)
     
-    col_dash, col_register = st.columns([1, 1])
+    col_dash, col_register = st.columns([1.5, 1])
 
     with col_dash:
-        # Back to Dashboard button (Streamlit native)
+        # Back to Dashboard button
         if st.button("⬅️ Back to Dashboard", key="login_back_to_dash"):
             if 'current_page' in st.session_state:
                 st.session_state['current_page'] = 'main'
@@ -414,18 +390,10 @@ def login_page():
             st.rerun()
 
     with col_register:
-        # New Registration button/link
-        st.markdown('<div class="right-aligned-text">', unsafe_allow_html=True)
-        st.markdown('<p>Don\'t have an account? ', unsafe_allow_html=True) 
-        
-        # Use a standard Streamlit button, styled using CSS ID #login_nav_to_register 
-        if st.button("Register", key="login_nav_to_register"):
-            st.session_state.page = "register"
+        # Register button
+        if st.button("Register", key="nav_to_register", help="Don't have an account? Register here."):
+            st.session_state.page = 'register'
             st.rerun()
-            
-        st.markdown('</p>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
 
     # Close Footer and Card Container Divs
     st.markdown("</div>", unsafe_allow_html=True)
@@ -433,57 +401,55 @@ def login_page():
 
 
 def calendar_page():
-    # ... (function body remains the same)
+    """Renders the main booking calendar application."""
     
     current_user = st.session_state.logged_in_user
     
-    # --- HEADER & LOGOUT ---
+    # --- HEADER & LOGOUT (Tighter Spacing) ---
     col_title, col_user, col_logout, col_logo = st.columns([5, 1.5, 1, 1])
     
     with col_title:
-        st.markdown('<h2 style="color: #1f1f1f;">🗓️ ZODOPT MeetEase - Daily Conference Room Scheduler</h2>', unsafe_allow_html=True)
+        st.markdown('<h2 style="color: #1f1f1f; margin-bottom: 0;">🗓️ ZODOPT MeetEase - Daily Conference Room Scheduler</h2>', unsafe_allow_html=True)
     
     with col_user:
-        st.markdown(f'<div style="background-color: #ffffff; padding: 5px; border-radius: 8px; color: #1f1f1f; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">Logged in as: **{current_user}**</div>', unsafe_allow_html=True)
+        st.markdown(f'<div style="background-color: #ffffff; padding: 5px; border-radius: 8px; color: #1f1f1f; box-shadow: 0 1px 3px rgba(0,0,0,0.1); font-size: 0.85rem; margin-top: 10px;">Logged in as: **{current_user}**</div>', unsafe_allow_html=True)
         
     with col_logout:
-        st.write(" ")  
-        if st.button("Logout", key="calendar_logout"):
+        if st.button("Logout", key="calendar_logout", help="Log out of the system"):
             st.session_state.logged_in_user = None
             st.session_state.page = "login"
             st.rerun()
 
     with col_logo:
         try:
-            # Assuming LOGO_PATH is set up correctly in your environment
-            st.image(LOGO_PATH, width=80)  
+            st.image(LOGO_PATH, width=80) 
         except FileNotFoundError:
             st.info("Logo placeholder.")
 
-    st.write("---")
+    st.markdown('<hr style="margin-top: 5px; margin-bottom: 20px;">', unsafe_allow_html=True)
     
     # --- CALENDAR & BOOKING FORM SECTION ---
-    col_calendar, col_form = st.columns([2, 1])
+    col_calendar, col_form = st.columns([3, 1]) 
 
     with col_calendar:
         # ---------------- CALENDAR DISPLAY ----------------
-        st.markdown('<h3>Schedule View</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 style="margin-bottom: 10px;">Schedule View</h3>', unsafe_allow_html=True)
 
-        slot_min_time_str = f"{WORKING_HOUR_START:02}:{WORKING_MINUTE_START:02}:00"  
-        slot_max_time_str = f"{WORKING_HOUR_END:02}:{WORKING_MINUTE_END:02}:00"  
+        slot_min_time_str = f"{WORKING_HOUR_START:02}:{WORKING_MINUTE_START:02}:00" 
+        slot_max_time_str = f"{WORKING_HOUR_END:02}:{WORKING_MINUTE_END:02}:00" 
 
         calendar_options = {
             "slotMinTime": slot_min_time_str,
             "slotMaxTime": slot_max_time_str,
-            "initialView": "timeGridDay",  
+            "initialView": "timeGridDay", 
             "headerToolbar": {
                 "left": "today prev,next",
                 "center": "title",
-                "right": "timeGridDay,timeGridWeek"  
+                "right": "timeGridDay,timeGridWeek" 
             },
             "weekends": True,
             "height": 700,
-            "slotDuration": "00:15:00",  
+            "slotDuration": "00:15:00", 
             "allDaySlot": False,
         }
 
@@ -492,47 +458,47 @@ def calendar_page():
         calendar_component = calendar(
             events=events_data,
             options=calendar_options,
-            key=st.session_state.calendar_key  
+            key=st.session_state.calendar_key 
         )
 
     with col_form:
         # ---------------- BOOKING FORM (CREATE NEW) ----------------
-        st.markdown('<h3>👤👤👤 Book a Slot</h3>', unsafe_allow_html=True)
+        st.markdown('<h3 style="margin-bottom: 10px;">👤👤👤 Book a Slot</h3>', unsafe_allow_html=True)
 
         min_time_display = START_TIME_DEFAULT.strftime('%I:%M %p')
         max_time_display = END_TIME_DEFAULT.strftime('%I:%M %p')
 
         # ATTENDEE POLICY ALERT
-        st.markdown(f'<p style="color: #cc0000; font-weight: bold; font-size: 14px;">Booking requires {MIN_ATTENDEES} to {MAX_ATTENDEES} attendees.</p>', unsafe_allow_html=True)
+        st.markdown(f'<p style="color: #cc0000; font-weight: bold; font-size: 14px; margin-top: 0;">Booking requires {MIN_ATTENDEES} to {MAX_ATTENDEES} attendees.</p>', unsafe_allow_html=True)
 
         with st.form("weekly_booking_form"):
-            st.markdown('<p style="font-weight: 500; margin-bottom: 5px;">Date</p>', unsafe_allow_html=True)
-            booking_date = st.date_input("", datetime.today().date(), min_value=datetime.today().date(), key="booking_date_input")
+            st.markdown('<p>Date</p>', unsafe_allow_html=True)
+            booking_date = st.date_input("", datetime.today().date(), min_value=datetime.today().date(), key="booking_date_input", label_visibility="collapsed")
             
             available_time_slots = generate_time_slots(booking_date)
             
-            st.markdown('<p style="font-weight: 500; margin-bottom: 5px; margin-top: 15px;">Start Time (HH:MM AM/PM)</p>', unsafe_allow_html=True)
-            start_time_str = st.selectbox("", options=available_time_slots, index=0, key="start_time_select")
+            st.markdown('<p>Start Time (HH:MM AM/PM)</p>', unsafe_allow_html=True)
+            start_time_str = st.selectbox("", options=available_time_slots, index=0, key="start_time_select", label_visibility="collapsed")
             
-            st.markdown('<p style="font-weight: 500; margin-bottom: 5px; margin-top: 15px;">End Time (HH:MM AM/PM)</p>', unsafe_allow_html=True)
-            end_time_str = st.selectbox("", options=available_time_slots, index=0, key="end_time_select")
+            st.markdown('<p>End Time (HH:MM AM/PM)</p>', unsafe_allow_html=True)
+            end_time_str = st.selectbox("", options=available_time_slots, index=0, key="end_time_select", label_visibility="collapsed")
             
-            st.markdown('<p style="font-weight: 500; margin-bottom: 5px; margin-top: 15px;">Number of People</p>', unsafe_allow_html=True)
-            num_attendees = st.selectbox("", options=ATTENDEE_OPTIONS, index=0, key="attendees_select")
+            st.markdown('<p>Number of People</p>', unsafe_allow_html=True)
+            num_attendees = st.selectbox("", options=ATTENDEE_OPTIONS, index=0, key="attendees_select", label_visibility="collapsed")
             
             user_dept = st.session_state.users.get(current_user, {}).get('dept', 'Select')
             default_dept_index = DEPARTMENT_OPTIONS.index(user_dept) if user_dept in DEPARTMENT_OPTIONS else 0
             
-            st.markdown('<p style="font-weight: 500; margin-bottom: 5px; margin-top: 15px;">Department</p>', unsafe_allow_html=True)
-            department = st.selectbox("", options=DEPARTMENT_OPTIONS, index=default_dept_index, disabled=True, key="dept_select")
+            st.markdown('<p>Department</p>', unsafe_allow_html=True)
+            department = st.selectbox("", options=DEPARTMENT_OPTIONS, index=default_dept_index, disabled=True, key="dept_select", label_visibility="collapsed")
             
-            st.markdown('<p style="font-weight: 500; margin-bottom: 5px; margin-top: 15px;">Purpose</p>', unsafe_allow_html=True)
-            purpose = st.selectbox("", options=PURPOSE_OPTIONS, index=0, key="purpose_select")
+            st.markdown('<p>Purpose</p>', unsafe_allow_html=True)
+            purpose = st.selectbox("", options=PURPOSE_OPTIONS, index=0, key="purpose_select", label_visibility="collapsed")
 
             submit = st.form_submit_button("Book Slot", type="primary", use_container_width=True)
 
             if submit:
-                # --- Validation ---
+                # --- Validation logic remains the same ---
                 if start_time_str == "Select" or end_time_str == "Select" or purpose == "Select":
                     st.warning("⚠️ Please select valid times and purpose.")
                     st.stop()
@@ -582,8 +548,8 @@ def calendar_page():
                 else:
                     # --- Successful Booking ---
                     new_booking = {
-                        "start": new_start_dt,  
-                        "end": new_end_dt,  
+                        "start": new_start_dt, 
+                        "end": new_end_dt, 
                         "dept": department,
                         "purpose": purpose,
                         "user": current_user,
@@ -598,13 +564,13 @@ def calendar_page():
                     st.success("✅ Booking confirmed! The schedule view has been updated.")
                     st.rerun()
 
-        st.write("---")
+        st.markdown('<hr style="margin-top: 15px; margin-bottom: 15px;">', unsafe_allow_html=True)
         
         # --- BOOKING MANAGEMENT SECTION ---
-        st.markdown('<h3> Manage Your Bookings</h3>', unsafe_allow_html=True)
-        st.markdown('<p style="font-weight: 500;">Extend, check out early, or cancel a future booking.</p>', unsafe_allow_html=True)
+        st.markdown('<h3 style="margin-bottom: 10px;"> Manage Your Bookings</h3>', unsafe_allow_html=True)
+        st.markdown('<p style="font-weight: 500; margin-top: 0;">Extend, check out early, or cancel a future booking.</p>', unsafe_allow_html=True)
 
-        now = datetime.now()  
+        now = datetime.now() 
         
         user_bookings = [
             (i, b) for i, b in enumerate(st.session_state.bookings)
@@ -623,8 +589,8 @@ def calendar_page():
 
             with st.form("booking_management_form"):
                 
-                st.markdown('<p style="font-weight: 500; margin-bottom: 5px;">Select Booking to Manage</p>', unsafe_allow_html=True)
-                selected_option = st.selectbox("", options=booking_options, index=0, key="manage_select")
+                st.markdown('<p>Select Booking to Manage</p>', unsafe_allow_html=True)
+                selected_option = st.selectbox("", options=booking_options, index=0, key="manage_select", label_visibility="collapsed")
                 
                 selected_index_in_options = booking_options.index(selected_option)
                 booking_index = original_indices[selected_index_in_options]
@@ -640,22 +606,23 @@ def calendar_page():
                 
                 default_time_index = management_slots.index(current_end_time_str)
                 
-                st.markdown('<p style="font-weight: 500; margin-bottom: 5px; margin-top: 15px;">New End Time (for early checkout or extension)</p>', unsafe_allow_html=True)
+                st.markdown('<p>New End Time (for early checkout or extension)</p>', unsafe_allow_html=True)
                 new_end_time_str = st.selectbox(
                     "",
                     options=management_slots,
-                    index=default_time_index,  
-                    key="new_end_time_select_manage"
+                    index=default_time_index, 
+                    key="new_end_time_select_manage",
+                    label_visibility="collapsed"
                 )
 
                 col_update, col_cancel = st.columns([1, 1])
                 with col_update:
                     update_button = st.form_submit_button("Update End Time", use_container_width=True)
                 with col_cancel:
-                    cancel_button = st.form_submit_button("Cancel Booking", use_container_width=True)  
+                    cancel_button = st.form_submit_button("Cancel Booking", use_container_width=True) 
                     
                 if update_button:
-                    
+                    # --- Update logic remains the same ---
                     if new_end_time_str == "Select":
                         st.error("❌ Please select a valid new end time.")
                         st.stop()
@@ -682,7 +649,7 @@ def calendar_page():
 
                     overlap_exists = False
                     for i, b in enumerate(st.session_state.bookings):
-                        if i != booking_index:  
+                        if i != booking_index: 
                             if current_booking["start"] < b["end"] and b["start"] < new_end_dt_combined:
                                 overlap_exists = True
                                 break
@@ -723,6 +690,3 @@ def conference_page():
         login_page()
     else: # Default page is "register"
         registration_page()
-        
-# Execute the main function
-# conference_page()
