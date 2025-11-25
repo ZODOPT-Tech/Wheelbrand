@@ -1,3 +1,4 @@
+# visitor.py
 import streamlit as st
 from PIL import Image
 import mysql.connector
@@ -11,20 +12,26 @@ from datetime import datetime
 import bcrypt
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="ZODOPT Admin", layout="wide")
+st.set_page_config(page_title="ZODOPT Admin", layout="centered")
 
-LOGO_PATH = "zodopt.png"
+# Use the repo/container-local path for the logo (from conversation history)
+LOGO_PATH = "/mnt/data/zodopt.png"
+
 AWS_SECRET_NAME = "wheelbrand"
-AWS_REGION = "ap-south-1"
+AWS_REGION = "ap-south-1"  # Mumbai region
 DB_TABLE = "admin"
 
-# Initialize session state for login status
+# ---------------- SESSION DEFAULTS ----------------
 if "admin_logged" not in st.session_state:
     st.session_state["admin_logged"] = False
+if "auth_mode" not in st.session_state:
+    st.session_state["auth_mode"] = "login"  # login | register | forgot
+if "remember_me" not in st.session_state:
+    st.session_state["remember_me"] = False
 
 # ---------------- HELPERS ----------------
 def is_valid_email(email: str) -> bool:
-    return bool(re.match(r"[^@]+@[^@]+\.[^@]+", email))
+    return bool(re.match(r"[^@]+@[^@]+\.[^@]+", (email or "").strip()))
 
 def make_bcrypt_hash(pwd: str) -> str:
     return bcrypt.hashpw(pwd.encode(), bcrypt.gensalt()).decode()
@@ -32,34 +39,59 @@ def make_bcrypt_hash(pwd: str) -> str:
 def check_bcrypt(pwd: str, hashed: str) -> bool:
     try:
         return bcrypt.checkpw(pwd.encode(), hashed.encode())
-    except:
+    except Exception:
         return False
 
-# ---------------- AWS SECRET MANAGER & DB CONNECTION (No changes here, it's correct) ----------------
-# The get_db_credentials and get_connection functions remain the same as they are correct.
+# ---------------- AWS SECRET MANAGER ----------------
 @st.cache_resource
 def get_db_credentials():
-    session = boto3.session.Session()
-    client = session.client("secretsmanager", region_name=AWS_REGION)
+    """Fetch DB credentials from AWS Secrets Manager.
+    Supports either key=value lines or JSON in SecretString.
+    Expected keys: DB_HOST, DB_NAME, DB_USER, DB_PASSWORD (optional DB_PORT)
+    """
     try:
+        session = boto3.session.Session()
+        client = session.client(service_name="secretsmanager", region_name=AWS_REGION)
         resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
-        secret_string = resp.get("SecretString")
-        creds = {}
-        if "=" in secret_string:
-            for line in re.split(r"[\r\n]+", secret_string):
-                if "=" in line:
-                    k, v = line.split("=", 1)
-                    creds[k.strip()] = v.strip()
-        else:
-            creds.update(json.loads(secret_string))
+        secret_string = resp.get("SecretString", "")
+        if not secret_string:
+            st.error("SecretString empty for AWS secret.")
+            st.stop()
 
-        for k in ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]:
+        creds = {}
+        # Try parse key=value lines
+        for line in re.split(r"[\r\n]+", secret_string):
+            if "=" in line:
+                k, v = line.split("=", 1)
+                creds[k.strip()] = v.strip()
+        # Fallback to JSON
+        if not creds:
+            try:
+                creds = json.loads(secret_string)
+            except Exception:
+                pass
+
+        required = ("DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD")
+        for k in required:
             if k not in creds:
-                st.error(f"Missing {k} in AWS secret.")
+                st.error(f"Missing {k} in AWS secret '{AWS_SECRET_NAME}'.")
                 st.stop()
+
+        # optional port
+        if "DB_PORT" in creds:
+            try:
+                creds["DB_PORT"] = int(creds["DB_PORT"])
+            except:
+                creds["DB_PORT"] = 3306
+        else:
+            creds["DB_PORT"] = 3306
+
         return creds
     except ClientError as e:
-        st.error(f"AWS Error: {e}")
+        st.error(f"AWS Secrets Manager error: {e}")
+        st.stop()
+    except Exception as e:
+        st.error(f"Unexpected error fetching DB creds: {e}")
         st.stop()
 
 def get_connection():
@@ -69,136 +101,300 @@ def get_connection():
         user=creds["DB_USER"],
         password=creds["DB_PASSWORD"],
         database=creds["DB_NAME"],
-        port=int(creds.get("DB_PORT", 3306))
+        port=creds.get("DB_PORT", 3306),
+        connection_timeout=5
     )
 
-# ---------------- DB OPS (No changes here, it's correct) ----------------
-# email_exists, create_admin, verify_admin, update_password functions remain the same.
+# ---------------- DB OPERATIONS ----------------
+def email_exists(email: str) -> bool:
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(f"SELECT 1 FROM {DB_TABLE} WHERE email = %s LIMIT 1", (email,))
+        exists = cur.fetchone() is not None
+        cur.close()
+        conn.close()
+        return exists
+    except Exception as e:
+        st.error(f"DB error (email_exists): {e}")
+        return False
 
-# ---------------- LOGO (No changes here, it's correct) ----------------
-def load_logo(path):
+def create_admin(full_name: str, email: str, password: str) -> str:
+    try:
+        if email_exists(email):
+            return "Email already registered."
+        hashed = make_bcrypt_hash(password)
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            f"INSERT INTO {DB_TABLE} (full_name, email, password_hash, created_at) VALUES (%s, %s, %s, %s)",
+            (full_name, email, hashed, datetime.utcnow())
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+        return "SUCCESS"
+    except Exception as e:
+        return f"DB error creating admin: {e}"
+
+def verify_admin(email: str, password: str) -> str:
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(f"SELECT password_hash FROM {DB_TABLE} WHERE email = %s", (email,))
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if not row:
+            return "Email not found."
+        stored_hash = row[0]
+        if check_bcrypt(password, stored_hash):
+            return "SUCCESS"
+        return "Incorrect password."
+    except Exception as e:
+        return f"DB error verifying admin: {e}"
+
+def update_password(email: str, new_password: str) -> str:
+    try:
+        if not email_exists(email):
+            return "Email not found."
+        hashed = make_bcrypt_hash(new_password)
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(f"UPDATE {DB_TABLE} SET password_hash = %s WHERE email = %s", (hashed, email))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return "SUCCESS"
+    except Exception as e:
+        return f"DB error updating password: {e}"
+
+# ---------------- LOGO / STYLING ----------------
+def load_logo_base64(path: str) -> str:
     try:
         img = Image.open(path)
         buf = BytesIO()
         img.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode()
-    except:
+        return base64.b64encode(buf.getvalue()).decode("utf-8")
+    except Exception:
         return ""
-logo_b64 = load_logo(LOGO_PATH)
 
-# ---------------- STYLES (No changes here, it's correct) ----------------
-st.markdown("""
-<style>
-.card {
-    background: white;
-    padding: 30px;
-    border-radius: 16px;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
-}
-</style>
+logo_b64 = load_logo_base64(LOGO_PATH)
+
+st.markdown(
+    """
+    <style>
+    /* container */
+    .auth-card {
+        background: #fff;
+        padding: 28px 30px;
+        border-radius: 14px;
+        box-shadow: 0 8px 30px rgba(16,24,40,0.06);
+        width: 720px;
+        margin: 20px auto;
+    }
+    /* input labels */
+    .field-label { font-size: 16px; font-weight: 600; margin-bottom: 8px; color:#263238; }
+    /* remember row */
+    .row-between { display:flex; justify-content:space-between; align-items:center; margin-top: 6px; }
+    /* forgot text */
+    .forgot { color:#1160ff; text-decoration: underline; cursor: pointer; }
+    /* sign in button */
+    .sign-btn {
+        width:100%;
+        padding:14px 18px;
+        border-radius: 12px;
+        border:none;
+        font-size:18px;
+        font-weight:600;
+        color:white;
+        background: linear-gradient(90deg,#1e62ff,#b312ff);
+        margin-top:18px;
+    }
+    .small-btn {
+        margin-top:12px;
+        width:48%;
+        padding:10px 12px;
+        border-radius:10px;
+        font-weight:600;
+        border:none;
+        cursor:pointer;
+    }
+    .reg-btn { background:#ffffff; border:1px solid #e6e9ef; color:#333; }
+    .fp-btn { background:transparent; color:#1160ff; text-decoration:underline; border:none; }
+    /* header */
+    .header {
+        width:100%;
+        padding: 20px 26px;
+        border-radius:12px;
+        background: linear-gradient(90deg,#1e62ff,#8a2eff);
+        color:white;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        margin-bottom: 18px;
+    }
+    .header-title { font-size:22px; font-weight:700; }
+    </style>
+    """, unsafe_allow_html=True)
+
+# header block (similar to main.py)
+st.markdown(f"""
+    <div class="header">
+        <div class="header-title">ZODOPT MEETEASE</div>
+        <div>{f'<img src="data:image/png;base64,{logo_b64}" style="height:48px;">' if logo_b64 else ''}</div>
+    </div>
 """, unsafe_allow_html=True)
 
-# ---------------- AUTHENTICATED VIEW ----------------
-def show_admin_dashboard():
-    """Content displayed after successful login."""
-    st.sidebar.title(f"Welcome, Admin!")
-    st.sidebar.button("Logout", on_click=lambda: st.session_state.update({"admin_logged": False}))
-    st.title("Admin Dashboard 📊")
-    st.success("You are successfully logged in.")
-    # Add your main admin content here (e.g., reports, user management forms)
-    st.write("This is where your secure admin content goes.")
+# ---------------- AUTH CARD UI ----------------
+def auth_card_ui():
+    st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+    st.markdown("<h3 style='margin-bottom:8px;'>Sign In</h3>", unsafe_allow_html=True)
+    st.write("Please fill in your details")
 
-# ---------------- AUTHENTICATION VIEW ----------------
-def show_authentication_forms():
-    """Login, Registration, and Forgot Password forms."""
-    
-    st.image(f"data:image/png;base64,{logo_b64}", width=140)
-    st.title("ZODOPT Admin Portal")
+    # Email
+    st.markdown("<div class='field-label'>Email Address</div>", unsafe_allow_html=True)
+    email = st.text_input("", placeholder="you@company.com", key="ui_email")
 
-    # Use horizontal layout for menu
-    col1, col2, col3 = st.columns(3)
+    # Password
+    st.markdown("<div style='margin-top:12px' class='field-label'>Password</div>", unsafe_allow_html=True)
+    password = st.text_input("", type="password", placeholder="Enter your password", key="ui_password")
+
+    # Remember + forgot row
+    col1, col2 = st.columns([1,1])
     with col1:
-        login_btn = st.button("Login", use_container_width=True)
+        remember = st.checkbox("Remember me", key="ui_remember")
     with col2:
-        reg_btn = st.button("New Registration", use_container_width=True)
-    with col3:
-        forgot_btn = st.button("Forgot Password", use_container_width=True)
+        # forgot as a clickable text — we'll not actually use a link but set auth_mode
+        if st.button("Forgot password?", key="ui_forgot_link"):
+            st.session_state["auth_mode"] = "forgot"
+            st.experimental_rerun()
 
-    # Determine which form to show based on button clicks or default
-    if login_btn or ("auth_mode" not in st.session_state and not reg_btn and not forgot_btn):
-        st.session_state["auth_mode"] = "Login"
-    elif reg_btn:
-        st.session_state["auth_mode"] = "New Registration"
-    elif forgot_btn:
-        st.session_state["auth_mode"] = "Forgot Password"
-
-    menu = st.session_state["auth_mode"]
-
-    # --- LOGIN ---
-    if menu == "Login":
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("Admin Login")
-
-        email = st.text_input("Email", key="login_email")
-        pwd = st.text_input("Password", type="password", key="login_pwd")
-
-        if st.button("Login"):
-            res = verify_admin(email.lower(), pwd)
+    # Sign in button
+    if st.button("Sign In  →", key="ui_signin", help="Sign in as admin"):
+        # validations
+        if not is_valid_email(email):
+            st.error("Enter a valid email address.")
+        elif not password:
+            st.error("Enter password.")
+        else:
+            res = verify_admin(email.strip().lower(), password)
             if res == "SUCCESS":
-                st.session_state["admin_logged"] = True # Set session state to True on success
-                st.session_state["admin_email"] = email.lower() # Store email if needed
-                st.success("Login successful! Redirecting to dashboard...")
-                st.rerun() # Rerun the script to show the dashboard
+                st.session_state["admin_logged"] = True
+                st.session_state["admin_email"] = email.strip().lower()
+                st.success("Login successful!")
+                st.experimental_rerun()
             else:
                 st.error(res)
-        st.markdown("</div>", unsafe_allow_html=True)
 
-    # --- SIGNUP ---
-    elif menu == "New Registration":
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("Create Admin Account")
+    # Buttons below sign in: New Registration and Forgot Password (secondary)
+    st.write("")  # spacing
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("New Registration", key="ui_newreg"):
+            st.session_state["auth_mode"] = "register"
+            st.experimental_rerun()
+    with c2:
+        if st.button("Forgot Password", key="ui_fp"):
+            st.session_state["auth_mode"] = "forgot"
+            st.experimental_rerun()
 
-        full = st.text_input("Full Name")
-        email = st.text_input("Email")
-        pwd = st.text_input("Password", type="password")
-        confirm = st.text_input("Confirm Password", type="password")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        if st.button("Register Admin"):
-            if not full:
-                st.error("Full name required.")
-            elif not is_valid_email(email):
-                st.error("Invalid email.")
-            elif pwd != confirm:
-                st.error("Passwords do not match.")
+# ---------------- REGISTRATION UI ----------------
+def registration_ui():
+    st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+    st.markdown("<h3 style='margin-bottom:8px;'>Create Admin Account</h3>", unsafe_allow_html=True)
+
+    full = st.text_input("Full name", key="reg_full")
+    email = st.text_input("Email address", key="reg_email")
+    password = st.text_input("Password", type="password", key="reg_pwd")
+    confirm = st.text_input("Confirm password", type="password", key="reg_confirm")
+
+    if st.button("Create Admin Account", key="reg_create"):
+        if not full.strip():
+            st.error("Full name is required.")
+        elif not is_valid_email(email):
+            st.error("Enter a valid email address.")
+        elif len(password) < 6:
+            st.error("Password must be at least 6 characters.")
+        elif password != confirm:
+            st.error("Passwords do not match.")
+        else:
+            res = create_admin(full.strip(), email.strip().lower(), password)
+            if res == "SUCCESS":
+                st.success("Admin registered successfully. Please login.")
+                st.session_state["auth_mode"] = "login"
+                # clear registration fields (optional)
+                st.experimental_rerun()
             else:
-                res = create_admin(full, email.lower(), pwd)
-                st.success("Admin created! You can now log in.") if res == "SUCCESS" else st.error(res)
+                st.error(res)
 
-        st.markdown("</div>", unsafe_allow_html=True)
+    # Back to login
+    if st.button("Back to Sign In", key="reg_back"):
+        st.session_state["auth_mode"] = "login"
+        st.experimental_rerun()
 
-    # --- FORGOT PASSWORD ---
-    elif menu == "Forgot Password":
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.subheader("Reset Password")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        email = st.text_input("Registered Email")
-        new_pwd = st.text_input("New Password", type="password")
-        confirm = st.text_input("Confirm New Password", type="password")
+# ---------------- FORGOT / RESET UI ----------------
+def forgot_ui():
+    st.markdown('<div class="auth-card">', unsafe_allow_html=True)
+    st.markdown("<h3 style='margin-bottom:8px;'>Reset Password</h3>", unsafe_allow_html=True)
 
-        if st.button("Update Password"):
-            if not email_exists(email.lower()):
-                st.error("Email not registered.")
-            elif new_pwd != confirm:
-                st.error("Passwords do not match.")
+    email = st.text_input("Registered email", key="fp_email")
+    new_pwd = st.text_input("New password", type="password", key="fp_new")
+    confirm = st.text_input("Confirm new password", type="password", key="fp_confirm")
+
+    if st.button("Update password", key="fp_update"):
+        if not is_valid_email(email):
+            st.error("Enter a valid email address.")
+        elif new_pwd != confirm:
+            st.error("Passwords do not match.")
+        elif len(new_pwd) < 6:
+            st.error("Password must be at least 6 characters.")
+        else:
+            res = update_password(email.strip().lower(), new_pwd)
+            if res == "SUCCESS":
+                st.success("Password updated. Please login with your new password.")
+                st.session_state["auth_mode"] = "login"
+                st.experimental_rerun()
             else:
-                res = update_password(email.lower(), new_pwd)
-                st.success("Password updated! You can now log in.") if res == "SUCCESS" else st.error(res)
-        
-        st.markdown("</div>", unsafe_allow_html=True)
+                st.error(res)
 
+    if st.button("Back to Sign In", key="fp_back"):
+        st.session_state["auth_mode"] = "login"
+        st.experimental_rerun()
 
-# ---------------- MAIN APPLICATION LOGIC ----------------
-if st.session_state["admin_logged"]:
-    show_admin_dashboard()
-else:
-    show_authentication_forms()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------------- AUTHENTICATED DASHBOARD ----------------
+def show_admin_dashboard():
+    st.sidebar.title("Admin")
+    if st.sidebar.button("Logout"):
+        st.session_state["admin_logged"] = False
+        st.session_state["auth_mode"] = "login"
+        st.experimental_rerun()
+
+    st.title("Admin Dashboard")
+    st.success(f"Logged in as: {st.session_state.get('admin_email', 'admin')}")
+    st.write("This is the admin area — add visitor registration, lists, reports etc. here.")
+
+# ---------------- MAIN RENDER ----------------
+def main():
+    # If already logged in -> dashboard
+    if st.session_state.get("admin_logged"):
+        show_admin_dashboard()
+        return
+
+    # Not logged in -> show form depending on auth_mode
+    mode = st.session_state.get("auth_mode", "login")
+    if mode == "login":
+        auth_card_ui()
+    elif mode == "register":
+        registration_ui()
+    elif mode == "forgot":
+        forgot_ui()
+
+if __name__ == "__main__":
+    main()
