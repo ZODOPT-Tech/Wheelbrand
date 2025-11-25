@@ -12,7 +12,7 @@ import mimetypes
 
 # NOTE: Ensure the path below is correct for your local environment
 # Assuming the logo path is defined correctly based on the user's environment
-LOGO_PATH = "C:\\Users\\DELL\\Documents\\zodopt\\images\\zodopt.png" 
+LOGO_PATH = "zodopt.png" 
 
 # Define a standard background color for a clean look (light gray or white)
 BACKGROUND_COLOR = "#f0f2f6" # Light gray for the main app background
