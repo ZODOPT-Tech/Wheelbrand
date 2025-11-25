@@ -27,12 +27,13 @@ SECRET_KEYS = {
     'password_key': 'DB_PASSWORD'
 }
 
-# --- SESSION STATE INITIALIZATION (Guaranteed to run on script start) ---
+# --- SESSION STATE INITIALIZATION (FIXED: Run first at the top level) ---
 
 def initialize_session_state():
     """Initializes all necessary session state keys to prevent KeyError."""
+    # Set safe default values
     if 'config_verified' not in st.session_state:
-        st.session_state['config_verified'] = True # Assume true until check
+        st.session_state['config_verified'] = False # Assume false until check passes
     if 'config_error_message' not in st.session_state:
         st.session_state['config_error_message'] = None
     if 'config_check_performed' not in st.session_state:
@@ -52,7 +53,10 @@ def initialize_session_state():
     if 'redirect_name' not in st.session_state:
         st.session_state['redirect_name'] = 'Visitor'
 
-# --- DATABASE CONNECTION & OPERATIONS ---
+# Call initialization right here to ensure keys exist on first run
+initialize_session_state()
+
+# --- DATABASE CONNECTION & OPERATIONS (Functions remain the same) ---
 
 @st.cache_resource
 def fetch_db_credentials_from_secrets_manager():
@@ -94,14 +98,12 @@ def get_db_connection():
     db_config, error_msg = fetch_db_credentials_from_secrets_manager()
     
     if db_config is None:
-        # The configuration check in main() will handle the display
         return None, error_msg 
             
     try:
         conn = mysql.connector.connect(**db_config)
         return conn, None
     except Error as e:
-        # This catches connection errors (e.g., host unreachable, wrong creds)
         return None, f"MySQL Connection Error: Failed to connect to DB. Details: {e}"
 
 def create_initial_tables(conn):
@@ -109,9 +111,8 @@ def create_initial_tables(conn):
     if conn is None:
         return False, "Cannot create tables: Database connection failed."
 
-    # SQL commands to create tables if they do not exist
     table_sqls = [
-        # 1. Admin Table (Added password_hash for security)
+        # 1. Admin Table
         """
         CREATE TABLE IF NOT EXISTS admin (
             admin_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -144,7 +145,7 @@ def create_initial_tables(conn):
             registration_time DATETIME DEFAULT CURRENT_TIMESTAMP
         )
         """,
-        # 3. Visitor Log Table (Tracks check-in/out)
+        # 3. Visitor Log Table
         """
         CREATE TABLE IF NOT EXISTS visitor_log (
             log_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -184,14 +185,12 @@ def verify_admin_login(email, password):
     
     try:
         cursor = conn.cursor(dictionary=True)
-        # Select the hashed password from the DB
         query = "SELECT password_hash FROM admin WHERE email = %s" 
         cursor.execute(query, (email,))
         result = cursor.fetchone()
 
         if result:
             stored_hash = result['password_hash'].encode('utf-8')
-            # Verify the provided password against the stored hash
             if bcrypt.checkpw(password.encode('utf-8'), stored_hash):
                 return True, None
         
@@ -212,7 +211,6 @@ def register_admin_user(name, email, password):
         return False, conn_err
 
     try:
-        # Hash the password using bcrypt
         hashed_password = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(ADMIN_SALT_ROUNDS)).decode('utf-8')
         
         cursor = conn.cursor()
@@ -249,7 +247,6 @@ def save_new_visitor(data):
             has_documents, has_powerbank, has_other_bags, digital_signature
         ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
-        # Note: Data extraction uses .get() with defaults for robustness
         visitor_data = (
             data.get('name'), data.get('email'), data.get('phone'), data.get('company'), 
             data.get('designation'), data.get('department'), data.get('gender', 'Prefer not to say'), 
@@ -260,7 +257,6 @@ def save_new_visitor(data):
         )
         cursor.execute(visitor_insert_query, visitor_data)
         
-        # Get the ID of the newly inserted visitor
         new_visitor_id = cursor.lastrowid
         
         # 2. Insert into 'visitor_log' table
@@ -280,7 +276,6 @@ def save_new_visitor(data):
         )
         cursor.execute(log_insert_query, log_data)
 
-        # Commit both inserts together
         conn.commit()
         return True, data.get('name') 
     except Error as e:
@@ -304,7 +299,7 @@ def go_back_to_login():
     st.session_state['registration_complete'] = False
     st.session_state['auth_mode'] = 'login'
 
-# --- CSS STYLING & UI COMPONENTS (Unchanged for brevity and functionality) ---
+# --- CSS STYLING & UI COMPONENTS (No functional changes) ---
 
 def load_custom_css():
     st.markdown("""
@@ -465,9 +460,9 @@ def auth_screen():
                                 
                                 if success:
                                     st.success(message)
-                                    time.sleep(1) # Pause slightly for user to read success message
+                                    time.sleep(1) 
                                     st.session_state['visitor_logged_in'] = True
-                                    st.session_state['auth_mode'] = 'login' # Reset mode
+                                    st.session_state['auth_mode'] = 'login' 
                                     st.rerun()
                                 else:
                                     st.error(message)
@@ -549,7 +544,6 @@ def registration_form_screen():
                     st.markdown("##### Belongings Declaration")
                     
                     cb1, cb2, cb3, cb4 = st.columns(4)
-                    # Checkboxes require a proper key when used in a form, but here they are okay as they are inside a form scope
                     with cb1: bags = st.checkbox("Laptop", value=temp.get('laptop', False))
                     with cb2: docs = st.checkbox("Documents", value=temp.get('documents', False))
                     with cb3: power = st.checkbox("Power Bank", value=temp.get('power', False))
@@ -584,7 +578,6 @@ def registration_form_screen():
                     st.markdown("<div class='white-container'>", unsafe_allow_html=True)
                     st.markdown("##### Identity Verification")
                     
-                    # File uploader functionality is client-side only and not implemented in the backend logic
                     st.file_uploader("Upload ID Proof (Optional)", type=['jpg', 'png', 'pdf']) 
                         
                     st.info(f"Confirming check-in for: **{temp.get('name', 'Guest')}**")
@@ -602,15 +595,13 @@ def registration_form_screen():
                             if signature.strip() != "":
                                 st.session_state['temp_visitor_data']['signature'] = signature
                                 
-                                # Final save to DB
                                 success, result = save_new_visitor(st.session_state['temp_visitor_data'])
                                 
                                 if success:
-                                    st.session_state['redirect_name'] = result # Contains the visitor's name
+                                    st.session_state['redirect_name'] = result
                                     st.session_state['registration_complete'] = True
                                     st.rerun()
                                 else:
-                                    # 'result' contains the error message if success is False
                                     st.error(f"Check-in failed due to a database error: {result}")
 
                             else:
@@ -634,7 +625,6 @@ def success_screen():
             
             with b1:
                 if st.button("New Visitor Check-in", type="primary", use_container_width=True):
-                    # Reset all form-related states
                     st.session_state['registration_complete'] = False
                     st.session_state['visitor_form_step'] = 1
                     st.session_state['temp_visitor_data'] = {}
@@ -650,7 +640,7 @@ def success_screen():
 
 def visitor_page():
     
-    # Check for fatal configuration errors (AWS/DB connection failure)
+    # This check is now safe because 'config_verified' is initialized at the top
     if not st.session_state['config_verified']:
         st.set_page_config(layout="centered", page_title="Configuration Error")
         st.title("🛑 Fatal Error: Application Not Configured")
@@ -669,31 +659,24 @@ def visitor_page():
 
 if __name__ == "__main__":
     
-    # 1. Initialize all session state variables
-    initialize_session_state()
     st.set_page_config(layout="wide", page_title="Visitor Management")
     
-    # 2. Run the critical config and table check only ONCE on the first run.
+    # Run the critical config and table check only ONCE on the first run.
     if not st.session_state['config_check_performed']:
         
-        # Check AWS Secret access
         db_config, aws_error_msg = fetch_db_credentials_from_secrets_manager()
         
         if db_config is None:
-            # AWS Secret retrieval failed
             st.session_state['config_verified'] = False
             st.session_state['config_error_message'] = aws_error_msg
         else:
-            # AWS Secret OK, now check DB connection and create tables
             conn, conn_error_msg = get_db_connection()
             if conn is None:
-                # DB connection failed
                 st.session_state['config_verified'] = False
                 st.session_state['config_error_message'] = conn_error_msg
             else:
-                # DB Connection OK, ensure tables exist
                 table_success, table_msg = create_initial_tables(conn)
-                conn.close() # Close connection after table creation
+                conn.close() 
                 if not table_success:
                     st.session_state['config_verified'] = False
                     st.session_state['config_error_message'] = table_msg
@@ -701,8 +684,7 @@ if __name__ == "__main__":
                     st.session_state['config_verified'] = True
         
         st.session_state['config_check_performed'] = True
-        # Rerun once to apply config check result immediately
+        # Rerun to ensure the correct screen (error or main app) loads immediately
         st.rerun() 
     
-    # 3. Execute the main app logic
     visitor_page()
