@@ -9,17 +9,17 @@ import boto3 # AWS SDK
 import bcrypt # For secure password hashing
 
 # --- HARDCODED CONFIGURATION (Backend) ---
-# Replace these with your actual Secret Name and Region
-HARDCODED_SECRET_NAME = 'Wheelbrand'
+# FIX APPLIED: Using the full Secret ARN Resource Name confirmed by the user image.
+HARDCODED_SECRET_NAME = 'Wheelbrand-zM6npS' 
 HARDCODED_REGION = 'ap-south-1' # Mumbai region
 # ----------------------------------------
 
 # --- CONSTANTS ---
 LOGIC_TIME_FORMAT = '%Y-%m-%d %H:%M:%S'
 DISPLAY_TIME_FORMAT = '%I:%M %p'
-ADMIN_SALT_ROUNDS = 12 # Standard for bcrypt hashing strength
+ADMIN_SALT_ROUNDS = 12 
 
-# Define keys expected in your Secrets Manager entry
+# Define keys expected in your Secrets Manager JSON entry
 SECRET_KEYS = {
     'host_key': 'DB_HOST',
     'database_key': 'DB_NAME',
@@ -27,7 +27,7 @@ SECRET_KEYS = {
     'password_key': 'DB_PASSWORD'
 }
 
-# --- SESSION STATE INITIALIZATION (FIXED: Run first at the top level) ---
+# --- SESSION STATE INITIALIZATION (Guaranteed to run first) ---
 
 def initialize_session_state():
     """Initializes all necessary session state keys to prevent KeyError."""
@@ -53,10 +53,10 @@ def initialize_session_state():
     if 'redirect_name' not in st.session_state:
         st.session_state['redirect_name'] = 'Visitor'
 
-# Call initialization right here to ensure keys exist on first run
+# Call initialization immediately to ensure keys exist
 initialize_session_state()
 
-# --- DATABASE CONNECTION & OPERATIONS (Functions remain the same) ---
+# --- DATABASE CONNECTION & OPERATIONS ---
 
 @st.cache_resource
 def fetch_db_credentials_from_secrets_manager():
@@ -70,6 +70,7 @@ def fetch_db_credentials_from_secrets_manager():
             service_name='secretsmanager',
             region_name=region_name
         )
+        # Use the corrected, full resource name here
         secret_response = client.get_secret_value(SecretId=secret_name)
         
         if 'SecretString' in secret_response:
@@ -86,13 +87,14 @@ def fetch_db_credentials_from_secrets_manager():
             raise ValueError("SecretString not found in the secret payload.")
 
     except client.exceptions.ResourceNotFoundException:
-        return None, f"AWS Error: Secret '{secret_name}' not found in region {region_name}. Check IAM permissions."
+        return None, f"AWS Error: Secret '{secret_name}' not found in region {region_name}. Check the exact secret name (resource name)."
     except KeyError as e:
         return None, f"Configuration Error: Missing required key {e} in the AWS Secret JSON."
     except Exception as e:
-        return None, f"AWS/Boto3 Error: Failed to retrieve credentials. Details: {e}"
+        # Catch all other errors, including authentication failures (AccessDenied)
+        return None, f"AWS/Boto3 Error: Failed to retrieve credentials. Details: {type(e).__name__}: {e}"
 
-@st.cache_resource(ttl=3600) # Cache the connection object
+@st.cache_resource(ttl=3600) 
 def get_db_connection():
     """Establishes and returns a connection to the MySQL database."""
     db_config, error_msg = fetch_db_credentials_from_secrets_manager()
@@ -104,6 +106,7 @@ def get_db_connection():
         conn = mysql.connector.connect(**db_config)
         return conn, None
     except Error as e:
+        # This catches connection errors (e.g., host unreachable, wrong DB creds from the Secret)
         return None, f"MySQL Connection Error: Failed to connect to DB. Details: {e}"
 
 def create_initial_tables(conn):
@@ -299,7 +302,7 @@ def go_back_to_login():
     st.session_state['registration_complete'] = False
     st.session_state['auth_mode'] = 'login'
 
-# --- CSS STYLING & UI COMPONENTS (No functional changes) ---
+# --- CSS STYLING & UI COMPONENTS ---
 
 def load_custom_css():
     st.markdown("""
@@ -640,13 +643,13 @@ def success_screen():
 
 def visitor_page():
     
-    # This check is now safe because 'config_verified' is initialized at the top
+    # Safely checks the config status
     if not st.session_state['config_verified']:
         st.set_page_config(layout="centered", page_title="Configuration Error")
         st.title("🛑 Fatal Error: Application Not Configured")
         st.error(st.session_state.get('config_error_message', "The application could not retrieve database credentials."))
         st.info(f"Attempted Secret: **{HARDCODED_SECRET_NAME}** in Region: **{HARDCODED_REGION}**")
-        st.warning("Please verify your AWS Secrets Manager configuration and IAM permissions.")
+        st.warning("Please verify your AWS Secrets Manager configuration and IAM permissions/network access.")
         return
 
     # Main application routing
@@ -664,17 +667,22 @@ if __name__ == "__main__":
     # Run the critical config and table check only ONCE on the first run.
     if not st.session_state['config_check_performed']:
         
+        # 1. Check AWS Secret access
         db_config, aws_error_msg = fetch_db_credentials_from_secrets_manager()
         
         if db_config is None:
+            # AWS Secret retrieval failed
             st.session_state['config_verified'] = False
             st.session_state['config_error_message'] = aws_error_msg
         else:
+            # 2. AWS Secret OK, now check DB connection
             conn, conn_error_msg = get_db_connection()
             if conn is None:
+                # DB connection failed (Check HOST, USER, PASS from secret)
                 st.session_state['config_verified'] = False
                 st.session_state['config_error_message'] = conn_error_msg
             else:
+                # 3. DB Connection OK, ensure tables exist
                 table_success, table_msg = create_initial_tables(conn)
                 conn.close() 
                 if not table_success:
@@ -687,4 +695,5 @@ if __name__ == "__main__":
         # Rerun to ensure the correct screen (error or main app) loads immediately
         st.rerun() 
     
+    # Execute the main app logic
     visitor_page()
