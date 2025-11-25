@@ -1,10 +1,17 @@
 import streamlit as st
 from PIL import Image
+import base64
+from io import BytesIO
 
 st.set_page_config(page_title="ZODOPT MEETEASE", layout="wide")
 
-# Load updated logo
-logo = "zodopt.png"
+# Load new logo image
+logo = Image.open("zodopt.png")
+
+# Convert to base64
+buffer = BytesIO()
+logo.save(buffer, format="PNG")
+logo_base64 = base64.b64encode(buffer.getvalue()).decode()
 
 # ---------------- HEADER STYLE ----------------
 st.markdown("""
@@ -76,17 +83,18 @@ a { text-decoration: none; }
 """, unsafe_allow_html=True)
 
 # ---------------- HEADER ----------------
+
 st.markdown(
     f"""
     <div class="header">
         <div class="header-title">ZODOPT MEETEASE</div>
-        <img src="data:image/png;base64,{st.image(logo, width=0).image_to_data(logo)}" class="logo-img">
+        <img src="data:image/png;base64,{logo_base64}" class="logo-img">
     </div>
     """,
     unsafe_allow_html=True
 )
 
-st.write("")  # spacing
+st.write("")
 
 # ---------------- BUTTONS ----------------
 col1, col2 = st.columns(2, gap="large")
