@@ -12,23 +12,27 @@ query_params = st.query_params
 if "page" in query_params:
     page = query_params["page"]
 
-    # Route to visitor.py
     if page == "visit":
         visitor = importlib.import_module("visitor")
-        visitor.app()   # visitor.py must have app() function
+        if hasattr(visitor, "app"):
+            visitor.app()
+        else:
+            st.write("Loading visitor page...")
+            st.experimental_rerun()
         st.stop()
 
-    # Route to conference.py (if needed later)
     elif page == "conference":
         conf = importlib.import_module("conference")
-        conf.app()
+        if hasattr(conf, "app"):
+            conf.app()
+        else:
+            st.write("Loading conference page...")
+            st.experimental_rerun()
         st.stop()
 
 # ---------------- DEFAULT MAIN SCREEN ----------------
 
-# Load new logo image
 logo = Image.open("zodopt.png")
-
 buffer = BytesIO()
 logo.save(buffer, format="PNG")
 logo_base64 = base64.b64encode(buffer.getvalue()).decode()
@@ -68,7 +72,6 @@ st.markdown("""
     transform: translateY(-5px);
     box-shadow: 0px 12px 25px rgba(0,0,0,0.12);
 }
-
 .icon-circle {
     width: 110px;
     height: 110px;
