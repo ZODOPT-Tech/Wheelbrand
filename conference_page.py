@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # NOTE: ADJUST PATHS HERE if necessary
 # Assuming LOGO_PATH is a valid path on your system or the image is uploaded/accessible
-LOGO_PATH = "C:\\Users\\DELL\\Documents\\zodopt\\images\\zodopt.png"
+LOGO_PATH = "zodopt.png"
 
 # UI Colors (Primary color is now the dark purple)
 PRIMARY_PURPLE = "#5b46b2"  
