@@ -15,7 +15,7 @@ st.set_page_config(page_title="ZODOPT Admin", layout="wide")
 
 LOGO_PATH = "zodopt.png"
 AWS_SECRET_NAME = "wheelbrand"
-AWS_REGION = "ap-south-1"       # Mumbai region
+AWS_REGION = "ap-south-1"
 DB_TABLE = "admin"
 
 # ---------------- HELPERS ----------------
@@ -40,24 +40,17 @@ def get_db_credentials():
     try:
         resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
         secret_string = resp.get("SecretString")
-        if not secret_string:
-            st.error("AWS secret string empty.")
-            st.stop()
 
         creds = {}
-
-        # Parse key=value format
-        for line in re.split(r"[\r\n]+", secret_string):
-            if "=" in line:
-                k, v = line.split("=", 1)
-                creds[k.strip()] = v.strip()
-
-        # If JSON
-        if not creds:
+        if "=" in secret_string:
+            for line in re.split(r"[\r\n]+", secret_string):
+                if "=" in line:
+                    k, v = line.split("=", 1)
+                    creds[k.strip()] = v.strip()
+        else:
             creds.update(json.loads(secret_string))
 
-        required = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]
-        for k in required:
+        for k in ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]:
             if k not in creds:
                 st.error(f"Missing {k} in AWS secret.")
                 st.stop()
@@ -78,7 +71,7 @@ def get_connection():
         port=int(creds.get("DB_PORT", 3306))
     )
 
-# ---------------- DB OPERATIONS ----------------
+# ---------------- DB OPS ----------------
 def email_exists(email):
     conn = get_connection()
     cur = conn.cursor()
@@ -131,7 +124,7 @@ def update_password(email, new_pwd):
     conn.close()
     return "SUCCESS"
 
-# ---------------- LOGO HANDLING ----------------
+# ---------------- LOGO ----------------
 def load_logo(path):
     try:
         img = Image.open(path)
@@ -146,20 +139,6 @@ logo_b64 = load_logo(LOGO_PATH)
 # ---------------- STYLES ----------------
 st.markdown("""
 <style>
-.header {
-    width: 100%;
-    padding: 20px 32px;
-    border-radius: 18px;
-    background: linear-gradient(90deg,#1e62ff,#8a2eff);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    color: white;
-}
-.header-title {
-    font-size: 30px;
-    font-weight: 700;
-}
 .card {
     background: white;
     padding: 30px;
@@ -169,85 +148,69 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- HEADER ----------------
-st.markdown(f"""
-<div class="header">
-    <div class="header-title">ZODOPT MEETEASE – ADMIN</div>
-    <div><img src="data:image/png;base64,{logo_b64}" style="height:65px"></div>
-</div>
-""", unsafe_allow_html=True)
+# -------------- FIRST PAGE ALWAYS LOGIN ----------------
+st.image(f"data:image/png;base64,{logo_b64}", width=140)
+st.title("ZODOPT Admin Portal")
 
-# ---------------- SESSION ----------------
-if "admin_logged" not in st.session_state:
-    st.session_state["admin_logged"] = False
+menu = st.radio("Select Option", ["Login", "New Registration", "Forgot Password"])
 
-page = st.radio("", ["Signup", "Login", "Forgot Password"], horizontal=True)
-
-# ---------------- SIGNUP PAGE ----------------
-if page == "Signup":
+# ---------------- LOGIN ----------------
+if menu == "Login":
     st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.subheader("Admin Login")
 
+    email = st.text_input("Email")
+    pwd = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+        res = verify_admin(email.lower(), pwd)
+        if res == "SUCCESS":
+            st.session_state["admin_logged"] = True
+            st.success("Login successful!")
+        else:
+            st.error(res)
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------------- SIGNUP ----------------
+elif menu == "New Registration":
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
     st.subheader("Create Admin Account")
+
     full = st.text_input("Full Name")
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
     confirm = st.text_input("Confirm Password", type="password")
 
     if st.button("Register Admin"):
-        if not full.strip():
+        if not full:
             st.error("Full name required.")
         elif not is_valid_email(email):
             st.error("Invalid email.")
-        elif len(pwd) < 6:
-            st.error("Password must be at least 6 characters.")
         elif pwd != confirm:
             st.error("Passwords do not match.")
         else:
-            res = create_admin(full.strip(), email.strip().lower(), pwd)
-            st.success("Admin created! Please login.") if res == "SUCCESS" else st.error(res)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ---------------- LOGIN PAGE ----------------
-elif page == "Login":
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-
-    st.subheader("Admin Login")
-    email = st.text_input("Email")
-    pwd = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        if not is_valid_email(email):
-            st.error("Invalid email.")
-        else:
-            res = verify_admin(email.lower(), pwd)
-            if res == "SUCCESS":
-                st.session_state["admin_logged"] = True
-                st.success("Login successful!")
-            else:
-                st.error(res)
+            res = create_admin(full, email.lower(), pwd)
+            st.success("Admin created!") if res == "SUCCESS" else st.error(res)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- FORGOT PASSWORD ----------------
-elif page == "Forgot Password":
+elif menu == "Forgot Password":
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-
     st.subheader("Reset Password")
+
     email = st.text_input("Registered Email")
 
-    if st.button("Verify Email"):
+    if st.button("Verify"):
         if email_exists(email.lower()):
             st.success("Email found. Enter new password.")
-
             new_pwd = st.text_input("New Password", type="password")
             confirm = st.text_input("Confirm Password", type="password")
 
             if st.button("Update Password"):
                 if new_pwd != confirm:
                     st.error("Passwords do not match.")
-                elif len(new_pwd) < 6:
-                    st.error("Password too short.")
                 else:
                     res = update_password(email.lower(), new_pwd)
                     st.success("Password updated!") if res == "SUCCESS" else st.error(res)
@@ -255,7 +218,3 @@ elif page == "Forgot Password":
             st.error("Email not registered.")
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-# ---------------- ADMIN ACTIVE STATUS ----------------
-if st.session_state["admin_logged"]:
-    st.success("Admin logged in – session active.")
