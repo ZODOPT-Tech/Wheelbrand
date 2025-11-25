@@ -2,15 +2,24 @@ import streamlit as st
 
 st.set_page_config(page_title="Home", layout="wide")
 
+# --- Styles ---
 st.markdown("""
 <style>
-.box {
+.card {
     background-color: white;
     padding: 60px;
     border-radius: 25px;
     box-shadow: 0px 8px 20px rgba(0,0,0,0.08);
     text-align: center;
+    width: 100%;
+    transition: 0.2s ease-in-out;
     cursor: pointer;
+    text-decoration: none !important;
+    display: block;
+}
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0px 12px 25px rgba(0,0,0,0.12);
 }
 .icon-circle {
     width: 110px;
@@ -25,7 +34,9 @@ st.markdown("""
 }
 .violet { background: linear-gradient(135deg, #4d7cff, #b312ff); }
 .green { background: #00a884; }
+
 .title-text { font-size: 24px; font-weight: 600; margin-top: 10px; }
+
 .line {
     width: 60px;
     height: 6px;
@@ -34,35 +45,36 @@ st.markdown("""
 }
 .violet-line { background: #b312ff; }
 .green-line { background: #00a884; }
+
+a { text-decoration: none; }
 </style>
 """, unsafe_allow_html=True)
 
+# --- Layout ---
 col1, col2 = st.columns(2, gap="large")
 
+# --- Visitplan Card ---
 with col1:
-    if st.button(" ", key="visitplan_btn"):
-        st.switch_page("visit.py")
+    st.markdown(
+        """
+        <a class="card" href="visit" target="_self">
+            <div class="icon-circle violet">🗓️</div>
+            <div class="title-text">Visitplan</div>
+            <div class="line violet-line"></div>
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
 
-    st.markdown("""
-    <div class="box" onclick="document.querySelector('button[kind=primary]').click()">
-        <div class="icon-circle violet">
-            🗓️
-        </div>
-        <div class="title-text">Visitplan</div>
-        <div class="line violet-line"></div>
-    </div>
-    """, unsafe_allow_html=True)
-
+# --- Conference Booking Card ---
 with col2:
-    if st.button(" ", key="conference_btn"):
-        st.switch_page("conference.py")
-
-    st.markdown("""
-    <div class="box" onclick="document.querySelector('button[kind=secondary]').click()">
-        <div class="icon-circle green">
-            📅
-        </div>
-        <div class="title-text">Conference Booking</div>
-        <div class="line green-line"></div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        """
+        <a class="card" href="conference" target="_self">
+            <div class="icon-circle green">📅</div>
+            <div class="title-text">Conference Booking</div>
+            <div class="line green-line"></div>
+        </a>
+        """,
+        unsafe_allow_html=True
+    )
