@@ -1,14 +1,3 @@
-# visitor.py
-# Streamlit admin signup/login/forgot-password page using AWS Secrets Manager (ap-south-1)
-# Secrets stored as key=value lines (DB_HOST, DB_NAME, DB_USER, DB_PASSWORD)
-# Uses bcrypt for password hashing (recommended)
-#
-# NOTE: logo is referenced by local path below. (Local path provided from conversation history)
-# LOGO_PATH = "/mnt/data/zodopt.png"
-#
-# Requirements:
-#   pip install streamlit mysql-connector-python boto3 bcrypt pillow
-
 import streamlit as st
 from PIL import Image
 import mysql.connector
