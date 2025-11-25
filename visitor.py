@@ -8,7 +8,7 @@ import json
 import boto3 # AWS SDK
 
 # --- HARDCODED CONFIGURATION (Backend) ---
-# The application will now use these values directly without user input.
+# The application will use these values directly for secure DB access.
 HARDCODED_SECRET_NAME = 'Wheelbrand'
 HARDCODED_REGION = 'ap-south-1' # Mumbai region
 # ----------------------------------------
@@ -27,11 +27,10 @@ SECRET_KEYS = {
 
 # --- SESSION STATE INITIALIZATION (FOR UI FLOW ONLY) ---
 
-# Configuration State is now implicitly verified by starting the app
+# Authentication and Form Flow States
 if 'config_verified' not in st.session_state:
-    st.session_state['config_verified'] = True # Set to True as config is hardcoded
-
-# Authentication and Form Flow States (Kept for UI management)
+    # Assume verified since configuration is hardcoded
+    st.session_state['config_verified'] = True 
 if 'visitor_form_step' not in st.session_state:
     st.session_state['visitor_form_step'] = 1
 if 'temp_visitor_data' not in st.session_state:
@@ -48,7 +47,7 @@ if 'auth_mode' not in st.session_state:
 def fetch_db_credentials_from_secrets_manager():
     """
     Fetches database credentials from AWS Secrets Manager using the
-    HARDCODED constants defined at the top of the script.
+    HARDCODED constants.
     """
     secret_name = HARDCODED_SECRET_NAME
     region_name = HARDCODED_REGION
@@ -82,7 +81,7 @@ def fetch_db_credentials_from_secrets_manager():
         return db_config, None
 
     except client.exceptions.ResourceNotFoundException:
-        return None, f"AWS Error: The secret '{secret_name}' was not found in region {region_name}."
+        return None, f"AWS Error: Secret '{secret_name}' not found in region {region_name}. Check IAM."
     except Exception as e:
         return None, f"AWS/Boto3 Error: Failed to retrieve credentials. Check IAM permissions and secret format. Details: {e}"
 
@@ -91,16 +90,15 @@ def get_db_connection():
     db_config, error_msg = fetch_db_credentials_from_secrets_manager()
     
     if db_config is None:
-        # Since config_verified is True, we show the fatal connection error
-        st.error(f"FATAL DB CONNECTION ERROR: {error_msg}")
+        # Configuration error is fatal here, stop execution and show error
+        st.error(f"FATAL DATABASE CONFIGURATION ERROR: {error_msg}")
         return None
         
     try:
-        # Connect using the fetched credentials
         conn = mysql.connector.connect(**db_config)
         return conn
     except Error as e:
-        st.error(f"Error connecting to MySQL with secret credentials. Check host/port/network: {e}")
+        st.error(f"Error connecting to MySQL database. Check host/port/network: {e}")
         return None
 
 def verify_admin_login(email, password):
@@ -212,12 +210,25 @@ def go_back_to_login():
     st.session_state['registration_complete'] = False
     st.session_state['auth_mode'] = 'login'
 
-# --- CSS STYLING & UI COMPONENTS (Retained from previous response) ---
+# --- CSS STYLING & UI COMPONENTS ---
 
 def load_custom_css():
+    # Hide the sidebar and Streamlit footer/header
     st.markdown("""
         <style>
-        /* CSS styles for UI aesthetics */
+        /* Hide the Streamlit main sidebar */
+        [data-testid="stSidebar"] {
+            display: none
+        } 
+        /* Ensure the main content uses full width */
+        .block-container {
+            padding-top: 2rem !important; 
+            padding-bottom: 2rem !important; 
+            max-width: 100% !important; 
+        }
+        header, footer { visibility: hidden; }
+        
+        /* General styling retained */
         .stApp { background-color: #F4F7FE; }
         .visitor-header {
             background: linear-gradient(90deg, #4A56E2 0%, #7B4AE2 100%);
@@ -229,88 +240,243 @@ def load_custom_css():
     """, unsafe_allow_html=True)
 
 def render_auth_header(icon, title, subtitle):
-    # Renders the authentication screen header
+    """Renders the header with the icon next to the heading."""
     st.markdown(f"""
         <div class="visitor-header">
-            <h2>{title}</h2><p>{subtitle}</p>
+            <div style="display: flex; align-items: center; justify-content: flex-start;">
+                <span style="font-size: 2.5rem; margin-right: 15px;">{icon}</span>
+                <div>
+                    <h2 style="margin: 0; padding: 0; font-weight: 600;">{title}</h2>
+                    <p style="margin: 0; padding: 0; font-size: 0.9em; opacity: 0.9;">{subtitle}</p>
+                </div>
+            </div>
         </div>
     """, unsafe_allow_html=True)
 
 def render_custom_header(title, subtitle="Please fill in your details"):
-    # Renders the registration header
+    """Renders the standard registration header."""
     st.markdown(f"""
         <div class="visitor-header">
-            <h2 style="margin:0;">{title}</h2>
-            <p style="margin:5px 0 0 0;">{subtitle}</p>
+            <h2 style="margin:0; padding:0; font-weight:600;">{title}</h2>
+            <p style="margin:5px 0 0 0; padding:0; font-size: 1em; opacity: 0.9;">{subtitle}</p>
         </div>
     """, unsafe_allow_html=True)
 
 def render_tabs(current_step):
-    # Renders the form tabs
-    st.markdown(f"**Current Step:** {current_step} of 3")
-    st.markdown("---")
+    """Renders the navigation tabs for the multi-step form."""
+    c1, c2, c3 = st.columns(3)
+    def get_tab_html(label, step_num):
+        active_class = "active" if current_step == step_num else ""
+        return f'<div style="font-weight: 600; color: {"#4A56E2" if active_class else "#aaa"}; border-bottom: {"3px solid #7B4AE2" if active_class else "none"}; padding-bottom: 12px; text-align: center; font-size: 0.9rem;">{label}</div>'
 
-# --- SCREENS (Logic is the same, only the sidebar is changed) ---
+    with c1: st.markdown(get_tab_html("PRIMARY DETAILS", 1), unsafe_allow_html=True)
+    with c2: st.markdown(get_tab_html("SECONDARY DETAILS", 2), unsafe_allow_html=True)
+    with c3: st.markdown(get_tab_html("IDENTITY", 3), unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
+
+# --- SCREENS ---
 
 def auth_screen():
     load_custom_css()
+    
     col1, col2, col3 = st.columns([0.2, 5, 0.2])
+    
     with col2:
         st.markdown("<br><br>", unsafe_allow_html=True)
+        
         with st.container():
+            
             if st.session_state['auth_mode'] == 'login':
                 render_auth_header("📅", "**Visitplan** Login", "Sign in to manage your visits")
             else:
                 render_auth_header("✍️", "New User Registration", "Create a new admin account")
 
+            # --- VIEW: LOGIN ---
             if st.session_state['auth_mode'] == 'login':
+                
                 with st.form("login_form"):
-                    st.text_input("Email Address")
-                    password = st.text_input("Password", type="password")
-                    if st.form_submit_button("Sign In →", type="primary"):
-                        is_valid, _ = verify_admin_login("hardcoded@example.com", password) # Simplified logic for flow
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    email = st.text_input("Email Address", placeholder="you@company.com")
+                    password = st.text_input("Password", type="password", placeholder="Enter your password")
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    if st.form_submit_button("Sign In →", type="primary", use_container_width=True):
+                        is_valid, _ = verify_admin_login(email, password)
+                        
                         if is_valid:
                             st.session_state['visitor_logged_in'] = True
                             st.rerun()
                         else:
                             st.error("Invalid email or password")
-                if st.button("Don't have an account? Register"):
+                
+                st.markdown("---")
+                if st.button("Don't have an account? Register", type="secondary", use_container_width=True):
                     st.session_state['auth_mode'] = 'register'
                     st.rerun()
 
+            # --- VIEW: REGISTER ---
             elif st.session_state['auth_mode'] == 'register':
+                
                 with st.form("register_form"):
-                    reg_name = st.text_input("Full Name")
-                    reg_email = st.text_input("Email Address")
-                    reg_pass = st.text_input("Password", type="password")
-                    reg_confirm = st.text_input("Confirm Password", type="password")
-                    if st.form_submit_button("Register & Login →", type="primary"):
-                        if reg_pass == reg_confirm:
-                            success, message = register_admin_user(reg_name, reg_email, reg_pass)
-                            if success:
-                                st.success(message)
-                                time.sleep(1)
-                                st.session_state['visitor_logged_in'] = True
-                                st.rerun()
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    reg_name = st.text_input("Full Name", placeholder="John Doe")
+                    reg_email = st.text_input("Email Address", placeholder="you@company.com")
+                    reg_pass = st.text_input("Password", type="password", placeholder="Create a password")
+                    reg_confirm = st.text_input("Confirm Password", type="password", placeholder="Confirm your password")
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    if st.form_submit_button("Register & Login →", type="primary", use_container_width=True):
+                        if reg_name and reg_email and reg_pass:
+                            if reg_pass == reg_confirm:
+                                success, message = register_admin_user(reg_name, reg_email, reg_pass)
+                                
+                                if success:
+                                    st.success(message)
+                                    time.sleep(1)
+                                    st.session_state['visitor_logged_in'] = True
+                                    st.rerun()
+                                else:
+                                    st.error(message)
                             else:
-                                st.error(message)
+                                st.error("Passwords do not match.")
                         else:
-                            st.error("Passwords do not match.")
-                if st.button("Already have an account? Sign In"):
+                            st.error("Please fill in all fields.")
+
+                st.markdown("---")
+                if st.button("Already have an account? Sign In", type="secondary", use_container_width=True):
                     st.session_state['auth_mode'] = 'login'
                     st.rerun()
 
 def registration_form_screen():
     load_custom_css()
-    # Simplified rendering for brevity. Full logic remains the same.
+    
     c_left, c_main, c_right = st.columns([0.1, 5, 0.1])
+    
     with c_main:
         with st.container():
             render_custom_header("Visitor Check-in", "Please complete the 3-step registration form.")
             render_tabs(st.session_state['visitor_form_step'])
             
-            # --- Logic for Step 1, 2, 3 Forms (omitted for brevity) ---
-            st.warning("Registration form logic removed for display brevity, but is fully intact in the actual file.")
+            temp = st.session_state['temp_visitor_data']
+            step = st.session_state['visitor_form_step']
+
+            # --- STEP 1: PRIMARY DETAILS (Full form structure included for completeness) ---
+            if step == 1:
+                with st.form("step1_form", clear_on_submit=False):
+                    
+                    st.markdown("##### Contact Information")
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    
+                    name = st.text_input("Full Name", value=temp.get('name', ''), placeholder="John Doe")
+                    email = st.text_input("Email Address", value=temp.get('email', ''), placeholder="your.email@example.com")
+                    phone = st.text_input("Phone Number", value=temp.get('phone', ''), placeholder="81234 56789")
+
+                    st.markdown("<br><br>", unsafe_allow_html=True)
+                    
+                    b1, b2 = st.columns([1, 1])
+                    with b1:
+                        if st.form_submit_button("Reset Form", type="secondary", use_container_width=True):
+                            st.session_state['temp_visitor_data'] = {}
+                            st.rerun()
+                    with b2:
+                        if st.form_submit_button("Next Step →", type="primary", use_container_width=True):
+                            if phone and email and name:
+                                st.session_state['temp_visitor_data'].update({'name': name, 'phone': phone, 'email': email})
+                                st.session_state['visitor_form_step'] = 2
+                                st.rerun()
+                            else:
+                                st.warning("Please fill in all required fields.")
+
+            # --- STEP 2: SECONDARY DETAILS ---
+            elif step == 2:
+                with st.form("step2_form"):
+                    st.markdown("##### Organisation Details & Host")
+                    
+                    c1, c2, c3 = st.columns(3)
+                    with c1: company = st.text_input("From Company", value=temp.get('company', ''))
+                    with c2: designation = st.text_input("Designation", value=temp.get('designation', '')) 
+                    with c3: department = st.text_input("Department", value=temp.get('department', '')) 
+
+                    c4, c5, c6 = st.columns(3)
+                    with c4:
+                        gender_options = ["Prefer not to say", "Male", "Female", "Other"]
+                        default_index = gender_options.index(temp.get('gender', 'Prefer not to say'))
+                        gender = st.radio("Gender", gender_options, index=default_index, horizontal=True)
+
+                    with c5: host = st.text_input("**Person to Visit**", value=temp.get('host', ''), placeholder="Enter host name")
+                    with c6: visit_type = st.selectbox("Visit Type", ["Vendor", "Customer", "Visitor"], index=["Vendor", "Customer", "Visitor"].index(temp.get('visit_type', 'Visitor')))
+                        
+                    c7, c8 = st.columns([1, 1])
+                    with c7: purpose = st.text_input("Purpose of Visit", value=temp.get('purpose', ''))
+                    with c8: address = st.text_area("Organisation Address", value=temp.get('address', ''), placeholder="Full address of your organisation", height=50)
+                    
+                    st.markdown("<br>", unsafe_allow_html=True)
+                    st.markdown("##### Belongings Declaration")
+                    
+                    cb1, cb2, cb3, cb4 = st.columns(4)
+                    with cb1: bags = st.checkbox("Laptop", value=temp.get('laptop', False))
+                    with cb2: docs = st.checkbox("Documents", value=temp.get('documents', False))
+                    with cb3: power = st.checkbox("Power Bank", value=temp.get('power', False))
+                    with cb4: other = st.checkbox("Other Bags", value=temp.get('other', False))
+                    
+                    st.markdown("<br><br>", unsafe_allow_html=True)
+                    
+                    b1, b2 = st.columns([1, 1])
+                    with b1:
+                        if st.form_submit_button("← Back", type="secondary", use_container_width=True):
+                            st.session_state['visitor_form_step'] = 1
+                            st.rerun()
+                    with b2:
+                        if st.form_submit_button("Next Step →", type="primary", use_container_width=True):
+                            if host.strip() != "":
+                                st.session_state['temp_visitor_data'].update({
+                                    'company': company, 'designation': designation,
+                                    'department': department, 'visit_type': visit_type, 
+                                    'host': host, 'purpose': purpose, 'gender': gender,     
+                                    'address': address, 'laptop': bags, 'documents': docs,
+                                    'power': power, 'other': other
+                                })
+                                st.session_state['visitor_form_step'] = 3
+                                st.rerun()
+                            else:
+                                st.error("Please enter the **Person to Visit** (Host).")
+
+            # --- STEP 3: IDENTITY ---
+            elif step == 3:
+                with st.form("step3_form"):
+                    st.markdown("##### Identity Verification")
+                    
+                    st.file_uploader("Upload ID Proof (Optional)", type=['jpg', 'png', 'pdf']) 
+                        
+                    st.info(f"Confirming check-in as: **{temp.get('name')}**")
+                    signature = st.text_area("**Digital Signature (Type Full Name)**", value=temp.get('signature', ''), placeholder="Type your full name as signature")
+                    
+                    st.markdown("<br><br>", unsafe_allow_html=True)
+                    
+                    b1, b2 = st.columns([1, 1])
+                    with b1:
+                        if st.form_submit_button("← Back", type="secondary", use_container_width=True):
+                            st.session_state['visitor_form_step'] = 2
+                            st.rerun()
+                    with b2:
+                        if st.form_submit_button("Confirm & Sign In", type="primary", use_container_width=True):
+                            if signature.strip() != "":
+                                st.session_state['temp_visitor_data']['signature'] = signature
+                                
+                                # --- DB SAVE ACTION ---
+                                success, last_registered_name = save_new_visitor(st.session_state['temp_visitor_data'])
+                                
+                                if success:
+                                    st.session_state['redirect_name'] = last_registered_name 
+                                    st.session_state['registration_complete'] = True
+                                    st.rerun()
+                                else:
+                                    st.error("Check-in failed due to a database error. Please contact admin.")
+
+                            else:
+                                st.error("Digital Signature required to complete check-in.")
 
 def success_screen():
     load_custom_css()
@@ -321,6 +487,9 @@ def success_screen():
         with st.container():
             render_custom_header("Check-in Complete! 🎉", "You may now enter the premises.")
             st.markdown(f"<h2 style='text-align: center;'>Welcome, {welcome_name}!</h2>", unsafe_allow_html=True)
+            st.markdown("<p style='text-align: center; color: #666;'>Your details have been successfully logged.</p>", unsafe_allow_html=True)
+            
+            st.markdown("<br>", unsafe_allow_html=True)
             
             if st.button("New Visitor Check-in", type="primary", use_container_width=True):
                 st.session_state['registration_complete'] = False
@@ -335,25 +504,15 @@ def success_screen():
 # --- Main App Execution Flow ---
 
 def visitor_page():
-    # --- SIDEBAR (Now only used for fixed info and logout) ---
-    
-    with st.sidebar:
-        st.header("⚙️ AWS Secrets Configuration")
-        st.success("✅ Configuration is hardcoded and verified.")
-        st.markdown(f"""
-            **Secret:** `{HARDCODED_SECRET_NAME}`  
-            **Region:** `{HARDCODED_REGION}` (Mumbai)
-        """)
-        st.markdown("---")
-        if st.session_state['visitor_logged_in']:
-            if st.button("Log Out Admin", type='secondary', use_container_width=True):
-                go_back_to_login()
-                st.rerun()
-        else:
-            st.info("Log in as an administrator to access the visitor check-in form.")
-            
-    # --- MAIN APPLICATION RENDERING ---
-    # Since config_verified is True by default, the app jumps directly to auth/form
+    # If the database connection fails on startup, this will be False.
+    # Otherwise, it skips straight to the login screen.
+    if not st.session_state['config_verified']:
+        # This message is displayed if the application fails to connect to AWS Secrets Manager
+        st.title("Fatal Error: Database Initialization Failed")
+        st.error("The application could not retrieve database credentials using the hardcoded configuration. Check your AWS credentials, IAM permissions, and network connectivity.")
+        st.info(f"Attempted Secret: **{HARDCODED_SECRET_NAME}** in Region: **{HARDCODED_REGION}**")
+        return
+
     if st.session_state['registration_complete']:
         success_screen() 
     elif st.session_state['visitor_logged_in']:
@@ -363,4 +522,15 @@ def visitor_page():
 
 if __name__ == "__main__":
     st.set_page_config(layout="wide", page_title="Visitor Management")
+    
+    # Check the configuration once at startup
+    if not st.session_state['config_verified']:
+        db_config, error_msg = fetch_db_credentials_from_secrets_manager()
+        if db_config:
+            st.session_state['config_verified'] = True
+        else:
+            # Store error message in a temporary state for the UI to display
+            st.session_state['config_verified'] = False 
+            st.session_state['startup_error'] = error_msg
+
     visitor_page()
