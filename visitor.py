@@ -139,7 +139,7 @@ logo_b64 = load_logo(LOGO_PATH)
 
 
 # ---------------- ENTRYPOINT PAGE FUNCTION ----------------
-def render_visitor_page(navigate_to):
+def visitor_main(navigate_to):
     """
     THIS IS THE ENTRY FUNCTION CALLED FROM main.py
     """
