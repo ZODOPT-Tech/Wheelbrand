@@ -1,20 +1,21 @@
 import streamlit as st
 import importlib
 from PIL import Image
-import base64
 from io import BytesIO
+import base64
 
-# ---------------- SESSION SETUP ----------------
+# -------------------- Init Session --------------------
 if "current_page" not in st.session_state:
     st.session_state.current_page = "home"
 
-
+# -------------------- Navigation Function --------------------
 def navigate_to(page_name):
     st.session_state.current_page = page_name
     st.rerun()
 
-
-# ---------------- PAGE LOADER ----------------
+# ==================================================================
+#                          PAGE LOADER
+# ==================================================================
 def load_page():
     routes = {
         "home": {"module": None, "fn": None},
@@ -25,35 +26,36 @@ def load_page():
     page = st.session_state.current_page
 
     if page == "home":
-        return render_home()
+        return render_home(navigate_to)
 
     info = routes.get(page)
     if not info:
-        st.error("Invalid route")
+        st.error("Invalid Page Route")
         return
 
     module = importlib.import_module(info["module"])
     fn = getattr(module, info["fn"])
     fn(navigate_to)
 
+# ==================================================================
+#                         HOME PAGE UI
+# ==================================================================
+def render_home(navigate_to):
 
-# =====================================================================
-#                             HOME PAGE
-# =====================================================================
-def render_home():
+    st.set_page_config(page_title="ZODOPT MEETEASE", layout="wide")
 
-    # -------- LOAD LOGO --------
+    # Load logo
     logo = Image.open("zodopt.png")
     buf = BytesIO()
     logo.save(buf, format="PNG")
     logo_b64 = base64.b64encode(buf.getvalue()).decode()
 
-    # --------- CSS ---------
+    # ---------- STYLES ----------
     st.markdown("""
     <style>
     .header {
         width: 100%;
-        padding: 25px 40px;
+        padding: 30px 45px;
         border-radius: 25px;
         background: linear-gradient(90deg,#1e62ff,#8a2eff);
         color: white;
@@ -62,105 +64,96 @@ def render_home():
         align-items: center;
         margin-bottom: 35px;
     }
-    .header-title { font-size: 34px; font-weight: 700; }
-    .logo-img { height: 70px; }
+    .header-title { font-size: 38px; font-weight: bold; }
 
-    .card {
+    .card-button {
         background: white;
         padding: 70px;
-        border-radius: 28px;
-        box-shadow: 0px 10px 25px rgba(0,0,0,0.15);
+        border-radius: 30px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.10);
         text-align: center;
         cursor: pointer;
-        transition: 0.2s ease-in-out;
         width: 100%;
+        transition: 0.2s;
     }
-    .card:hover {
-        transform: translateY(-6px);
+    .card-button:hover {
+        transform: translateY(-7px);
+        box-shadow: 0 15px 35px rgba(0,0,0,0.15);
     }
-
     .icon-circle {
-        width: 150px; height: 150px;
+        width: 150px;
+        height: 150px;
         border-radius: 50%;
-        display: flex; justify-content: center; align-items: center;
-        margin: 0 auto 20px auto;
-        font-size: 70px; color: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin: auto;
+        font-size: 70px;
+        color: white;
     }
     .violet { background: linear-gradient(135deg,#4d7cff,#b312ff); }
-    .green { background: #00a884; }
-
-    .title-btn {
-        margin-top: 20px;
-        background: none;
-        border: none;
-        font-size: 30px;
+    .green  { background: #00a884; }
+    .title-text {
+        font-size: 32px;
+        margin-top: 25px;
         font-weight: 700;
-        color: #222;
+    }
+    .click-btn {
+        width: 80%;
+        margin-top: 25px;
+        padding: 14px;
+        background: linear-gradient(90deg,#1e62ff,#8a2eff);
+        border-radius: 12px;
+        color: white;
+        font-size: 20px;
+        font-weight: 600;
+        border: none;
         cursor: pointer;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # -------- HEADER --------
+    # ---------- HEADER ----------
     st.markdown(
         f"""
         <div class="header">
             <div class="header-title">ZODOPT MEETEASE</div>
-            <img class="logo-img" src="data:image/png;base64,{logo_b64}">
+            <img src="data:image/png;base64,{logo_b64}" style="height:80px;">
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
-    # -------- TWO WIDE CARDS --------
-    col1, col2 = st.columns([1, 1], gap="large")
+    # ---------- FULL-WIDTH CARDS ----------
+    col1, col2 = st.columns([1,1], gap="large")
 
-    # ========== VISIT PLAN CARD ==========
+    # ---------- VISIT PLAN ----------
     with col1:
-        card = st.container()
-        with card:
-            st.markdown(
-                """
-                <div class="card">
-                    <div class="icon-circle violet">🗓️</div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+        if st.button("VisitPlan_Click", key="visit_click", help="", use_container_width=True):
+            navigate_to("visit")
 
-            # BUTTON inside card
-            if st.button("Visit Plan", key="visit_plan_btn", use_container_width=True):
-                navigate_to("visit")
+        st.markdown("""
+            <div class="card-button" onclick="document.getElementById('visit_click').click()">
+                <div class="icon-circle violet">🗓️</div>
+                <div class="title-text">Visit Plan</div>
+                <button class="click-btn">Open Visit Plan</button>
+            </div>
+        """, unsafe_allow_html=True)
 
-        # Make entire card clickable too
-        if card:
-            st.markdown(
-                "<script>document.querySelectorAll('.card')[0].onclick=function(){window.location.href='?page=visit'};</script>",
-                unsafe_allow_html=True,
-            )
-
-    # ========== CONFERENCE CARD ==========
+    # ---------- CONFERENCE ----------
     with col2:
-        card2 = st.container()
-        with card2:
-            st.markdown(
-                """
-                <div class="card">
-                    <div class="icon-circle green">📅</div>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
+        if st.button("Conf_Click", key="conference_click", help="", use_container_width=True):
+            navigate_to("conference")
 
-            if st.button("Conference Booking", key="conf_btn", use_container_width=True):
-                navigate_to("conference")
+        st.markdown("""
+            <div class="card-button" onclick="document.getElementById('conference_click').click()">
+                <div class="icon-circle green">📘</div>
+                <div class="title-text">Conference Booking</div>
+                <button class="click-btn">Open Conference</button>
+            </div>
+        """, unsafe_allow_html=True)
 
-        if card2:
-            st.markdown(
-                "<script>document.querySelectorAll('.card')[1].onclick=function(){window.location.href='?page=conference'};</script>",
-                unsafe_allow_html=True,
-            )
-
-
-# ---------------- RUN ----------------
+# ==================================================================
+#                           RUN APP
+# ==================================================================
 load_page()
