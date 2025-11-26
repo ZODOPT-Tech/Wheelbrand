@@ -1,4 +1,4 @@
-\# visitor_app.py -- Refined full Streamlit app using AWS Secrets Manager for DB credentials
+# visitor_app.py -- Refined full Streamlit app using AWS Secrets Manager for DB credentials
 import streamlit as st
 from PIL import Image
 import mysql.connector
@@ -201,24 +201,11 @@ logo_b64 = load_logo(LOGO_PATH)
 
 
 # ---------------- UI / MAIN ----------------
-def logout():
-    """Clear session state and navigate to login."""
-    for key in ["auth_mode", "admin_logged", "visitor_step"]:
-        if key in st.session_state:
-            del st.session_state[key]
-    init_visitor_state() # Reset visitor state as well
-    st.session_state["auth_mode"] = "login"
-    st.rerun()
-
 def visitor_main(navigate_to=None):
-    mode = st.session_state.get("auth_mode", "login")
-    
-    # --- CSS Styling for Buttons and Tabs ---
-    # The logout button styling is crucial to make it look like an icon-only button
+    # header styling
     st.markdown(
         """
         <style>
-            /* Custom styling for the primary action button */
             .stButton button {
                 background-color: #1e62ff !important;
                 color: white !important;
@@ -232,62 +219,12 @@ def visitor_main(navigate_to=None):
                 color: white !important;
                 box-shadow: 0 4px 12px rgba(138, 46, 255, 0.4);
             }
-            /* Custom styling for the tab-like headers in visitor flow */
-            div.visitor-tab-header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                border-bottom: 1px solid #ddd;
-                margin-bottom: 20px;
-            }
-            div.visitor-tab {
-                flex-grow: 1;
-                text-align: center;
-                padding: 15px 10px;
-                cursor: pointer;
-                font-weight: 600;
-                color: #888;
-                position: relative;
-            }
-            div.visitor-tab.active {
-                color: #1e62ff; /* Primary color for active tab text */
-            }
-            div.visitor-tab.active::after {
-                content: '';
-                position: absolute;
-                bottom: -1px;
-                left: 0;
-                right: 0;
-                height: 4px;
-                /* Gradient line matching the image */
-                background: linear-gradient(90deg, #1e62ff, #8a2eff);
-                border-radius: 2px 2px 0 0;
-            }
-            /* Hiding the default "Admin Sign In" subheader */
-            .stTextInput label {
-                font-weight: bold;
-            }
-            
-            /* Icon-only button styling for logout */
-            .logout-button-container button {
-                background: none !important;
-                border: none !important;
-                padding: 0 0 0 10px !important;
-                margin: 0 !important;
-                box-shadow: none !important;
-                line-height: 1; /* Adjust to properly align icon */
-            }
-            .logout-button-container button span {
-                /* Target the text/icon span inside the button */
-                color: white !important;
-                font-size: 24px !important;
-            }
         </style>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
         """,
         unsafe_allow_html=True,
     )
 
+    mode = st.session_state.get("auth_mode", "login")
     page_title = {
         "login": "Admin Login",
         "register": "Admin Registration",
@@ -295,68 +232,19 @@ def visitor_main(navigate_to=None):
         "dashboard": "Visitor Registration",
     }.get(mode, "Admin Area")
 
-    # --- Header with Logo, Title, and Logout Button ---
-    
-    # Use columns to align the title/logo and the logout button
-    header_col1, header_col2 = st.columns([4, 1])
-
-    with header_col1:
-        # Header HTML structure for title and logo
-        header_html = f"""
+    st.markdown(
+        f"""
         <div style="width:100%;padding:20px 30px;border-radius:15px;
             background: linear-gradient(90deg,#1e62ff,#8a2eff);color:white;
             display:flex;justify-content:space-between;align-items:center;">
             <div style="font-size:28px;font-weight:700;">{page_title}</div>
             <img src="data:image/png;base64,{logo_b64}" style="height:60px;">
         </div>
-        """
-        st.markdown(header_html, unsafe_allow_html=True)
-    
-    # Place the Logout Button in the second column only for the 'dashboard' mode
-    if mode == "dashboard":
-        # Add some padding/margin to align the logout button with the header color bar
-        st.markdown(
-            """
-            <div style="height: 101px; 
-                        background: linear-gradient(90deg,#1e62ff,#8a2eff);
-                        padding-top: 30px;
-                        border-radius: 0 15px 0 0; 
-                        margin-left: -15px; /* Pull it slightly left to cover the gap */
-                        margin-bottom: -40px; /* Pull it up to align with the main header */
-                        display: flex;
-                        justify-content: center;"
-            >
-            """, 
-            unsafe_allow_html=True
-        )
-        
-        # Use a Streamlit button with an icon and custom styling
-        # The key ensures the button is treated as a separate element
-        if st.button("fas fa-sign-out-alt", key="logout_btn"):
-            logout()
-            
-        st.markdown("</div>", unsafe_allow_html=True) # Close the wrapper div
-        
-        # NOTE: Due to Streamlit's rendering, it's difficult to perfectly embed a native st.button inside the custom header markdown. 
-        # This column approach is the standard workaround.
-    else:
-        # Fill the column with the header background color on other screens for consistency
-        st.markdown(
-            """
-            <div style="height: 101px; 
-                        background: linear-gradient(90deg,#1e62ff,#8a2eff); 
-                        border-radius: 0 15px 0 0;
-                        margin-left: -15px; 
-                        margin-bottom: -40px;">
-            </div>
-            """, 
-            unsafe_allow_html=True
-        )
+        """,
+        unsafe_allow_html=True,
+    )
 
-
-    # --- Main Content Rendering ---
     if mode == "login":
-        # Removed the st.subheader("Admin Sign In")
         show_login()
     elif mode == "register":
         show_register()
@@ -368,7 +256,7 @@ def visitor_main(navigate_to=None):
 
 # ---------------- LOGIN ----------------
 def show_login():
-    # st.subheader("Admin Sign In") # REMOVED
+    st.subheader("Admin Sign In")
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
 
@@ -419,6 +307,7 @@ def show_register():
             else:
                 st.error(result)
 
+
 # ---------------- FORGOT PASSWORD ----------------
 def show_forgot():
     st.subheader("Reset Password")
@@ -447,20 +336,9 @@ def show_visitor_flow():
         init_visitor_state()
 
     step = st.session_state["visitor_step"]
-    
-    # Custom tab rendering logic
-    tab_titles = {1: "PRIMARY DETAILS", 2: "SECONDARY DETAILS", 3: "IDENTITY"}
-    
-    # Use HTML/CSS to mimic the tab structure from the image
-    tab_html = '<div class="visitor-tab-header">'
-    for i in range(1, 4):
-        active_class = "active" if i == step else ""
-        tab_html += f'<div class="visitor-tab {active_class}">{tab_titles[i]}</div>'
-    tab_html += '</div>'
-    
-    st.markdown(tab_html, unsafe_allow_html=True)
-    
-    # Render the content for the current step
+    step_titles = {1: "Primary Details", 2: "Secondary Details", 3: "Identity Verification"}
+    st.markdown(f"### Step {step} of 3 — {step_titles[step]}")
+
     if step == 1:
         step_primary()
     elif step == 2:
@@ -491,6 +369,7 @@ def init_visitor_state():
 
 # ---------- STEP 1 : PRIMARY DETAILS ----------
 def step_primary():
+    st.subheader("Primary Details")
     st.text_input("Full Name", key="v_name")
     st.text_input("Phone Number", key="v_phone")
     st.text_input("Email Address", key="v_email")
@@ -515,6 +394,7 @@ def step_primary():
 
 # ---------- STEP 2 : SECONDARY DETAILS ----------
 def step_secondary():
+    st.subheader("Secondary Details (Person to Visit & Visit Info)")
     st.text_input("Person to Visit", key="v_host")
     st.selectbox("Visit Type", ["", "Business", "Personal", "Delivery", "Interview"], key="v_visit_type")
     st.text_input("From Company", key="v_company")
@@ -552,6 +432,7 @@ def step_secondary():
 
 # ---------- STEP 3 : IDENTITY ----------
 def step_identity():
+    st.subheader("Identity Verification")
     st.write("Upload Photo and Signature")
 
     photo = st.file_uploader("Photo", type=["png", "jpg", "jpeg"])
