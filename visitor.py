@@ -142,7 +142,7 @@ logo_b64 = load_logo(LOGO_PATH)
 def visitor_main(navigate_to):
     """
     THIS IS THE ENTRY FUNCTION CALLED FROM main.py
-    Updates the main header title based on the current auth mode.
+    Updates the main header title based on the current auth mode and injects global button styling.
     """
     mode = st.session_state.get("auth_mode", "login")
 
@@ -155,6 +155,27 @@ def visitor_main(navigate_to):
     }
     
     current_title = header_titles.get(mode, "Admin Area")
+
+    # INJECT CUSTOM CSS FOR GRADIENT BUTTONS
+    st.markdown(f"""
+    <style>
+    /* Custom button styling to match header gradient for all st.button elements */
+    .stButton>button {{
+        background: linear-gradient(90deg, #1e62ff, #8a2eff);
+        color: white !important; /* Ensure text color is white for contrast */
+        border-radius: 0.5rem; /* Match header/card rounding */
+        border: none; /* Remove default border */
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+        transition: transform 0.1s ease, box-shadow 0.1s ease;
+    }}
+    .stButton>button:hover {{
+        /* Slight lift effect on hover */
+        transform: translateY(-1px);
+        box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }}
+    </style>
+    """, unsafe_allow_html=True)
 
     # The header now uses the dynamic title
     st.markdown(f"""
@@ -202,11 +223,13 @@ def show_login(navigate_to):
     col1, col2 = st.columns(2)
 
     with col1:
+        # These buttons will now be styled by the global CSS
         if st.button("New Registration"):
             st.session_state["auth_mode"] = "register"
             st.rerun()
 
     with col2:
+        # These buttons will now be styled by the global CSS
         if st.button("Forgot Password?"):
             st.session_state["auth_mode"] = "forgot"
             st.rerun()
