@@ -37,18 +37,47 @@ def load_page():
 
 
 # ==================================================================
-#                            HOME PAGE
+#                       HOME PAGE
 # ==================================================================
 def render_home():
+
+    # Inject custom CSS to style all Streamlit buttons to match the header colors
+    # This ensures the navigation buttons ("Visit Plan", "Conference Booking") are styled.
+    st.markdown("""
+    <style>
+        /* Custom CSS for button styling (copied from visitor.py) */
+        .stButton button {
+            /* Use the starting color of the header gradient */
+            background-color: #1e62ff !important;
+            color: white !important;
+            border: 1px solid #1e62ff !important;
+            border-radius: 0.5rem !important; 
+            transition: all 0.3s ease;
+        }
+        
+        /* Hover effect, using the purple end of the gradient */
+        .stButton button:hover {
+            background-color: #8a2eff !important;
+            border-color: #8a2eff !important;
+            color: white !important;
+            box-shadow: 0 4px 12px rgba(138, 46, 255, 0.4);
+        }
+    </style>
+    """, unsafe_allow_html=True)
 
     # Load Logo
     from PIL import Image
     from io import BytesIO
     import base64
-    logo = Image.open("zodopt.png")
-    buf = BytesIO()
-    logo.save(buf, format="PNG")
-    logo_b64 = base64.b64encode(buf.getvalue()).decode()
+    # Note: Assuming 'zodopt.png' is available in the environment path
+    try:
+        logo = Image.open("zodopt.png")
+        buf = BytesIO()
+        logo.save(buf, format="PNG")
+        logo_b64 = base64.b64encode(buf.getvalue()).decode()
+    except:
+        # Fallback if image path is incorrect
+        logo_b64 = "" 
 
     st.markdown("""
     <style>
@@ -115,7 +144,7 @@ def render_home():
                 <div class="icon-circle violet">📅</div>
         """, unsafe_allow_html=True)
 
-        # ---- CLICKABLE TEXT ----
+        # ---- CLICKABLE TEXT (Now styled by the injected CSS) ----
         if st.button("Visit Plan", use_container_width=True):
             navigate_to("visit")
 
