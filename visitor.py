@@ -174,19 +174,11 @@ def visitor_main(navigate_to):
         transform: translateY(-1px);
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
     }}
-    /* Styling for the main card container (The area around the inputs and buttons) */
+    /* Styling for the main card container (Used primarily for margin/alignment) */
     .card {{
-        background-color: transparent; /* Changed to transparent to rely on the form-inputs-group for the main white box */
+        background-color: transparent; 
         padding: 0;
         margin-top: 2rem;
-    }}
-    /* NEW: Container for all input fields to create a unified white background box */
-    .form-inputs-group {{
-        background-color: white;
-        padding: 1.5rem 2rem;
-        border-radius: 25px;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
-        margin-bottom: 1.5rem; /* Space between inputs container and buttons */
     }}
     /* Styling for Streamlit text input fields (the input boxes themselves) */
     .stTextInput>div>div>input, .stPasswordInput>div>div>input {{
@@ -236,11 +228,9 @@ def show_login(navigate_to):
     # The 'card' div now serves as the outer alignment/margin container
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # Wrap inputs in the new dedicated container
-    st.markdown("<div class='form-inputs-group'>", unsafe_allow_html=True)
+    # Inputs are now rendered directly without an explicit wrapper container
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
-    st.markdown("</div>", unsafe_allow_html=True)
     
     if st.button("Sign In →", use_container_width=True):
         res = verify_admin(email.lower(), pwd)
@@ -271,13 +261,11 @@ def show_login(navigate_to):
 def show_register(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # Wrap inputs in the new dedicated container
-    st.markdown("<div class='form-inputs-group'>", unsafe_allow_html=True)
+    # Inputs are now rendered directly without an explicit wrapper container
     full = st.text_input("Full Name")
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
     confirm = st.text_input("Confirm Password", type="password")
-    st.markdown("</div>", unsafe_allow_html=True)
     
     if st.button("Register Admin", use_container_width=True):
         if not full:
@@ -302,12 +290,10 @@ def show_register(navigate_to):
 def show_forgot(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # Wrap inputs in the new dedicated container
-    st.markdown("<div class='form-inputs-group'>", unsafe_allow_html=True)
+    # Inputs are now rendered directly without an explicit wrapper container
     email = st.text_input("Registered Email")
     newpwd = st.text_input("New Password", type="password")
     confirm = st.text_input("Confirm Password", type="password")
-    st.markdown("</div>", unsafe_allow_html=True)
     
     if st.button("Update Password", use_container_width=True):
         if not email_exists(email.lower()):
