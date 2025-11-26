@@ -142,14 +142,28 @@ logo_b64 = load_logo(LOGO_PATH)
 def visitor_main(navigate_to):
     """
     THIS IS THE ENTRY FUNCTION CALLED FROM main.py
+    Updates the main header title based on the current auth mode.
     """
+    mode = st.session_state.get("auth_mode", "login")
+
+    # Map the current mode to the desired header title
+    header_titles = {
+        "login": "Admin Login",
+        "register": "Admin Registration",
+        "forgot": "Reset Password",
+        "dashboard": "Admin Dashboard"
+    }
+    
+    current_title = header_titles.get(mode, "Admin Area")
+
+    # The header now uses the dynamic title
     st.markdown(f"""
     <div class="header" style="
         width:100%;padding:25px 40px;
         border-radius:25px;
         background: linear-gradient(90deg,#1e62ff,#8a2eff);
         color:white;display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-size:34px;font-weight:700;">ZODOPT MEETEASE</div>
+        <div style="font-size:34px;font-weight:700;">{current_title}</div>
         <img src="data:image/png;base64,{logo_b64}" style="height:70px;">
     </div>
     """, unsafe_allow_html=True)
@@ -157,8 +171,6 @@ def visitor_main(navigate_to):
     st.write("")
 
     # ROUTING INSIDE visitor.py
-    mode = st.session_state.get("auth_mode", "login")
-
     if mode == "login":
         show_login(navigate_to)
     elif mode == "register":
@@ -172,8 +184,7 @@ def visitor_main(navigate_to):
 # ---------------- LOGIN FORM ----------------
 def show_login(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-
-    st.subheader("Admin Login")
+    # st.subheader("Admin Login") # Removed, now in main header
 
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
@@ -207,7 +218,7 @@ def show_login(navigate_to):
 def show_register(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    st.subheader("New Admin Registration")
+    # st.subheader("New Admin Registration") # Removed, now in main header
 
     full = st.text_input("Full Name")
     email = st.text_input("Email")
@@ -237,7 +248,7 @@ def show_register(navigate_to):
 def show_forgot(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    st.subheader("Reset Password")
+    # st.subheader("Reset Password") # Removed, now in main header
 
     email = st.text_input("Registered Email")
     newpwd = st.text_input("New Password", type="password")
@@ -266,4 +277,3 @@ def show_admin_dashboard(navigate_to):
         st.session_state["auth_mode"] = "login"
         st.session_state["admin_logged"] = False
         st.rerun()
-
