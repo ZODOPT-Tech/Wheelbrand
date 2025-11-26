@@ -1,4 +1,4 @@
-# visitor_app.py -- Refined full Streamlit app using AWS Secrets Manager for DB credentials
+\# visitor_app.py -- Refined full Streamlit app using AWS Secrets Manager for DB credentials
 import streamlit as st
 from PIL import Image
 import mysql.connector
@@ -25,7 +25,7 @@ AWS_REGION = "ap-south-1"
 DB_TABLE = "admin"
 VISITOR_TABLE = "VISITOR_LOG"
 
-ENABLE_DRAW_SIGNATURE = False # Set True if you want the drawable signature option
+ENABLE_DRAW_SIGNATURE = False  # Set True if you want the drawable signature option
 
 # ---------------- HELPERS ----------------
 def is_valid_email(email: str) -> bool:
@@ -211,7 +211,10 @@ def logout():
     st.rerun()
 
 def visitor_main(navigate_to=None):
-    # header styling
+    mode = st.session_state.get("auth_mode", "login")
+    
+    # --- CSS Styling for Buttons and Tabs ---
+    # The logout button styling is crucial to make it look like an icon-only button
     st.markdown(
         """
         <style>
@@ -260,32 +263,31 @@ def visitor_main(navigate_to=None):
                 background: linear-gradient(90deg, #1e62ff, #8a2eff);
                 border-radius: 2px 2px 0 0;
             }
-            /* Styling for the logout button in the header */
-            .logout-container {
-                display: flex;
-                align-items: center;
-                margin-left: 20px; /* Spacing from the logo/title */
+            /* Hiding the default "Admin Sign In" subheader */
+            .stTextInput label {
+                font-weight: bold;
             }
-            .logout-button {
+            
+            /* Icon-only button styling for logout */
+            .logout-button-container button {
                 background: none !important;
                 border: none !important;
-                padding: 0 !important;
+                padding: 0 0 0 10px !important;
                 margin: 0 !important;
                 box-shadow: none !important;
+                line-height: 1; /* Adjust to properly align icon */
             }
-            .logout-button i {
-                font-size: 24px; /* Icon size */
-                color: white; /* Icon color */
-                cursor: pointer;
+            .logout-button-container button span {
+                /* Target the text/icon span inside the button */
+                color: white !important;
+                font-size: 24px !important;
             }
-            /* Ensure font awesome is available or use another icon set. Streamlit uses its own icons which can be used via markdown/html */
         </style>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
         """,
         unsafe_allow_html=True,
     )
 
-    mode = st.session_state.get("auth_mode", "login")
     page_title = {
         "login": "Admin Login",
         "register": "Admin Registration",
@@ -293,38 +295,68 @@ def visitor_main(navigate_to=None):
         "dashboard": "Visitor Registration",
     }.get(mode, "Admin Area")
 
-    # Header with Logo and Title
-    header_html = f"""
-    <div style="width:100%;padding:20px 30px;border-radius:15px;
-        background: linear-gradient(90deg,#1e62ff,#8a2eff);color:white;
-        display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-size:28px;font-weight:700;">{page_title}</div>
-        <div style="display:flex;align-items:center;">
-            <img src="data:image/png;base64,{logo_b64}" style="height:60px;margin-right:20px;">
-    """
+    # --- Header with Logo, Title, and Logout Button ---
     
-    # Add Logout Button only on the 'dashboard' page
-    if mode == "dashboard":
-        # The button itself will be rendered outside the markdown block for Streamlit functionality
-        header_html += """
-            <div class="logout-container">
-                <form action="." method="GET">
-                    <button type="submit" name="logout" class="logout-button" style="background:none; border:none; padding:0; margin:0; box-shadow:none;">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </button>
-                </form>
-            </div>
-        """
-    
-    header_html += "</div></div>"
-    st.markdown(header_html, unsafe_allow_html=True)
+    # Use columns to align the title/logo and the logout button
+    header_col1, header_col2 = st.columns([4, 1])
 
-    # Check for logout query parameter (from the button form submission)
-    if "logout" in st.query_params:
-        logout()
+    with header_col1:
+        # Header HTML structure for title and logo
+        header_html = f"""
+        <div style="width:100%;padding:20px 30px;border-radius:15px;
+            background: linear-gradient(90deg,#1e62ff,#8a2eff);color:white;
+            display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:28px;font-weight:700;">{page_title}</div>
+            <img src="data:image/png;base64,{logo_b64}" style="height:60px;">
+        </div>
+        """
+        st.markdown(header_html, unsafe_allow_html=True)
     
-    # Main content rendering based on mode
+    # Place the Logout Button in the second column only for the 'dashboard' mode
+    if mode == "dashboard":
+        # Add some padding/margin to align the logout button with the header color bar
+        st.markdown(
+            """
+            <div style="height: 101px; 
+                        background: linear-gradient(90deg,#1e62ff,#8a2eff);
+                        padding-top: 30px;
+                        border-radius: 0 15px 0 0; 
+                        margin-left: -15px; /* Pull it slightly left to cover the gap */
+                        margin-bottom: -40px; /* Pull it up to align with the main header */
+                        display: flex;
+                        justify-content: center;"
+            >
+            """, 
+            unsafe_allow_html=True
+        )
+        
+        # Use a Streamlit button with an icon and custom styling
+        # The key ensures the button is treated as a separate element
+        if st.button("fas fa-sign-out-alt", key="logout_btn"):
+            logout()
+            
+        st.markdown("</div>", unsafe_allow_html=True) # Close the wrapper div
+        
+        # NOTE: Due to Streamlit's rendering, it's difficult to perfectly embed a native st.button inside the custom header markdown. 
+        # This column approach is the standard workaround.
+    else:
+        # Fill the column with the header background color on other screens for consistency
+        st.markdown(
+            """
+            <div style="height: 101px; 
+                        background: linear-gradient(90deg,#1e62ff,#8a2eff); 
+                        border-radius: 0 15px 0 0;
+                        margin-left: -15px; 
+                        margin-bottom: -40px;">
+            </div>
+            """, 
+            unsafe_allow_html=True
+        )
+
+
+    # --- Main Content Rendering ---
     if mode == "login":
+        # Removed the st.subheader("Admin Sign In")
         show_login()
     elif mode == "register":
         show_register()
@@ -336,7 +368,7 @@ def visitor_main(navigate_to=None):
 
 # ---------------- LOGIN ----------------
 def show_login():
-    st.subheader("Admin Sign In")
+    # st.subheader("Admin Sign In") # REMOVED
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
 
@@ -423,8 +455,6 @@ def show_visitor_flow():
     tab_html = '<div class="visitor-tab-header">'
     for i in range(1, 4):
         active_class = "active" if i == step else ""
-        # Using a button as a trick to capture click, or just rely on the existing multi-step logic
-        # For simplicity and to not overcomplicate the re-rendering logic with st.button, we'll just render the titles
         tab_html += f'<div class="visitor-tab {active_class}">{tab_titles[i]}</div>'
     tab_html += '</div>'
     
@@ -461,7 +491,6 @@ def init_visitor_state():
 
 # ---------- STEP 1 : PRIMARY DETAILS ----------
 def step_primary():
-    # st.subheader("Primary Details") # Removed subheader to fit the tab look better
     st.text_input("Full Name", key="v_name")
     st.text_input("Phone Number", key="v_phone")
     st.text_input("Email Address", key="v_email")
@@ -486,7 +515,6 @@ def step_primary():
 
 # ---------- STEP 2 : SECONDARY DETAILS ----------
 def step_secondary():
-    # st.subheader("Secondary Details (Person to Visit & Visit Info)") # Removed subheader
     st.text_input("Person to Visit", key="v_host")
     st.selectbox("Visit Type", ["", "Business", "Personal", "Delivery", "Interview"], key="v_visit_type")
     st.text_input("From Company", key="v_company")
@@ -524,7 +552,6 @@ def step_secondary():
 
 # ---------- STEP 3 : IDENTITY ----------
 def step_identity():
-    # st.subheader("Identity Verification") # Removed subheader
     st.write("Upload Photo and Signature")
 
     photo = st.file_uploader("Photo", type=["png", "jpg", "jpeg"])
