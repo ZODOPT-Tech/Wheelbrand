@@ -156,7 +156,7 @@ def visitor_main(navigate_to):
     
     current_title = header_titles.get(mode, "Admin Area")
 
-    # INJECT CUSTOM CSS FOR GRADIENT BUTTONS
+    # INJECT CUSTOM CSS FOR GRADIENT BUTTONS AND INPUT CONTAINER
     st.markdown(f"""
     <style>
     /* Custom button styling to match header gradient for all st.button elements */
@@ -173,6 +173,15 @@ def visitor_main(navigate_to):
         /* Slight lift effect on hover */
         transform: translateY(-1px);
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }}
+    /* New style for the input container to visually group form fields */
+    .input-fields-box {{
+        border: 1px solid #ddd; 
+        border-radius: 0.5rem;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        background-color: #f9f9f9;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -205,10 +214,12 @@ def visitor_main(navigate_to):
 # ---------------- LOGIN FORM ----------------
 def show_login(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    # st.subheader("Admin Login") # Removed, now in main header
 
+    # Wrap Email and Password in a custom container
+    st.markdown("<div class='input-fields-box'>", unsafe_allow_html=True)
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     if st.button("Sign In →", use_container_width=True):
         res = verify_admin(email.lower(), pwd)
@@ -241,12 +252,13 @@ def show_login(navigate_to):
 def show_register(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # st.subheader("New Admin Registration") # Removed, now in main header
-
+    # Wrap registration inputs in a custom container
+    st.markdown("<div class='input-fields-box'>", unsafe_allow_html=True)
     full = st.text_input("Full Name")
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
     confirm = st.text_input("Confirm Password", type="password")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     if st.button("Register Admin", use_container_width=True):
         if not full:
@@ -271,11 +283,12 @@ def show_register(navigate_to):
 def show_forgot(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # st.subheader("Reset Password") # Removed, now in main header
-
+    # Wrap forgot password inputs in a custom container
+    st.markdown("<div class='input-fields-box'>", unsafe_allow_html=True)
     email = st.text_input("Registered Email")
     newpwd = st.text_input("New Password", type="password")
     confirm = st.text_input("Confirm Password", type="password")
+    st.markdown("</div>", unsafe_allow_html=True)
 
     if st.button("Update Password", use_container_width=True):
         if not email_exists(email.lower()):
