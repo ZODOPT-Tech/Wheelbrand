@@ -41,20 +41,18 @@ def get_db_credentials():
 
     try:
         resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
-        secret = resp["SecretString"]
-        creds = {}
 
-        for line in secret.split("\n"):
-            if "=" in line:
-                k, v = line.split("=", 1)
-                creds[k.strip()] = v.strip()
+        # Secret is JSON for Key/Value pairs
+        creds = json.loads(resp["SecretString"])
 
+        # Required keys
         for key in ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]:
             if key not in creds:
                 st.error(f"Missing AWS secret key: {key}")
                 st.stop()
 
         return creds
+
     except Exception as e:
         st.error(f"AWS Secret Error: {e}")
         st.stop()
@@ -90,7 +88,7 @@ def create_admin(full, email, pwd):
     conn = get_connection()
     cur = conn.cursor()
     cur.execute(
-        f"INSERT INTO {DB_TABLE}(full_name,email,password_hash,created_at) VALUES (%s,%s,%s,%s)",
+        f"INSERT INTO {DB_TABLE}(full_name, email, password_hash, created_at) VALUES (%s, %s, %s, %s)",
         (full, email, hashed, datetime.utcnow()),
     )
     conn.commit()
@@ -117,14 +115,17 @@ def update_password(email, newpwd):
     hashed = make_bcrypt_hash(newpwd)
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute(f"UPDATE {DB_TABLE} SET password_hash=%s WHERE email=%s", (hashed, email))
+    cur.execute(
+        f"UPDATE {DB_TABLE} SET password_hash=%s WHERE email=%s",
+        (hashed, email)
+    )
     conn.commit()
     cur.close()
     conn.close()
     return "SUCCESS"
 
 
-# ---------------- LOAD LOGO ----------------
+# ---------------- LOGO LOADER ----------------
 def load_logo(path):
     try:
         img = Image.open(path)
@@ -140,13 +141,8 @@ logo_b64 = load_logo(LOGO_PATH)
 
 # ---------------- ENTRYPOINT PAGE FUNCTION ----------------
 def visitor_main(navigate_to):
-    """
-    THIS IS THE ENTRY FUNCTION CALLED FROM main.py
-    Updates the main header title based on the current auth mode and injects global button styling.
-    """
     mode = st.session_state.get("auth_mode", "login")
 
-    # Map the current mode to the desired header title
     header_titles = {
         "login": "Admin Login",
         "register": "Admin Registration",
@@ -156,49 +152,39 @@ def visitor_main(navigate_to):
     
     current_title = header_titles.get(mode, "Admin Area")
 
-    # INJECT CUSTOM CSS FOR GRADIENT BUTTONS AND INPUT CONTAINER
     st.markdown(f"""
     <style>
-    /* Custom button styling to match header gradient for all st.button elements */
     .stButton>button {{
         background: linear-gradient(90deg, #1e62ff, #8a2eff);
-        color: white !important; /* Ensure text color is white for contrast */
-        border-radius: 0.5rem; /* Match header/card rounding */
-        border: none; /* Remove default border */
+        color: white !important;
+        border-radius: 0.5rem;
+        border: none;
         padding: 0.5rem 1rem;
         font-weight: 600;
         transition: transform 0.1s ease, box-shadow 0.1s ease;
     }}
     .stButton>button:hover {{
-        /* Slight lift effect on hover */
         transform: translateY(-1px);
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
     }}
-    /* Styling for the main card container (Used primarily for margin/alignment) */
     .card {{
-        background-color: transparent; 
+        background-color: transparent;
         padding: 0;
         margin-top: 2rem;
     }}
-    /* Styling for Streamlit text input fields (the input boxes themselves) */
     .stTextInput>div>div>input, .stPasswordInput>div>div>input {{
-        background-color: #f0f2f6; /* A slightly off-white for the input fields */
+        background-color: #f0f2f6;
         border-radius: 0.5rem;
         padding: 0.75rem 1rem;
         border: 1px solid #e0e0e0;
     }}
     .stTextInput>label, .stPasswordInput>label {{
-        font-weight: bold; /* Make labels stand out */
+        font-weight: bold;
         color: #333;
-    }}
-    /* Ensure the Streamlit input container div itself has a transparent background to not interfere */
-    .stTextInput>div>div, .stPasswordInput>div>div {{
-        background-color: transparent !important;
     }}
     </style>
     """, unsafe_allow_html=True)
 
-    # The header now uses the dynamic title
     st.markdown(f"""
     <div class="header" style="
         width:100%;padding:25px 40px;
@@ -212,7 +198,6 @@ def visitor_main(navigate_to):
 
     st.write("")
 
-    # ROUTING INSIDE visitor.py
     if mode == "login":
         show_login(navigate_to)
     elif mode == "register":
@@ -223,12 +208,10 @@ def visitor_main(navigate_to):
         show_admin_dashboard(navigate_to)
 
 
-# ---------------- LOGIN FORM ----------------
+# ---------------- LOGIN PAGE ----------------
 def show_login(navigate_to):
-    # The 'card' div now serves as the outer alignment/margin container
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # Inputs are now rendered directly without an explicit wrapper container
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
     
@@ -243,7 +226,6 @@ def show_login(navigate_to):
             st.error(res)
 
     col1, col2 = st.columns(2)
-
     with col1:
         if st.button("New Registration"):
             st.session_state["auth_mode"] = "register"
@@ -257,11 +239,10 @@ def show_login(navigate_to):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-# ---------------- REGISTRATION FORM ----------------
+# ---------------- REGISTRATION PAGE ----------------
 def show_register(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # Inputs are now rendered directly without an explicit wrapper container
     full = st.text_input("Full Name")
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
@@ -286,11 +267,10 @@ def show_register(navigate_to):
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-# ---------------- FORGOT PASSWORD FORM ----------------
+# ---------------- FORGOT PASSWORD PAGE ----------------
 def show_forgot(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # Inputs are now rendered directly without an explicit wrapper container
     email = st.text_input("Registered Email")
     newpwd = st.text_input("New Password", type="password")
     confirm = st.text_input("Confirm Password", type="password")
