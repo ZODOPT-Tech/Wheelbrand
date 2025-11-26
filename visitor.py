@@ -166,6 +166,29 @@ logo_b64 = load_logo(LOGO_PATH)
 
 # ---------------- MAIN ENTRY ----------------
 def visitor_main(navigate_to):
+    # Inject custom CSS to style all Streamlit buttons to match the header's color scheme
+    st.markdown("""
+    <style>
+        /* Custom CSS to style all Streamlit buttons to match the header colors */
+        .stButton button {
+            /* Use the starting color of the header gradient */
+            background-color: #1e62ff !important;
+            color: white !important;
+            border: 1px solid #1e62ff !important;
+            border-radius: 0.5rem !important; 
+            transition: all 0.3s ease;
+        }
+        
+        /* Hover effect, using the purple end of the gradient */
+        .stButton button:hover {
+            background-color: #8a2eff !important;
+            border-color: #8a2eff !important;
+            color: white !important;
+            box-shadow: 0 4px 12px rgba(138, 46, 255, 0.4);
+        }
+    </style>
+    """, unsafe_allow_html=True)
+    
     mode = st.session_state.get("auth_mode", "login")
 
     page_title = {
