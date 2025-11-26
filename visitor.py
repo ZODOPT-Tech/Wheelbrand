@@ -174,14 +174,28 @@ def visitor_main(navigate_to):
         transform: translateY(-1px);
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
     }}
-    /* New style for the input container to visually group form fields */
-    .input-fields-box {{
-        border: 1px solid #ddd; 
+    /* Styling for the main card container */
+    .card {{
+        background-color: white;
+        padding: 2rem;
+        border-radius: 25px;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        margin-top: 2rem;
+    }}
+    /* Styling for Streamlit text input containers to make them white and prominent */
+    .stTextInput>div>div>input, .stPasswordInput>div>div>input {{
+        background-color: #f0f2f6; /* A slightly off-white for the input fields */
         border-radius: 0.5rem;
-        padding: 1rem;
-        margin-bottom: 1rem;
-        background-color: #f9f9f9;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        padding: 0.75rem 1rem;
+        border: 1px solid #e0e0e0;
+    }}
+    .stTextInput>label, .stPasswordInput>label {{
+        font-weight: bold; /* Make labels stand out */
+        color: #333;
+    }}
+    /* Ensure the Streamlit input container div itself has a transparent background to not interfere */
+    .stTextInput>div>div, .stPasswordInput>div>div {{
+        background-color: transparent !important;
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -213,13 +227,14 @@ def visitor_main(navigate_to):
 
 # ---------------- LOGIN FORM ----------------
 def show_login(navigate_to):
+    # The 'card' div now serves as the main container for the form
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # Wrap Email and Password in a custom container
-    st.markdown("<div class='input-fields-box'>", unsafe_allow_html=True)
+    # Inputs are now directly inside the 'card', with their own styling
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
-    st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True) # Add some space before the button
 
     if st.button("Sign In →", use_container_width=True):
         res = verify_admin(email.lower(), pwd)
@@ -234,13 +249,11 @@ def show_login(navigate_to):
     col1, col2 = st.columns(2)
 
     with col1:
-        # These buttons will now be styled by the global CSS
         if st.button("New Registration"):
             st.session_state["auth_mode"] = "register"
             st.rerun()
 
     with col2:
-        # These buttons will now be styled by the global CSS
         if st.button("Forgot Password?"):
             st.session_state["auth_mode"] = "forgot"
             st.rerun()
@@ -252,13 +265,12 @@ def show_login(navigate_to):
 def show_register(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # Wrap registration inputs in a custom container
-    st.markdown("<div class='input-fields-box'>", unsafe_allow_html=True)
     full = st.text_input("Full Name")
     email = st.text_input("Email")
     pwd = st.text_input("Password", type="password")
     confirm = st.text_input("Confirm Password", type="password")
-    st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True) # Add some space before the button
 
     if st.button("Register Admin", use_container_width=True):
         if not full:
@@ -283,12 +295,11 @@ def show_register(navigate_to):
 def show_forgot(navigate_to):
     st.markdown("<div class='card'>", unsafe_allow_html=True)
 
-    # Wrap forgot password inputs in a custom container
-    st.markdown("<div class='input-fields-box'>", unsafe_allow_html=True)
     email = st.text_input("Registered Email")
     newpwd = st.text_input("New Password", type="password")
     confirm = st.text_input("Confirm Password", type="password")
-    st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.markdown("<br>", unsafe_allow_html=True) # Add some space before the button
 
     if st.button("Update Password", use_container_width=True):
         if not email_exists(email.lower()):
