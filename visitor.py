@@ -1,6 +1,6 @@
-# visitor_app.py -- Refined full Streamlit app using AWS Secrets Manager for DB credentials
+# visitor_app.py -- Full refined Streamlit visitor app
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import mysql.connector
 import re
 import boto3
@@ -25,7 +25,7 @@ AWS_REGION = "ap-south-1"
 DB_TABLE = "admin"
 VISITOR_TABLE = "VISITOR_LOG"
 
-ENABLE_DRAW_SIGNATURE = False  # Set True if you want the drawable signature option
+ENABLE_DRAW_SIGNATURE = True  # allow drawing if the package is installed
 
 # ---------------- HELPERS ----------------
 def is_valid_email(email: str) -> bool:
@@ -46,15 +46,9 @@ def check_bcrypt(pwd: str, hashed: str) -> bool:
 # ---------------- AWS SECRET MANAGER ----------------
 @st.cache_resource
 def get_db_credentials():
-    """
-    Loads DB credentials from AWS Secrets Manager.
-    Secret must be a JSON string with keys:
-    DB_HOST, DB_NAME, DB_USER, DB_PASSWORD
-    """
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
     try:
         resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
-        # SecretsManager stores text in 'SecretString'
         if "SecretString" not in resp:
             raise RuntimeError("SecretString missing in AWS secrets response.")
         creds = json.loads(resp["SecretString"])
@@ -64,9 +58,7 @@ def get_db_credentials():
                 raise RuntimeError(f"Missing key in secret: {k}")
         return creds
     except Exception as e:
-        # helpful error visible in Streamlit
         st.error(f"AWS Secret Error: {e}")
-        # show traceback in logs for debugging (not necessary for end users)
         st.write(traceback.format_exc())
         st.stop()
 
@@ -74,11 +66,6 @@ def get_db_credentials():
 # ---------------- FAST DB CONNECTION ----------------
 @st.cache_resource
 def get_fast_connection():
-    """
-    Returns a persistent connection object (cached by Streamlit)
-    Note: do not close this connection (Streamlit caches it).
-    Close cursors after use.
-    """
     c = get_db_credentials()
     try:
         conn = mysql.connector.connect(
@@ -102,8 +89,7 @@ def email_exists(email: str) -> bool:
     cur = conn.cursor()
     try:
         cur.execute(f"SELECT 1 FROM {DB_TABLE} WHERE email=%s LIMIT 1", (email,))
-        exists = cur.fetchone() is not None
-        return exists
+        return cur.fetchone() is not None
     finally:
         cur.close()
 
@@ -162,14 +148,13 @@ def insert_visitor(payload: dict):
         placeholders = ",".join(["%s"] * len(payload))
         sql = f"INSERT INTO {VISITOR_TABLE} ({cols}) VALUES ({placeholders})"
         cur.execute(sql, tuple(payload.values()))
-        # lastrowid works with mysql-connector
         inserted_id = cur.lastrowid
         return inserted_id
     finally:
         cur.close()
 
 
-# ---------------- IMAGE BASE64 ----------------
+# ---------------- IMAGE / SIGNATURE HELPERS ----------------
 def file_to_base64(file) -> str:
     if file is None:
         return None
@@ -182,8 +167,28 @@ def file_to_base64(file) -> str:
         encoded = base64.b64encode(buffered.getvalue()).decode()
         return f"data:image/{fmt.lower()};base64,{encoded}"
     except Exception:
-        # fallback for non-image files
         return "data:application/octet-stream;base64," + base64.b64encode(data).decode()
+
+
+def typed_text_to_datauri(text: str, width=600, height=120, fontsize=48) -> str:
+    """
+    Render typed text to a PNG data-uri (simple signature-like image).
+    """
+    if not text:
+        return None
+    img = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+    draw = ImageDraw.Draw(img)
+    try:
+        # try to use a truetype font if available
+        font = ImageFont.truetype("arial.ttf", fontsize)
+    except Exception:
+        font = ImageFont.load_default()
+    w, h = draw.textsize(text, font=font)
+    draw.text(((width - w) / 2, (height - h) / 2), text, fill=(0, 0, 0), font=font)
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    encoded = base64.b64encode(buf.getvalue()).decode()
+    return f"data:image/png;base64,{encoded}"
 
 
 # ---------------- LOGO ----------------
@@ -200,29 +205,104 @@ def load_logo(path):
 logo_b64 = load_logo(LOGO_PATH)
 
 
-# ---------------- UI / MAIN ----------------
-def visitor_main(navigate_to=None):
-    # header styling
+# ---------------- UI / TABS / NAV ----------------
+TAB_CSS = """
+<style>
+/* Tab container */
+.tab-row {
+  display:flex;
+  gap:2rem;
+  justify-content:center;
+  align-items:center;
+  margin: 12px 0 18px 0;
+}
+.tab {
+  padding: 12px 28px;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  font-weight: 600;
+  color: #6b7280;
+  background: #f3f4f6;
+  border-bottom: 3px solid transparent;
+}
+.tab.active {
+  color: #0ea5e9;
+  background: white;
+  border-bottom: 3px solid linear-gradient(90deg,#1e62ff,#8a2eff);
+  box-shadow: 0px 4px 12px rgba(0,0,0,0.06);
+}
+.top-right-logout {
+  position: absolute;
+  right: 18px;
+  top: 18px;
+}
+</style>
+"""
+
+
+def render_tabs():
+    """Render tabs as three clickable columns that set st.session_state['visitor_step']"""
+    st.markdown(TAB_CSS, unsafe_allow_html=True)
+    step = st.session_state.get("visitor_step", 1)
+    # clickable tabs using HTML buttons bound to Streamlit callbacks
+    cols = st.columns([1, 1, 1])
+    labels = ["PRIMARY DETAILS", "SECONDARY DETAILS", "IDENTITY"]
+    for i, col in enumerate(cols, start=1):
+        is_active = (i == step)
+        btn_label = labels[i - 1]
+        # style inline to mimic active state
+        class_attr = "tab active" if is_active else "tab"
+        # Use button in column
+        if col.button(btn_label):
+            # only allow navigation to tab i if previous steps satisfied
+            if i == 1:
+                st.session_state["visitor_step"] = 1
+            elif i == 2:
+                # allow only if step 1 has valid basic fields
+                if st.session_state.get("v_name") and st.session_state.get("v_phone") and is_valid_email(st.session_state.get("v_email", "")):
+                    st.session_state["visitor_step"] = 2
+                else:
+                    st.warning("Complete Primary Details first.")
+            elif i == 3:
+                if st.session_state.get("v_host"):
+                    st.session_state["visitor_step"] = 3
+                else:
+                    st.warning("Complete Secondary Details first.")
+            st.experimental_rerun()
+
+
+# ---------------- MAIN ----------------
+def visitor_main(navigate_to_home_callback=None):
+    # initialize session keys safely
+    if "auth_mode" not in st.session_state:
+        st.session_state["auth_mode"] = "login"
+    if "admin_logged" not in st.session_state:
+        st.session_state["admin_logged"] = False
+    if "current_page" not in st.session_state:
+        st.session_state["current_page"] = "visitor"  # default
+
+    # top header with logout on right
     st.markdown(
-        """
-        <style>
-            .stButton button {
-                background-color: #1e62ff !important;
-                color: white !important;
-                border: 1px solid #1e62ff !important;
-                border-radius: 0.5rem !important;
-                transition: all 0.3s ease;
-            }
-            .stButton button:hover {
-                background-color: #8a2eff !important;
-                border-color: #8a2eff !important;
-                color: white !important;
-                box-shadow: 0 4px 12px rgba(138, 46, 255, 0.4);
-            }
-        </style>
+        f"""
+        <div style="width:100%;padding:12px 18px;border-radius:10px;
+            background: linear-gradient(90deg,#1e62ff,#8a2eff);color:white;
+            display:flex;justify-content:space-between;align-items:center;">
+            <div style="font-size:20px;font-weight:700;">Visitor Management</div>
+            <div style="display:flex;gap:10px;align-items:center;">
+                <img src="data:image/png;base64,{logo_b64}" style="height:44px;">
+            </div>
+        </div>
         """,
         unsafe_allow_html=True,
     )
+
+    # Logout button top-right (navigates to main.py home)
+    if st.session_state.get("admin_logged"):
+        if st.button("Logout", key="top_logout"):
+            # navigate to main.py home by setting current_page
+            st.session_state["current_page"] = "home"
+            st.session_state["admin_logged"] = False
+            st.experimental_rerun()
 
     mode = st.session_state.get("auth_mode", "login")
     page_title = {
@@ -231,19 +311,9 @@ def visitor_main(navigate_to=None):
         "forgot": "Reset Password",
         "dashboard": "Visitor Registration",
     }.get(mode, "Admin Area")
+    st.markdown(f"## {page_title}")
 
-    st.markdown(
-        f"""
-        <div style="width:100%;padding:20px 30px;border-radius:15px;
-            background: linear-gradient(90deg,#1e62ff,#8a2eff);color:white;
-            display:flex;justify-content:space-between;align-items:center;">
-            <div style="font-size:28px;font-weight:700;">{page_title}</div>
-            <img src="data:image/png;base64,{logo_b64}" style="height:60px;">
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+    # page routing
     if mode == "login":
         show_login()
     elif mode == "register":
@@ -251,14 +321,17 @@ def visitor_main(navigate_to=None):
     elif mode == "forgot":
         show_forgot()
     elif mode == "dashboard":
+        # ensure visitor state is initialized
+        if "v_name" not in st.session_state:
+            init_visitor_state()
         show_visitor_flow()
 
 
 # ---------------- LOGIN ----------------
 def show_login():
     st.subheader("Admin Sign In")
-    email = st.text_input("Email")
-    pwd = st.text_input("Password", type="password")
+    email = st.text_input("Email", key="login_email")
+    pwd = st.text_input("Password", type="password", key="login_pwd")
 
     if st.button("Sign In →", use_container_width=True):
         if not email or not pwd:
@@ -269,27 +342,26 @@ def show_login():
             st.session_state["auth_mode"] = "dashboard"
             st.session_state["admin_logged"] = True
             st.success("Login successful!")
-            st.rerun()
+            st.experimental_rerun()
         else:
             st.error(res)
 
     col1, col2 = st.columns(2)
     if col1.button("New Registration"):
         st.session_state["auth_mode"] = "register"
-        st.rerun()
-
+        st.experimental_rerun()
     if col2.button("Forgot Password?"):
         st.session_state["auth_mode"] = "forgot"
-        st.rerun()
+        st.experimental_rerun()
 
 
-# ---------------- ADMIN REGISTRATION ----------------
+# ---------------- ADMIN REGISTRATION (AUTO-LOGIN AFTER REG) ----------------
 def show_register():
     st.subheader("Register Admin")
-    full = st.text_input("Full Name")
-    email = st.text_input("Email")
-    pwd = st.text_input("Password", type="password")
-    confirm = st.text_input("Confirm Password", type="password")
+    full = st.text_input("Full Name", key="reg_full")
+    email = st.text_input("Email", key="reg_email")
+    pwd = st.text_input("Password", type="password", key="reg_pwd")
+    confirm = st.text_input("Confirm Password", type="password", key="reg_confirm")
 
     if st.button("Register Admin", use_container_width=True):
         if not full:
@@ -301,9 +373,14 @@ def show_register():
         else:
             result = create_admin(full, email.lower(), pwd)
             if result == "SUCCESS":
-                st.success("Admin registered! Please login.")
-                st.session_state["auth_mode"] = "login"
-                st.rerun()
+                st.success("Admin registered — logging you in...")
+                login_check = verify_admin(email.lower(), pwd)
+                if login_check == "SUCCESS":
+                    st.session_state["auth_mode"] = "dashboard"
+                    st.session_state["admin_logged"] = True
+                    st.experimental_rerun()
+                else:
+                    st.error("Unexpected login error after registration.")
             else:
                 st.error(result)
 
@@ -311,9 +388,9 @@ def show_register():
 # ---------------- FORGOT PASSWORD ----------------
 def show_forgot():
     st.subheader("Reset Password")
-    email = st.text_input("Registered Email")
-    newpwd = st.text_input("New Password", type="password")
-    confirm = st.text_input("Confirm Password", type="password")
+    email = st.text_input("Registered Email", key="forgot_email")
+    newpwd = st.text_input("New Password", type="password", key="forgot_new")
+    confirm = st.text_input("Confirm Password", type="password", key="forgot_confirm")
 
     if st.button("Update Password", use_container_width=True):
         if not email_exists(email.lower()):
@@ -325,19 +402,21 @@ def show_forgot():
             if res == "SUCCESS":
                 st.success("Password updated!")
                 st.session_state["auth_mode"] = "login"
-                st.rerun()
+                st.experimental_rerun()
             else:
                 st.error(res)
 
 
 # ---------------- VISITOR FORM (3 STEPS) ----------------
 def show_visitor_flow():
+    # ensure visitor state exists
     if "visitor_step" not in st.session_state:
         init_visitor_state()
 
+    # render tab-like UI
+    render_tabs()
     step = st.session_state["visitor_step"]
-    step_titles = {1: "Primary Details", 2: "Secondary Details", 3: "Identity Verification"}
-    st.markdown(f"### Step {step} of 3 — {step_titles[step]}")
+    st.markdown(f"### Step {step} of 3")
 
     if step == 1:
         step_primary()
@@ -349,7 +428,6 @@ def show_visitor_flow():
 
 def init_visitor_state():
     st.session_state["visitor_step"] = 1
-    # Primary + Secondary + Identity fields
     fields = [
         "v_name", "v_phone", "v_email",
         "v_host", "v_company", "v_visit_type", "v_department", "v_designation",
@@ -358,13 +436,13 @@ def init_visitor_state():
     ]
     for f in fields:
         st.session_state[f] = ""
-
     st.session_state["v_bags"] = 0
     st.session_state["v_documents"] = 0
     st.session_state["v_laptop"] = 0
     st.session_state["v_power_bank"] = 0
     st.session_state["v_signature_b64"] = None
     st.session_state["v_photo_b64"] = None
+    st.session_state["v_signature_type"] = None  # 'draw', 'typed', 'upload'
 
 
 # ---------- STEP 1 : PRIMARY DETAILS ----------
@@ -377,7 +455,7 @@ def step_primary():
     col1, col2 = st.columns(2)
     if col1.button("Reset"):
         init_visitor_state()
-        st.rerun()
+        st.experimental_rerun()
 
     if col2.button("Next →"):
         if not st.session_state["v_name"]:
@@ -387,9 +465,8 @@ def step_primary():
         elif not is_valid_email(st.session_state["v_email"]):
             st.error("Enter valid email.")
         else:
-            # unlock secondary
             st.session_state["visitor_step"] = 2
-            st.rerun()
+            st.experimental_rerun()
 
 
 # ---------- STEP 2 : SECONDARY DETAILS ----------
@@ -420,53 +497,85 @@ def step_secondary():
     col1, col2 = st.columns(2)
     if col1.button("← Back"):
         st.session_state["visitor_step"] = 1
-        st.rerun()
+        st.experimental_rerun()
 
     if col2.button("Next →"):
         if not st.session_state["v_host"]:
             st.error("Person to Visit is required.")
         else:
             st.session_state["visitor_step"] = 3
-            st.rerun()
+            st.experimental_rerun()
 
 
 # ---------- STEP 3 : IDENTITY ----------
 def step_identity():
     st.subheader("Identity Verification")
-    st.write("Upload Photo and Signature")
+    st.write("Upload Photo and provide a signature (Draw / Type / Upload)")
 
-    photo = st.file_uploader("Photo", type=["png", "jpg", "jpeg"])
-    signature = st.file_uploader("Signature", type=["png", "jpg", "jpeg"])
-
+    # photo
+    photo = st.file_uploader("Photo", type=["png", "jpg", "jpeg"], key="photo_uploader")
     if photo:
         st.session_state["v_photo_b64"] = file_to_base64(photo)
-    if signature:
-        st.session_state["v_signature_b64"] = file_to_base64(signature)
 
-    if ENABLE_DRAW_SIGNATURE and DRAWABLE_AVAILABLE:
-        st.write("Or draw signature:")
-        canvas = st_canvas(
-            stroke_width=2,
-            stroke_color="#000000",
-            background_color="#FFFFFF",
-            height=200,
-            width=500,
-            drawing_mode="freedraw",
-            key="canvas_sig",
-        )
-        if canvas.image_data is not None:
-            img = Image.fromarray(canvas.image_data.astype("uint8"), "RGBA").convert("RGB")
-            buf = BytesIO()
-            img.save(buf, format="PNG")
-            encoded = base64.b64encode(buf.getvalue()).decode()
-            st.session_state["v_signature_b64"] = f"data:image/png;base64,{encoded}"
+    # Signature options
+    st.write("Signature method:")
+    sig_method = st.selectbox("Choose signature type", ["", "Draw", "Type", "Upload"], key="sig_method")
+
+    # Draw option
+    if sig_method == "Draw":
+        st.session_state["v_signature_type"] = "draw"
+        if DRAWABLE_AVAILABLE and ENABLE_DRAW_SIGNATURE:
+            canvas = st_canvas(
+                stroke_width=2,
+                stroke_color="#000000",
+                background_color="#ffffff",
+                height=200,
+                width=600,
+                drawing_mode="freedraw",
+                key="canvas_sig"
+            )
+            if canvas and canvas.image_data is not None:
+                # convert to PNG data-uri
+                img = Image.fromarray(canvas.image_data.astype("uint8"), "RGBA").convert("RGB")
+                buf = BytesIO()
+                img.save(buf, format="PNG")
+                st.session_state["v_signature_b64"] = f"data:image/png;base64,{base64.b64encode(buf.getvalue()).decode()}"
+        else:
+            st.info("Drawable canvas not available on this environment. Use Type or Upload.")
+
+    # Type option
+    elif sig_method == "Type":
+        st.session_state["v_signature_type"] = "typed"
+        typed = st.text_input("Type your signature (name)", key="typed_sig")
+        if typed:
+            st.session_state["v_signature_b64"] = typed_text_to_datauri(typed)
+
+    # Upload option
+    elif sig_method == "Upload":
+        st.session_state["v_signature_type"] = "upload"
+        sig_file = st.file_uploader("Upload Signature image", type=["png", "jpg", "jpeg"], key="sig_uploader")
+        if sig_file:
+            st.session_state["v_signature_b64"] = file_to_base64(sig_file)
+
+    # preview (if any)
+    if st.session_state.get("v_signature_b64"):
+        st.markdown("**Signature Preview:**")
+        st.image(st.session_state["v_signature_b64"], width=300)
 
     col1, col2 = st.columns(2)
     if col1.button("← Back"):
         st.session_state["visitor_step"] = 2
-        st.rerun()
+        st.experimental_rerun()
 
     if col2.button("Submit Registration"):
+        # basic validation
+        if not st.session_state.get("v_photo_b64"):
+            st.error("Photo is required.")
+            return
+        if not st.session_state.get("v_signature_b64"):
+            st.error("Signature required (choose Draw / Type / Upload).")
+            return
+
         payload = {
             "name": st.session_state["v_name"],
             "phone": st.session_state["v_phone"],
@@ -495,17 +604,38 @@ def step_identity():
 
         try:
             visitor_id = insert_visitor(payload)
-            st.success(f"Visitor Registered Successfully (Log ID: {visitor_id})")
-            init_visitor_state()
-            st.rerun()
+            # move to completed view
+            show_completed(visitor_id)
         except Exception as e:
             st.error(f"Error saving visitor: {e}")
             st.write(traceback.format_exc())
 
 
+# ---------- COMPLETED ----------
+def show_completed(visitor_id):
+    st.success(f"Registration done! (Log ID: {visitor_id})")
+    st.write("What would you like to do next?")
+
+    c1, c2 = st.columns(2)
+    if c1.button("New Registration"):
+        init_visitor_state()
+        st.experimental_rerun()
+
+    if c2.button("Back to Login"):
+        # set to login screen inside visitor.py
+        st.session_state["auth_mode"] = "login"
+        st.session_state["admin_logged"] = False
+        st.experimental_rerun()
+
+
 # ---------------- RUN APP ----------------
 if __name__ == "__main__":
-    # top-level navigation (kept minimal)
+    # consistent initialization
     if "auth_mode" not in st.session_state:
         st.session_state["auth_mode"] = "login"
+    if "admin_logged" not in st.session_state:
+        st.session_state["admin_logged"] = False
+    if "current_page" not in st.session_state:
+        st.session_state["current_page"] = "visitor"
+
     visitor_main()
