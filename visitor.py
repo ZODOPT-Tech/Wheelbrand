@@ -4,7 +4,6 @@ import mysql.connector
 import re
 import boto3
 import json
-from botocore.exceptions import ClientError
 from io import BytesIO
 import base64
 from datetime import datetime
@@ -36,19 +35,20 @@ def check_bcrypt(pwd: str, hashed: str) -> bool:
 # ---------------- AWS SECRET MANAGER ----------------
 @st.cache_resource
 def get_db_credentials():
-    session = boto3.session.Session()
-    client = session.client("secretsmanager", region_name=AWS_REGION)
+    """
+    Loads DB credentials from AWS Secrets Manager, stored as JSON.
+    Caches the result for performance.
+    """
+    client = boto3.client("secretsmanager", region_name=AWS_REGION)
 
     try:
         resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
-
-        # Secret is JSON for Key/Value pairs
         creds = json.loads(resp["SecretString"])
 
-        # Required keys
-        for key in ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]:
-            if key not in creds:
-                st.error(f"Missing AWS secret key: {key}")
+        required_keys = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]
+        for k in required_keys:
+            if k not in creds:
+                st.error(f"Missing AWS secret key: {k}")
                 st.stop()
 
         return creds
@@ -58,26 +58,30 @@ def get_db_credentials():
         st.stop()
 
 
-def get_connection():
+# ---------------- FAST DB CONNECTION (CACHED) ----------------
+@st.cache_resource
+def get_fast_connection():
+    """
+    Uses a persistent cached MySQL connection for ultra-fast queries.
+    autocommit=True ensures inserts are saved instantly.
+    """
     c = get_db_credentials()
     return mysql.connector.connect(
         host=c["DB_HOST"],
         user=c["DB_USER"],
         password=c["DB_PASSWORD"],
         database=c["DB_NAME"],
-        port=3306
+        port=3306,
+        autocommit=True
     )
 
 
 # ---------------- DB FUNCTIONS ----------------
 def email_exists(email):
-    conn = get_connection()
+    conn = get_fast_connection()
     cur = conn.cursor()
     cur.execute(f"SELECT 1 FROM {DB_TABLE} WHERE email=%s LIMIT 1", (email,))
-    exists = cur.fetchone() is not None
-    cur.close()
-    conn.close()
-    return exists
+    return cur.fetchone() is not None
 
 
 def create_admin(full, email, pwd):
@@ -85,25 +89,20 @@ def create_admin(full, email, pwd):
         return "Email already exists."
 
     hashed = make_bcrypt_hash(pwd)
-    conn = get_connection()
+    conn = get_fast_connection()
     cur = conn.cursor()
     cur.execute(
         f"INSERT INTO {DB_TABLE}(full_name, email, password_hash, created_at) VALUES (%s, %s, %s, %s)",
         (full, email, hashed, datetime.utcnow()),
     )
-    conn.commit()
-    cur.close()
-    conn.close()
     return "SUCCESS"
 
 
 def verify_admin(email, pwd):
-    conn = get_connection()
+    conn = get_fast_connection()
     cur = conn.cursor()
-    cur.execute(f"SELECT password_hash FROM {DB_TABLE} WHERE email=%s", (email,))
+    cur.execute(f"SELECT password_hash FROM {DB_TABLE} WHERE email=%s LIMIT 1", (email,))
     row = cur.fetchone()
-    cur.close()
-    conn.close()
 
     if not row:
         return "Email not found."
@@ -113,15 +112,12 @@ def verify_admin(email, pwd):
 
 def update_password(email, newpwd):
     hashed = make_bcrypt_hash(newpwd)
-    conn = get_connection()
+    conn = get_fast_connection()
     cur = conn.cursor()
     cur.execute(
         f"UPDATE {DB_TABLE} SET password_hash=%s WHERE email=%s",
         (hashed, email)
     )
-    conn.commit()
-    cur.close()
-    conn.close()
     return "SUCCESS"
 
 
@@ -139,7 +135,7 @@ def load_logo(path):
 logo_b64 = load_logo(LOGO_PATH)
 
 
-# ---------------- ENTRYPOINT PAGE FUNCTION ----------------
+# ---------------- MAIN ENTRY FUNCTION ----------------
 def visitor_main(navigate_to):
     mode = st.session_state.get("auth_mode", "login")
 
@@ -168,8 +164,6 @@ def visitor_main(navigate_to):
         box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
     }}
     .card {{
-        background-color: transparent;
-        padding: 0;
         margin-top: 2rem;
     }}
     .stTextInput>div>div>input, .stPasswordInput>div>div>input {{
@@ -178,15 +172,11 @@ def visitor_main(navigate_to):
         padding: 0.75rem 1rem;
         border: 1px solid #e0e0e0;
     }}
-    .stTextInput>label, .stPasswordInput>label {{
-        font-weight: bold;
-        color: #333;
-    }}
     </style>
     """, unsafe_allow_html=True)
 
     st.markdown(f"""
-    <div class="header" style="
+    <div style="
         width:100%;padding:25px 40px;
         border-radius:25px;
         background: linear-gradient(90deg,#1e62ff,#8a2eff);
