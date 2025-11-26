@@ -12,7 +12,7 @@ import bcrypt
 
 # ---------------- SETTINGS ----------------
 LOGO_PATH = "zodopt.png"
-AWS_SECRET_NAME = "wheelbrand"
+AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 AWS_REGION = "ap-south-1"
 DB_TABLE = "admin"
 
