@@ -1,6 +1,9 @@
 import streamlit as st
 import importlib
 
+# Set the page configuration to wide layout to use the full screen width
+st.set_page_config(layout="wide")
+
 # -------------------- Initialize State --------------------
 if "current_page" not in st.session_state:
     st.session_state.current_page = "home"
@@ -34,7 +37,7 @@ def load_page():
 
 
 # ==================================================================
-#                           HOME PAGE
+#                            HOME PAGE
 # ==================================================================
 def render_home():
 
@@ -74,14 +77,14 @@ def render_home():
     .icon-circle {
         width: 140px; height: 140px; border-radius: 50%;
         display: flex; justify-content: center; align-items: center;
-        font-size: 60px; color: white; margin: auto; 
+        font-size: 60px; color: white; margin: auto;
     }
     .violet { background: linear-gradient(135deg,#4d7cff,#b312ff); }
     .green { background: #00a884; }
 
     .card-text-btn {
-        font-size: 28px; 
-        font-weight: 700; 
+        font-size: 28px;
+        font-weight: 700;
         color: #222;
         margin-top: 25px;
         cursor: pointer;
