@@ -269,18 +269,18 @@ def show_login():
             st.session_state["auth_mode"] = "dashboard"
             st.session_state["admin_logged"] = True
             st.success("Login successful!")
-            st.experimental_rerun()
+            st.rerun()
         else:
             st.error(res)
 
     col1, col2 = st.columns(2)
     if col1.button("New Registration"):
         st.session_state["auth_mode"] = "register"
-        st.experimental_rerun()
+        st.rerun()
 
     if col2.button("Forgot Password?"):
         st.session_state["auth_mode"] = "forgot"
-        st.experimental_rerun()
+        st.rerun()
 
 
 # ---------------- ADMIN REGISTRATION ----------------
@@ -303,7 +303,7 @@ def show_register():
             if result == "SUCCESS":
                 st.success("Admin registered! Please login.")
                 st.session_state["auth_mode"] = "login"
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error(result)
 
@@ -325,7 +325,7 @@ def show_forgot():
             if res == "SUCCESS":
                 st.success("Password updated!")
                 st.session_state["auth_mode"] = "login"
-                st.experimental_rerun()
+                st.rerun()
             else:
                 st.error(res)
 
@@ -377,7 +377,7 @@ def step_primary():
     col1, col2 = st.columns(2)
     if col1.button("Reset"):
         init_visitor_state()
-        st.experimental_rerun()
+        st.rerun()
 
     if col2.button("Next →"):
         if not st.session_state["v_name"]:
@@ -389,7 +389,7 @@ def step_primary():
         else:
             # unlock secondary
             st.session_state["visitor_step"] = 2
-            st.experimental_rerun()
+            st.rerun()
 
 
 # ---------- STEP 2 : SECONDARY DETAILS ----------
@@ -420,14 +420,14 @@ def step_secondary():
     col1, col2 = st.columns(2)
     if col1.button("← Back"):
         st.session_state["visitor_step"] = 1
-        st.experimental_rerun()
+        st.rerun()
 
     if col2.button("Next →"):
         if not st.session_state["v_host"]:
             st.error("Person to Visit is required.")
         else:
             st.session_state["visitor_step"] = 3
-            st.experimental_rerun()
+            st.rerun()
 
 
 # ---------- STEP 3 : IDENTITY ----------
@@ -464,7 +464,7 @@ def step_identity():
     col1, col2 = st.columns(2)
     if col1.button("← Back"):
         st.session_state["visitor_step"] = 2
-        st.experimental_rerun()
+        st.rerun()
 
     if col2.button("Submit Registration"):
         payload = {
@@ -497,7 +497,7 @@ def step_identity():
             visitor_id = insert_visitor(payload)
             st.success(f"Visitor Registered Successfully (Log ID: {visitor_id})")
             init_visitor_state()
-            st.experimental_rerun()
+            st.rerun()
         except Exception as e:
             st.error(f"Error saving visitor: {e}")
             st.write(traceback.format_exc())
