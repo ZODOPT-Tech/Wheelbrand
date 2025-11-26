@@ -10,20 +10,21 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # --- CONFIGURATION ---
 
-# NOTE: ADJUST PATHS HERE if necessary
-# Assuming LOGO_PATH is a valid path on your system or the image is uploaded/accessible
+# NOTE: Since this is running in an environment without a local file system,
+# the LOGO_PATH is kept for structure but will rely on the runtime environment
+# to handle or will simply show the fallback info message.
 LOGO_PATH = "zodopt.png"
 
 # UI Colors (Primary color is now the dark purple)
-PRIMARY_PURPLE = "#5b46b2"  
+PRIMARY_PURPLE = "#5b46b2"
 SECONDARY_GREY = "#4a4a4a"
-HEADER_GRADIENT = "linear-gradient(90deg, #5b46b2 0%, #a855f7 100%)" 
-LOGIN_CARD_WIDTH = "450px" 
+HEADER_GRADIENT = "linear-gradient(90deg, #5b46b2 0%, #a855f7 100%)"
+LOGIN_CARD_WIDTH = "450px"
 
-# Working Hours 
-WORKING_HOUR_START = 9      
-WORKING_MINUTE_START = 30 
-WORKING_HOUR_END = 19       
+# Working Hours
+WORKING_HOUR_START = 9
+WORKING_MINUTE_START = 30
+WORKING_HOUR_END = 19
 WORKING_MINUTE_END = 0
 
 START_TIME_DEFAULT = time(WORKING_HOUR_START, WORKING_MINUTE_START)
@@ -42,14 +43,15 @@ ATTENDEE_OPTIONS = ["Select"] + list(range(MIN_ATTENDEES, MAX_ATTENDEES + 1))
 def initialize_conference_state():
     """Initializes session state specific to the Conference Room Scheduler."""
     if "bookings" not in st.session_state or not isinstance(st.session_state.bookings, list):
-        st.session_state.bookings = [] 
+        st.session_state.bookings = []
 
     if "users" not in st.session_state:
         # Default user for testing
         st.session_state.users = {"testuser@zodopt.com": {"password": "password123", "dept": "IT"}}
     
+    # Changed default page to 'login' as the primary entry point
     if "page" not in st.session_state:
-        st.session_state.page = "register" 
+        st.session_state.page = "login"
         
     if "logged_in_user" not in st.session_state:
         st.session_state.logged_in_user = None
@@ -64,17 +66,17 @@ def apply_visitplan_style():
         <style>
         /* 1. GLOBAL SPACING REDUCTION */
         .stApp .main [data-testid="stVerticalBlock"] {{
-            gap: 0.2rem; 
+            gap: 0.2rem;
         }}
         .stApp .main [data-testid="stForm"] {{
             padding: 0;
             margin: 0;
         }}
         .stApp [data-testid="stHorizontalBlock"] > div {{
-            gap: 0.8rem; 
+            gap: 0.8rem;
         }}
         .stApp .main .block-container {{
-            padding-top: 15px; 
+            padding-top: 15px;
             padding-bottom: 15px;
             padding-left: 20px;
             padding-right: 20px;
@@ -83,24 +85,35 @@ def apply_visitplan_style():
         /* 2. CARD STYLING */
         .login-card-container {{
             max-width: {LOGIN_CARD_WIDTH};
-            margin: 0 auto; 
-            margin-top: 50px; 
+            margin: 0 auto;
+            margin-top: 50px;
             background-color: white;
             border-radius: 8px;
-            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15); 
-            overflow: hidden; 
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+            overflow: hidden;
             padding: 0;
         }}
         .login-header-bar {{
             background: {HEADER_GRADIENT};
-            padding: 20px 25px; 
+            padding: 20px 25px;
+        }}
+        .login-header-bar h2 {{
+             color: white !important;
+             margin: 0 !important;
+        }}
+        .login-header-bar p {{
+             color: #e5e5e5 !important;
+             margin-top: 5px !important;
+             margin-bottom: 0 !important;
+             font-size: 0.9rem;
+             font-weight: 300;
         }}
         .login-form-body {{
-            padding: 25px; 
+            padding: 25px;
         }}
         
         /* 3. INPUT FIELD/CONTAINER STYLING (The White Box Effect) */
-        .stTextInput > div > div > input, 
+        .stTextInput > div > div > input,
         .stSelectbox > div > button,
         .stDateInput > div > div > input {{
             background-color: white !important; /* Explicitly white background */
@@ -112,9 +125,9 @@ def apply_visitplan_style():
 
         /* 4. TEXT SPACING */
         .login-form-body p {{
-            margin-bottom: 5px !important; 
-            margin-top: 10px !important; 
-            font-size: 0.95rem; 
+            margin-bottom: 5px !important;
+            margin-top: 10px !important;
+            font-size: 0.95rem;
             font-weight: 500;
         }}
         
@@ -123,15 +136,15 @@ def apply_visitplan_style():
             background-color: {PRIMARY_PURPLE} !important;
             border-color: {PRIMARY_PURPLE} !important;
             font-weight: 500;
-            height: 40px; 
+            height: 40px;
         }}
         
         /* 6. FOOTER BUTTONS (Back to Dashboard, Sign In, Register) */
         .login-footer {{
-            display: flex; 
-            justify-content: space-between; 
+            display: flex;
+            justify-content: space-between;
             align-items: center;
-            padding: 12px 25px; 
+            padding: 12px 25px;
             border-top: 1px solid #eee;
             background-color: #fafafa;
             border-radius: 0 0 8px 8px;
@@ -145,9 +158,9 @@ def apply_visitplan_style():
             border: 1px solid #ccc !important;
             color: {SECONDARY_GREY} !important;
             padding: 5px 10px;
-            height: 36px; 
+            height: 36px;
             font-size: 0.85rem;
-            width: 100%; 
+            width: 100%;
         }}
         
         /* 7. Forgot Password Button (Targeted outside the form) */
@@ -155,22 +168,22 @@ def apply_visitplan_style():
             background-color: transparent !important; /* No background */
             border: none !important; /* No border */
             color: {PRIMARY_PURPLE} !important; /* Purple text */
-            text-decoration: underline; 
+            text-decoration: underline;
             font-size: 0.85rem;
-            height: 25px; 
+            height: 25px;
             padding: 0;
             text-align: right;
             justify-content: flex-end;
             margin-top: 8px; /* Alignment fix */
         }}
         .forgot-password-container .stButton button:hover {{
-            color: #a855f7 !important; 
+            color: #a855f7 !important;
         }}
         
         /* Ensure text is dark and readable everywhere else */
         h1, h2, h3, h4, h5, h6, p, label, .stMarkdown, .stText, div[data-testid="stCaption"] {{
-            color: #1f1f1f !important; 
-            text-shadow: none; 
+            color: #1f1f1f !important;
+            text-shadow: none;
         }}
         
         </style>
@@ -182,6 +195,7 @@ def time_slot_to_datetime(time_str, date_obj):
     if time_str == "Select":
         return None
     try:
+        # Streamlit time select uses %I:%M %p format (e.g., 09:30 AM)
         time_obj = datetime.strptime(time_str, "%I:%M %p").time()
         return datetime.combine(date_obj, time_obj)
     except ValueError:
@@ -201,6 +215,7 @@ def generate_time_slots(current_date):
         
         if current_date == today:
             full_slot_dt = datetime.combine(current_date, current_dt.time())
+            # Only show slots that start at least 15 minutes from now
             if full_slot_dt >= (now + timedelta(minutes=14)):
                 slots.append(slot_str)
         else:
@@ -217,10 +232,11 @@ def prepare_events(bookings_list):
         events.append({
             "id": str(i), 
             "title": f"[{booking['dept']}] {booking['purpose']} ({booking.get('attendees', 'N/A')} ppl)",
+            # Store datetimes as ISO strings for the calendar component
             "start": booking["start"].isoformat(), 
-            "end": booking["end"].isoformat(),    
-            "color": PRIMARY_PURPLE, 
-            "resourceId": "RoomA" 
+            "end": booking["end"].isoformat(), 
+            "color": PRIMARY_PURPLE,
+            "resourceId": "RoomA"
         })
     return events
 
@@ -239,7 +255,7 @@ def registration_page():
     st.markdown(f"""
         <div class="login-header-bar">
             <h2>
-                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15H9v-2h2v2zm0-4H9V7h2v6zm4 4h-2v-6h2v6z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 15H9v-2h2v2zm0-4H9V7h2v6zm4 4h-2v-6h2v6z"/></svg>
                 ZODOPT Registration
             </h2>
             <p>Create your account to start scheduling</p>
@@ -296,6 +312,7 @@ def registration_page():
     with col_dash:
         # Back to Dashboard button 
         if st.button("⬅️ Back to Dashboard", key="reg_back_to_dash"):
+            # Set external navigation state to return to main app/dashboard
             if 'current_page' in st.session_state:
                 st.session_state['current_page'] = 'main'
             st.session_state.logged_in_user = None
@@ -321,7 +338,7 @@ def login_page():
     st.markdown(f"""
         <div class="login-header-bar">
             <h2>
-                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path d="M19 3h-2v2h2v14h-2v2h2c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9.9 14.1l-5.6-5.6c-.2-.2-.2-.5 0-.7l5.6-5.6c.3-.3.8-.1.8.3v3h7c.3 0 .5.2.5.5s-.2.5-.5.5h-7v3c0 .4-.5.6-.8.3z"/></svg>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M19 3h-2v2h2v14h-2v2h2c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-9.9 14.1l-5.6-5.6c-.2-.2-.2-.5 0-.7l5.6-5.6c.3-.3.8-.1.8.3v3h7c.3 0 .5.2.5.5s-.2.5-.5.5h-7v3c0 .4-.5.6-.8.3z"/></svg>
                 ZODOPT MeetEase Login
             </h2>
             <p>Sign in to manage your bookings and visits</p>
@@ -350,8 +367,6 @@ def login_page():
         submit_button = st.form_submit_button("Sign In →", type="primary", use_container_width=True)
 
     # --- FORGOT PASSWORD BUTTON IS MOVED HERE (OUTSIDE THE FORM) ---
-    # We place it outside the form to avoid the StreamlitAPIException.
-    # We use a container and columns to apply the required alignment and styling.
     col_forgot_row = st.columns(1)[0]
     with col_forgot_row:
         # Use a div to apply the custom CSS targeting for the link-like button
@@ -384,6 +399,7 @@ def login_page():
     with col_dash:
         # Back to Dashboard button
         if st.button("⬅️ Back to Dashboard", key="login_back_to_dash"):
+            # Set external navigation state to return to main app/dashboard
             if 'current_page' in st.session_state:
                 st.session_state['current_page'] = 'main'
             st.session_state.logged_in_user = None
@@ -421,10 +437,8 @@ def calendar_page():
             st.rerun()
 
     with col_logo:
-        try:
-            st.image(LOGO_PATH, width=80) 
-        except FileNotFoundError:
-            st.info("Logo placeholder.")
+        # Using a reliable placeholder for the logo since local file paths are unavailable
+        st.markdown(f'<div style="width: 80px; height: 80px; background-color: {PRIMARY_PURPLE}; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin-top: -15px;"><span style="color: white; font-weight: bold; font-size: 1.5rem;">Z</span></div>', unsafe_allow_html=True)
 
     st.markdown('<hr style="margin-top: 5px; margin-bottom: 20px;">', unsafe_allow_html=True)
     
@@ -451,6 +465,9 @@ def calendar_page():
             "height": 700,
             "slotDuration": "00:15:00", 
             "allDaySlot": False,
+            # Customizing calendar appearance
+            "eventColor": PRIMARY_PURPLE,
+            "scrollTime": slot_min_time_str # Start calendar view at working hours
         }
 
         events_data = prepare_events(st.session_state.bookings)
@@ -490,6 +507,7 @@ def calendar_page():
             default_dept_index = DEPARTMENT_OPTIONS.index(user_dept) if user_dept in DEPARTMENT_OPTIONS else 0
             
             st.markdown('<p>Department</p>', unsafe_allow_html=True)
+            # Department is pre-filled and disabled based on logged-in user
             department = st.selectbox("", options=DEPARTMENT_OPTIONS, index=default_dept_index, disabled=True, key="dept_select", label_visibility="collapsed")
             
             st.markdown('<p>Purpose</p>', unsafe_allow_html=True)
@@ -498,7 +516,7 @@ def calendar_page():
             submit = st.form_submit_button("Book Slot", type="primary", use_container_width=True)
 
             if submit:
-                # --- Validation logic remains the same ---
+                # --- Validation logic ---
                 if start_time_str == "Select" or end_time_str == "Select" or purpose == "Select":
                     st.warning("⚠️ Please select valid times and purpose.")
                     st.stop()
@@ -535,11 +553,12 @@ def calendar_page():
                     st.warning(f"⚠️ Booking must be strictly within working hours: **{min_time_display}** to **{max_time_display}**.")
                     st.stop()
                 
-                now = datetime.now()
-                if new_start_dt < now:
+                now_buffer = datetime.now()
+                if new_start_dt < now_buffer:
                     st.error("❌ The selected start time is already in the past. Please select an active slot.")
                     st.stop()
                     
+                # Check for overlap
                 overlap = any(b["start"] < new_end_dt and b["end"] > new_start_dt for b in st.session_state.bookings)
                 
                 if overlap:
@@ -600,8 +619,10 @@ def calendar_page():
                 management_slots = generate_time_slots(booking_date_managed)
                 current_end_time_str = current_booking["end"].strftime("%I:%M %p")
                 
+                # Ensure current end time is in the list (might be filtered out if it's in the past)
                 if current_end_time_str not in management_slots:
                     management_slots.append(current_end_time_str)
+                    # Re-sort to maintain order
                     management_slots.sort(key=lambda x: datetime.strptime(x, "%I:%M %p") if x != "Select" else datetime.min)
                 
                 default_time_index = management_slots.index(current_end_time_str)
@@ -622,7 +643,7 @@ def calendar_page():
                     cancel_button = st.form_submit_button("Cancel Booking", use_container_width=True) 
                     
                 if update_button:
-                    # --- Update logic remains the same ---
+                    # --- Update logic ---
                     if new_end_time_str == "Select":
                         st.error("❌ Please select a valid new end time.")
                         st.stop()
@@ -640,16 +661,18 @@ def calendar_page():
                     max_end_dt = datetime.combine(booking_date_managed, END_TIME_DEFAULT)
                     
                     if new_end_dt_combined > max_end_dt:
-                            st.error(f"❌ Cannot extend past the working hour end: **{max_end_dt.strftime('%I:%M %p')}**.")
-                            st.stop()
+                        st.error(f"❌ Cannot extend past the working hour end: **{max_end_dt.strftime('%I:%M %p')}**.")
+                        st.stop()
 
                     if new_end_dt_combined < now:
                         st.error("❌ The new end time cannot be in the past.")
                         st.stop()
 
                     overlap_exists = False
+                    # Check for overlap with other bookings (excluding the current one)
                     for i, b in enumerate(st.session_state.bookings):
                         if i != booking_index: 
+                            # Check if the existing booking overlaps with the proposed new slot (current_start -> new_end)
                             if current_booking["start"] < b["end"] and b["start"] < new_end_dt_combined:
                                 overlap_exists = True
                                 break
@@ -672,10 +695,10 @@ def calendar_page():
                     st.rerun()
 
 
-# --- CONFERENCE PAGE DISPATCHER ---
+# --- CONFERENCE PAGE DISPATCHER (MAIN ENTRY POINT) ---
 
 def conference_page():
-    """Main function for the conference room scheduler module."""
+    """Main function for the conference room scheduler module, handling internal navigation (login/register/calendar)."""
     
     # 1. Apply custom Visitplan styling
     apply_visitplan_style()
@@ -683,10 +706,13 @@ def conference_page():
     # 2. Ensure state is initialized
     initialize_conference_state()
     
-    # 3. Dispatch the correct page
+    # 3. Dispatch the correct page based on internal state
     if st.session_state.page == "calendar" and st.session_state.logged_in_user:
         calendar_page()
     elif st.session_state.page == "login":
         login_page()
-    else: # Default page is "register"
+    else: # Default page is now "login" or explicit "register"
         registration_page()
+
+# This structure allows main.py to easily import and call `conference_page()`
+# to render the entire subsystem.
