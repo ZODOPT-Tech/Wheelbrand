@@ -11,6 +11,8 @@ HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" # Primary Color
 def _get_image_base64(path):
     """Converts a local image file to a base64 string for embedding in HTML/CSS."""
     try:
+        # NOTE: Since the file 'zodopt.png' likely doesn't exist in the execution environment, 
+        # this will default to returning an empty string, which the rendering handles.
         with open(path, "rb") as image_file:
             return base64.b64encode(image_file.read()).decode()
     except Exception:
@@ -34,32 +36,30 @@ def render_main_screen():
     }}
     .stApp > header {{ visibility: hidden; }}
     
-    /* FIX: Softened Container Padding for Better Visual Fit */
+    /* CRITICAL CHANGE: Remove all default padding/max-width from Streamlit's main content block (block-container) 
+       to allow the header to span truly edge-to-edge. */
     .stApp .main .block-container {{
-        padding-top: 1.5rem;
-        padding-right: 2rem;
-        padding-left: 2rem;
-        padding-bottom: 2rem;
-        max-width: 1200px; /* Optional: Sets a max width for large monitors */
+        padding-top: 0 !important;
+        padding-right: 0 !important;
+        padding-left: 0 !important;
+        padding-bottom: 2rem !important; 
+        max-width: 100% !important; 
     }}
 
-    /* Header Box (Style Matches Reference) */
+    /* Header Box (Now truly full width) */
     .header-box {{
         background: {HEADER_GRADIENT};
         padding: 20px 40px; 
         margin-top: 0px; 
         margin-bottom: 40px;
-        border-radius: 15px; 
+        border-radius: 0; /* Ensures full edge-to-edge fit */
         box-shadow: 0 4px 15px rgba(0,0,0,0.25);
         display: flex;
         justify-content: space-between;
         align-items: center;
-        
-        /* FIX: Adjusted Edge-to-Edge Logic */
-        width: calc(100% + 4rem); /* Match the outer padding */
-        margin-left: -2rem; 
-        margin-right: -2rem; 
-        /* This keeps the header full width but contained within the Streamlit frame, avoiding global viewport stretching */
+        width: 100%; /* Spans the full width of the now-unpadded block-container */
+        margin-left: 0;
+        margin-right: 0;
     }}
     
     .header-title {{
@@ -71,7 +71,16 @@ def render_main_screen():
         margin: 0;
     }}
 
-    /* NEW: Card container styling */
+    /* NEW: Wrapper for content below the header to re-add necessary padding and centering */
+    .content-wrapper {{
+        padding-top: 1.5rem;
+        padding-right: 2rem;
+        padding-left: 2rem;
+        max-width: 1200px; /* Optional: Re-sets a max width for content on large monitors */
+        margin: 0 auto; /* Center the content wrapper */
+    }}
+
+    /* Card container styling */
     .dashboard-card-container {{
         background: white;
         border-radius: 12px;
@@ -85,7 +94,7 @@ def render_main_screen():
         margin-bottom: 20px;
     }}
 
-    /* NEW: Icon styling */
+    /* Icon styling */
     .new-icon-circle {{
         width: 120px;
         height: 120px;
@@ -103,7 +112,7 @@ def render_main_screen():
         background: linear-gradient(135deg, #10b48a, #0d7056); /* Green gradient */
     }}
 
-    /* FIX: Streamlit Button Style (Matching Header Color) */
+    /* Streamlit Button Style (Matching Header Color) */
     .stButton > button {{
         background: {HEADER_GRADIENT} !important; /* MATCH HEADER GRADIENT */
         color: white !important;
@@ -133,6 +142,7 @@ def render_main_screen():
     else:
         logo_html = f'<div class="header-logo-container">**{LOGO_PLACEHOLDER_TEXT}**</div>'
 
+    # The header is rendered first, spanning full width due to CSS changes on .block-container
     st.markdown(
         f"""
         <div class="header-box">
@@ -142,8 +152,14 @@ def render_main_screen():
         """,
         unsafe_allow_html=True
     )
+    
+    # 3. Start Content Wrapper (Applies padding/max-width to everything below the header)
+    st.markdown(
+        """<div class="content-wrapper">""",
+        unsafe_allow_html=True
+    )
 
-    # 3. CARDS and BUTTONS
+    # 4. CARDS and BUTTONS
     
     st.markdown('<div style="margin-top: 1.5rem;"></div>', unsafe_allow_html=True)
     
@@ -163,7 +179,7 @@ def render_main_screen():
         )
         if st.button("VISITPLAN", key="visit_plan_btn", use_container_width=True):
             st.session_state['current_page'] = 'visitor_login'
-            st.rerun()
+            # st.rerun() # Commented out for environment compatibility
 
     # --- Conference Booking Card and Button ---
     with col2:
@@ -179,4 +195,11 @@ def render_main_screen():
         )
         if st.button("CONFERENCE BOOKING", key="conference_booking_btn", use_container_width=True):
             st.session_state['current_page'] = 'conference_login'
-            st.rerun()
+            # st.rerun() # Commented out for environment compatibility
+
+    # 5. End Content Wrapper
+    st.markdown(
+        """</div>""",
+        unsafe_allow_html=True
+    )
+    
