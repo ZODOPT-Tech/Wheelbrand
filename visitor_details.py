@@ -43,7 +43,8 @@ def render_navigation():
     nav_html = '<div class="tab-navigation">'
     for step_num, label in steps.items():
         is_active = "active" if st.session_state['current_step'] == step_num else ""
-        # The key is used for Streamlit to track state, but the markdown is for display
+        # Using a div and handling clicks visually via state changes in the full app
+        # For a Streamlit component, this is the safest way to render styled tabs
         nav_html += f"""
         <div class="tab-item {is_active}">
             {label}
@@ -53,42 +54,48 @@ def render_navigation():
     st.markdown(nav_html, unsafe_allow_html=True)
 
 def render_step_1_primary_details():
-    """Renders Step 1: Primary Details (Name, Contact, Company)."""
+    """Renders Step 1: Primary Details (Name, Contact)."""
     with st.form("step_1_form"):
         st.markdown("<p style='font-size: 16px; color: #555; margin-bottom: 20px;'>Provide your essential contact information.</p>", unsafe_allow_html=True)
         
-        # Primary Fields (Full Name, Phone, Email, Company)
+        # Primary Fields (Full Name, Phone, Email - All Mandatory)
         col_name, col_phone = st.columns(2)
         
         with col_name:
             full_name = st.text_input("Full Name *", key="reg_full_name", 
-                                      value=st.session_state['visitor_data'].get('full_name', ''))
+                                      value=st.session_state['visitor_data'].get('full_name', ''), 
+                                      placeholder="Enter your full name")
             
         with col_phone:
             # Simplified phone input, country code logic is simulated
             st.markdown("<label style='font-size: 14px; font-weight: 600;'>Phone Number *</label>", unsafe_allow_html=True)
             col_code, col_num = st.columns([1, 3])
             with col_code:
-                st.selectbox("Code", options=["+91", "+1", "+44"], label_visibility="collapsed", key="reg_phone_code")
+                st.selectbox("Code", options=["+91", "+1", "+44"], label_visibility="collapsed", key="reg_phone_code",
+                             index=["+91", "+1", "+44"].index(st.session_state['visitor_data'].get('phone_code', '+91')))
             with col_num:
                 phone_number = st.text_input("Number", key="reg_phone_number", label_visibility="collapsed", 
-                                             value=st.session_state['visitor_data'].get('phone_number', ''))
+                                             value=st.session_state['visitor_data'].get('phone_number', ''), 
+                                             placeholder="81234 56789")
             
         email = st.text_input("Email *", key="reg_email", 
-                              value=st.session_state['visitor_data'].get('email', ''))
-        company = st.text_input("Company Name *", key="reg_company", 
-                                value=st.session_state['visitor_data'].get('company', ''))
+                              value=st.session_state['visitor_data'].get('email', ''), 
+                              placeholder="your.email@example.com")
+        
+        # NOTE: Company Name removed from here as per request.
 
         st.markdown('<div style="margin-top: 30px; text-align: right;">', unsafe_allow_html=True)
         if st.form_submit_button("Next →", type="primary"):
-            required_fields = [full_name, phone_number, email, company]
+            # Required fields validation (All are mandatory now)
+            phone_code = st.session_state.get('reg_phone_code', '+91')
+            required_fields = [full_name, phone_number, email]
             if all(required_fields):
                 # Save data to session state
                 st.session_state['visitor_data'].update({
                     'full_name': full_name,
+                    'phone_code': phone_code,
                     'phone_number': phone_number,
                     'email': email,
-                    'company': company,
                 })
                 st.session_state['current_step'] = 2
                 st.rerun()
@@ -97,9 +104,16 @@ def render_step_1_primary_details():
         st.markdown('</div>', unsafe_allow_html=True)
 
 def render_step_2_secondary_details():
-    """Renders Step 2: Secondary Details (Visit Info, Host, Belongings)."""
+    """Renders Step 2: Secondary Details (Company, Visit Info, Host, Belongings)."""
     with st.form("step_2_form"):
-        st.markdown("<p style='font-size: 16px; color: #555; margin-bottom: 20px;'>Details regarding your visit and host.</p>", unsafe_allow_html=True)
+        st.markdown("<p style='font-size: 16px; color: #555; margin-bottom: 20px;'>Details regarding your organization and visit plan.</p>", unsafe_allow_html=True)
+        
+        # **NEW: Company Name is now here**
+        company = st.text_input("Company Name *", key="reg_company", 
+                                value=st.session_state['visitor_data'].get('company', ''))
+        
+        st.markdown("---")
+        st.markdown("##### Visit Details")
         
         # Visit Type and Purpose
         col_type, col_purpose = st.columns(2)
@@ -136,7 +150,7 @@ def render_step_2_secondary_details():
             host_email = st.text_input("Host/Contact Person Email *", key="reg_host_email", 
                                        value=st.session_state['visitor_data'].get('host_email', ''))
 
-        # Belongings (Simplified from image_bebd7f.png)
+        # Belongings
         st.markdown("---")
         st.markdown("##### Belongings")
         belongings = st.multiselect("Items you are bringing inside:", 
@@ -151,10 +165,12 @@ def render_step_2_secondary_details():
         
         with col_next:
             if st.form_submit_button("Next →", type="primary"):
-                required_fields = [visit_type, purpose, arrival_date, departure_date, host_name, host_email]
+                # Required fields validation (All marked with * are mandatory)
+                required_fields = [company, visit_type, purpose, arrival_date, departure_date, host_name, host_email]
                 if all(required_fields):
                     # Save data to session state
                     st.session_state['visitor_data'].update({
+                        'company': company,
                         'visit_type': visit_type,
                         'purpose': purpose,
                         'arrival_date': arrival_date,
@@ -196,12 +212,15 @@ def render_step_3_identity():
         with col_submit:
             if st.form_submit_button("Finalize & Register", type="primary"):
                 # Check that final steps (photo/ID) are completed (simplified check for now)
-                if st.session_state.get('reg_photo') and st.session_state.get('reg_id_upload'):
+                # We need to explicitly check if the file_uploader and camera_input keys have values
+                is_photo_uploaded = st.session_state.get('reg_photo') is not None
+                is_id_uploaded = st.session_state.get('reg_id_upload') is not None
+                
+                if is_photo_uploaded and is_id_uploaded:
                     # Final save and transition
                     st.toast("Registration Complete! Welcome.")
                     
-                    # NOTE: In a real app, 'reg_photo' and 'reg_id_upload' would be handled
-                    # by saving them to a secure storage (like Firebase Storage).
+                    # You would usually save the final data (including photo/ID) to Firestore here
                     
                     st.session_state['current_page'] = 'visitor_dashboard' 
                     st.rerun()
@@ -212,7 +231,7 @@ def render_step_3_identity():
 def render_details_page():
     """Renders the main Visitor Registration page with header and multi-step form."""
     
-    # --- 1. Custom CSS for Styling (Updated with Navigation Styles) ---
+    # --- 1. Custom CSS for Styling ---
     st.markdown(f"""
     <style>
     /* Global Streamlit Overrides to ensure full width and no margins */
@@ -233,7 +252,7 @@ def render_details_page():
         background: {HEADER_GRADIENT};
         padding: 20px {APP_PADDING_X};
         margin-top: 0px; 
-        margin-bottom: 0px; /* Removed margin-bottom here */
+        margin-bottom: 0px; 
         border-radius: 0; 
         box-shadow: 0 4px 15px rgba(0,0,0,0.25);
         display: flex;
@@ -259,7 +278,7 @@ def render_details_page():
         width: 100%;
         margin-bottom: 25px;
         border-bottom: 2px solid #e0e0e0;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05); /* Added subtle shadow for depth */
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05); 
         background-color: #FFFFFF;
     }}
 
@@ -269,7 +288,7 @@ def render_details_page():
         padding: 18px 0;
         font-weight: 600;
         color: #999;
-        cursor: default; /* Not actually clickable in Streamlit HTML/CSS, but visually defined */
+        cursor: default; 
         transition: all 0.2s ease;
         border-bottom: 3px solid transparent;
         font-size: 16px;
@@ -367,13 +386,14 @@ def render_details_page():
     )
     
     # --- 3. Navigation Tabs ---
-    st.markdown(f'<div style="padding: 0 {APP_PADDING_X};">', unsafe_allow_html=True)
+    # The header bar from the image has the tabs right below it, without extra padding
+    st.markdown(f'<div style="padding: 0;">', unsafe_allow_html=True)
     render_navigation()
     st.markdown('</div>', unsafe_allow_html=True)
     
     # --- 4. Content Area & Form Rendering ---
     
-    # Wrap form in the styled container
+    # Wrap form in the styled container and apply padding here
     st.markdown('<div class="details-form-container">', unsafe_allow_html=True)
 
     if st.session_state['current_step'] == 1:
