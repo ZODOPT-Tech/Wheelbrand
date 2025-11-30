@@ -195,7 +195,7 @@ def render_register_view():
 
         if submitted:
             # Check if a valid department has been selected
-            is_department_selected = department != "SELECT SHOULD BE DEFAULT"
+            is_department_selected = department != "SELECT"
             
             # --- VALIDATION UPDATED HERE ---
             if not all([name, email, company, password, confirm_password]):
@@ -335,9 +335,9 @@ def render_conference_login_page():
     if view == 'login':
         header_title = "CONFERENCE BOOKING - SIGN IN"
     elif view == 'register':
-        header_title = "CONFERENCE BOOKING - NEW REGISTRATION"
+        header_title = "NEW REGISTRATION"
     elif view == 'forgot_password':
-        header_title = "CONFERENCE BOOKING - RESET PASSWORD"
+        header_title = "RESET PASSWORD"
         
     # 1. Inject Custom CSS for styling
     st.markdown(f"""
