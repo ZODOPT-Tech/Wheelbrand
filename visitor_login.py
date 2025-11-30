@@ -78,8 +78,6 @@ def get_fast_connection():
     Returns a persistent MySQL connection object (cached by Streamlit).
     This function establishes the connection using credentials from Secrets Manager.
     Stops execution if connection fails.
-    
-    NOTE: The success message is removed to clean up the UI.
     """
     credentials = get_db_credentials() # Retrieve creds using the strict AWS function
     
@@ -93,7 +91,6 @@ def get_fast_connection():
             autocommit=True, # Ensure changes are saved immediately
             connection_timeout=10,
         )
-        # st.success("Successfully connected to MySQL database.") <-- REMOVED
         return conn
     except mysql.connector.Error as err:
         st.error(f"FATAL: Database Connection Error: Cannot connect to MySQL.")
@@ -132,7 +129,7 @@ def set_auth_view(view):
     st.rerun()
 
 # ==============================================================================
-# 3. REAL DB INTERACTION FUNCTIONS
+# 3. DB INTERACTION FUNCTIONS
 # ==============================================================================
 
 # Assumed Schema:
@@ -193,58 +190,16 @@ def create_company_and_admin(conn, company_name, admin_name, email, password_has
     finally:
         cursor.close()
 
-def generate_reset_token(conn, user_id):
-    """Generates a secure token and saves it to the password_reset_tokens table."""
+def update_admin_password_directly(conn, user_id, new_password_hash):
+    """Updates the admin's password hash directly by user ID (simplified reset)."""
     cursor = conn.cursor()
-    token = secrets.token_urlsafe(32)
-    expires_at = datetime.now() + timedelta(hours=1)
-
-    query = """
-    INSERT INTO password_reset_tokens (user_id, token, expires_at, is_used)
-    VALUES (%s, %s, %s, FALSE)
-    """
+    update_admin_query = "UPDATE admin_users SET password_hash = %s WHERE id = %s"
     try:
-        cursor.execute(query, (user_id, token, expires_at))
-        conn.commit()
-        return token
-    except Exception as e:
-        st.error(f"DB Error generating reset token: {e}")
-        conn.rollback()
-        return None
-    finally:
-        cursor.close()
-
-def validate_and_reset_password(conn, user_id, token, new_password):
-    """
-    Checks token validity and updates the password, marking the token as used, 
-    all within a single transaction.
-    """
-    cursor = conn.cursor()
-    new_hash = hash_password(new_password)
-    
-    try:
-        # 1. Mark the token as used (Verifies the token is valid, non-expired, and unused)
-        # This update must occur first to ensure token validity before password change
-        update_token_query = """
-        UPDATE password_reset_tokens 
-        SET is_used = TRUE 
-        WHERE user_id = %s AND token = %s AND expires_at > NOW() AND is_used = FALSE
-        """
-        cursor.execute(update_token_query, (user_id, token))
-
-        if cursor.rowcount == 0:
-            conn.rollback()
-            # If the token update failed, the token was likely invalid, expired, or already used.
-            return False
-
-        # 2. Update Admin Password
-        update_admin_query = "UPDATE admin_users SET password_hash = %s WHERE id = %s"
-        cursor.execute(update_admin_query, (new_hash, user_id))
-
+        cursor.execute(update_admin_query, (new_password_hash, user_id))
         conn.commit()
         return True
     except Exception as e:
-        st.error(f"DB Error during password reset: {e}")
+        st.error(f"DB Error during direct password update: {e}")
         conn.rollback()
         return False
     finally:
@@ -258,8 +213,6 @@ def validate_and_reset_password(conn, user_id, token, new_password):
 def render_admin_register_view():
     """Renders the form for registering a new Company and its initial Admin user."""
     conn = get_fast_connection() 
-
-    # st.markdown("### Register Your Company & Admin Account") <-- REMOVED
     
     with st.form("admin_register_form"):
         st.markdown("**Company and Admin Details**")
@@ -310,8 +263,6 @@ def render_existing_admin_login_view():
     """
     conn = get_fast_connection() 
 
-    # st.markdown("### Admin Access - Sign In") <-- REMOVED
-    
     with st.form("admin_login_form"):
         email = st.text_input("Admin Email ID", key="admin_login_email").lower()
         password = st.text_input("Password", type="password", key="admin_login_password")
@@ -395,88 +346,52 @@ def render_visitor_dashboard_view():
 
 def render_forgot_password_view():
     """
-    Renders the password reset flow for admin users.
+    Renders the simplified password reset flow: check email existence and allow direct password change.
     """
-    # st.markdown("### Admin Password Reset") <-- REMOVED
-    st.warning("A functional email service is required for a real password reset flow. This implementation simulates the link generation and uses the DB.")
+    st.warning("⚠️ **ADMIN OVERRIDE:** This simplified flow allows direct password reset by only verifying the email's existence in the database. This is HIGHLY INSECURE for a real application.")
     
-    if 'reset_state' not in st.session_state:
-        st.session_state['reset_state'] = {
-            'step': 1, # 1: Email check, 2: Token verification/password reset
-            'email': None,
-            'user_id': None,
-            'token': None # The generated token
-        }
-    
-    state = st.session_state['reset_state']
     conn = get_fast_connection()
 
-    # --- Step 1: Check Email Existence & Generate Token ---
-    if state['step'] == 1:
-        with st.form("forgot_pass_email_form", clear_on_submit=False):
-            email_to_check = st.text_input("Enter your registered Admin Email ID", key="forgot_email_input").lower()
-            
-            if st.form_submit_button("Request Password Reset Link", type="primary"):
-                if not email_to_check:
-                    st.warning("Please enter an email address.")
-                    return
-                    
-                user_data = get_admin_by_email(conn, email_to_check)
-
-                if user_data:
-                    user_id = user_data['id']
-                    
-                    # --- ACTUAL DB INTERACTION POINT (Generate Token) ---
-                    reset_token = generate_reset_token(conn, user_id)
-
-                    if reset_token:
-                        state['email'] = email_to_check
-                        state['user_id'] = user_id
-                        state['token'] = reset_token # Store the generated token
-                        state['step'] = 2
-                        
-                        st.success("A password reset link has been (simulated) sent to your email.")
-                        st.info(f"**TOKEN:** `{reset_token}`. You would typically click a link containing this token.")
-                        st.rerun() 
-                    else:
-                        st.error("Failed to generate a reset token. Please try again.")
-                else:
-                    st.error("Email ID not found in our records.")
-
-    # --- Step 2: Password Reset (Requires token input) ---
-    elif state['step'] == 2:
+    with st.form("forgot_pass_reset_form"):
         st.markdown("---")
-        st.write(f"**Resetting password for:** `{state['email']}` (User ID: {state['user_id']})")
+        email_to_check = st.text_input("Enter your Admin Email ID to verify existence", key="forgot_email_input").lower()
         
-        # User would normally copy the token from the email link or the app would extract it from the URL
-        reset_token_input = st.text_input("Enter Reset Token", value=state['token'], key="reset_token_input")
+        # New password fields
+        new_password = st.text_input(f"New Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reset_new_password")
+        confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
         
-        with st.form("forgot_pass_reset_form"):
-            new_password = st.text_input(f"New Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reset_new_password")
-            confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
+        submitted = st.form_submit_button("Reset Password Directly", type="primary")
+        
+        if submitted:
+            if not email_to_check:
+                st.error("Please enter an email address for lookup.")
+                return
             
-            if st.form_submit_button("Change Password", type="primary"):
-                if new_password != confirm_password:
-                    st.error("Passwords do not match.")
-                elif len(new_password) < MIN_PASSWORD_LENGTH:
-                    st.error(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
-                elif not reset_token_input or reset_token_input != state['token']: # Simple check for the demo flow
-                    st.error("Please enter a valid reset token.")
-                else:
-                    # --- ACTUAL DB INTERACTION POINT (Validate Token & Update Password) ---
-                    if validate_and_reset_password(conn, state['user_id'], reset_token_input, new_password):
-                        st.success("Password successfully changed! You can now log in.")
-                        
-                        # Clean up state and redirect
-                        st.session_state['reset_state'] = { 'step': 1, 'email': None, 'user_id': None, 'token': None }
-                        set_auth_view('admin_login')
-                    else:
-                        st.error("Password reset failed. The token may be invalid, expired, or already used.")
+            user_data = get_admin_by_email(conn, email_to_check)
+            
+            if not user_data:
+                st.error("Email ID not found in our records.")
+                return
+            
+            if new_password != confirm_password:
+                st.error("Passwords do not match.")
+                return
+            elif len(new_password) < MIN_PASSWORD_LENGTH:
+                st.error(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
+                return
 
+            user_id = user_data['id']
+            new_hash = hash_password(new_password)
 
+            # --- ACTUAL DB INTERACTION POINT (Direct Password Update) ---
+            if update_admin_password_directly(conn, user_id, new_hash):
+                st.success("Password successfully changed! You can now log in with the new password.")
+                set_auth_view('admin_login')
+            else:
+                st.error("Password reset failed due to a database error. Please check logs.")
+        
     st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
     if st.button("← Back to Admin Login", key="forgot_back_login_btn", use_container_width=True):
-        st.session_state['reset_state'] = { 'step': 1, 'email': None, 'user_id': None, 'token': None }
         set_auth_view('admin_login')
 
 # ==============================================================================
