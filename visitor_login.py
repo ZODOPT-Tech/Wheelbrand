@@ -132,10 +132,9 @@ def set_auth_view(view):
 # 3. DB INTERACTION FUNCTIONS
 # ==============================================================================
 
-# Assumed Schema:
+# Assumed Schema (Based on current app logic):
 # - admin_users: (id, company_id, name, email, password_hash, is_active=1)
 # - companies: (id, company_name)
-# - password_reset_tokens: (user_id, token, expires_at, is_used=FALSE)
 
 def get_admin_by_email(conn, email):
     """Fetches user ID, hash, name, and company details for login/lookup."""
