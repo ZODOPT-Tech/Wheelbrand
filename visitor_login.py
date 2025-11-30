@@ -8,11 +8,11 @@ import json
 import traceback 
 
 # --- AWS & DB Configuration (Same as Conference App) ---
-AWS_REGION = "us-east-1" 
-AWS_SECRET_NAME = "zodopt/mysql/credentials" 
+AWS_REGION = "ap-south-1" 
+AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
 
 # --- Configuration (Shared Constants) ---
-LOGO_PATH = "images/zodopt.png" 
+LOGO_PATH = "zodopt.png" 
 LOGO_PLACEHOLDER_TEXT = "VISITOR ADMIN"
 HEADER_GRADIENT = "linear-gradient(90deg, #1A4D2E, #4CBF80)" # A new, distinct color for the admin portal
 
@@ -82,24 +82,26 @@ def render_admin_register_view():
     st.markdown("### Register Your Company & Admin Account")
     
     with st.form("admin_register_form"):
-        # Company Details
-        st.markdown("**Company Details**")
+        # --- Company & Admin Details (Refined) ---
+        st.markdown("**Company and Admin Details**")
+        
+        # User requested fields: Admin Name, Email ID, Company
         company_name = st.text_input("Company Name", key="reg_company_name")
-        company_address = st.text_area("Company Address", key="reg_company_address")
+        admin_name = st.text_input("Admin Full Name", key="reg_admin_name")
+        admin_email = st.text_input("Email ID (Used for Login)", key="reg_admin_email")
+        
         st.markdown("---")
         
-        # Admin User Details
-        st.markdown("**Admin User Details**")
-        admin_name = st.text_input("Admin Full Name", key="reg_admin_name")
-        admin_email = st.text_input("Admin Email ID (Used for Login)", key="reg_admin_email")
+        # Password Fields
         password = st.text_input("Password (min 8 chars)", type="password", key="reg_password")
         confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password")
         
         submitted = st.form_submit_button("Create Company & Admin Account", type="primary")
         
         if submitted:
+            # Check if all required fields are filled (updated check)
             if not all([company_name, admin_name, admin_email, password, confirm_password]):
-                st.error("Please fill in all company and admin fields.")
+                st.error("Please fill in all required fields.")
                 return
             elif password != confirm_password:
                 st.error("Passwords do not match.")
@@ -110,18 +112,18 @@ def render_admin_register_view():
 
             # --- Mock/Simulated DB Interaction ---
             st.success(f"Company '{company_name}' and Admin '{admin_name}' successfully registered!")
-            st.info("You can now sign in using your Admin Email ID.")
+            st.info("You can now sign in using your Email ID.")
             set_auth_view('admin_login') 
             return
             
             """
             # --- Actual DB Logic (Commented out, requires real connection) ---
-            # NOTE: This requires transaction handling (BEGIN/COMMIT) in real MySQL
+            # NOTE: company_address removed from the insert query
             cursor = conn.cursor()
             try:
-                # 1. Insert Company (Requires company_name to be unique)
-                company_query = "INSERT INTO companies (company_name, address) VALUES (%s, %s)"
-                cursor.execute(company_query, (company_name, company_address))
+                # 1. Insert Company (Only company_name needed)
+                company_query = "INSERT INTO companies (company_name) VALUES (%s)"
+                cursor.execute(company_query, (company_name,))
                 new_company_id = cursor.lastrowid # Get the newly created ID
 
                 # 2. Insert Admin
@@ -356,7 +358,7 @@ def render_forgot_password_view():
 # -----------------------------------------------------
 
 def render_visitor_login_page():
-    # --- CHANGE: Set the default view to 'admin_login' ---
+    # --- Default view is 'admin_login' ---
     if 'visitor_auth_view' not in st.session_state:
         st.session_state['visitor_auth_view'] = 'admin_login'
 
@@ -496,4 +498,3 @@ def render_visitor_login_page():
         render_visitor_check_in_view()
     elif view == 'forgot_password':
         render_forgot_password_view()
-        
