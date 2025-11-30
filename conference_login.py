@@ -1,17 +1,11 @@
 import streamlit as st
 import os
+import base64
 import mysql.connector
-import bcrypt
-import boto3
-import json
-import traceback
-from time import sleep
-from datetime import datetime, timedelta
-import secrets
-
-# ==============================================================================
-# 1. CONFIGURATION & CREDENTIALS
-# ==============================================================================
+import bcrypt # Used for secure password hashing
+import boto3 # Used for AWS Secrets Manager
+import json # Used for parsing secret string
+import traceback # Used for detailed error logging
 
 # --- AWS & DB Configuration ---
 # IMPORTANT: Replace these with your actual AWS region and secret name
@@ -19,12 +13,11 @@ AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
 
 # --- Configuration (Shared Constants) ---
-# The logo path and placeholder text confirmed by the user
+# NOTE: Using a placeholder path for the logo. In a real environment, 
+# you'd need to ensure this path is accessible or use a hosted URL.
 LOGO_PATH = "zodopt.png" 
 LOGO_PLACEHOLDER_TEXT = "zodopt"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" # Primary Color for header and main buttons
-MIN_PASSWORD_LENGTH = 8
-DEFAULT_DB_PORT = 3306 # Standard MySQL port
 
 # --- AWS SECRET MANAGER ----------------
 @st.cache_resource
@@ -33,38 +26,25 @@ def get_db_credentials():
     Loads DB credentials from AWS Secrets Manager.
     Secret must be a JSON string with keys:
     DB_HOST, DB_NAME, DB_USER, DB_PASSWORD
-    
-    If credentials cannot be obtained, the app execution is halted.
     """
-    if not AWS_SECRET_NAME:
-        st.error("FATAL: AWS_SECRET_NAME is not configured. Cannot proceed with database connection.")
-        st.stop()
-        
+    # 
+    client = boto3.client("secretsmanager", region_name=AWS_REGION)
     try:
-        # Initialize AWS Secrets Manager client
-        client = boto3.client("secretsmanager", region_name=AWS_REGION)
-        
-        # Fetch the secret value.
+        # This function fetches the secret value. 
+        # Ensure your AWS environment is configured with the necessary permissions.
         resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
-        
         # SecretsManager stores text in 'SecretString'
         if "SecretString" not in resp:
             raise RuntimeError("SecretString missing in AWS secrets response.")
-            
         creds = json.loads(resp["SecretString"])
         required_keys = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]
-        
         for k in required_keys:
             if k not in creds:
-                raise RuntimeError(f"Missing required database key in secret: {k}")
-                
+                raise RuntimeError(f"Missing key in secret: {k}")
         return creds
-        
     except Exception as e:
         # Display a user-friendly error in Streamlit
-        st.error(f"FATAL: Configuration Error: Could not retrieve database credentials from AWS Secrets Manager.")
-        st.info("Please verify the AWS_REGION, AWS_SECRET_NAME, and IAM permissions.")
-        st.write(f"Details: {e}")
+        st.error(f"Configuration Error: Could not retrieve database credentials from AWS Secrets Manager. Details: {e}")
         # Log the full traceback for the developer in the console
         st.write(traceback.format_exc())
         st.stop()
@@ -76,363 +56,288 @@ def get_fast_connection():
     """
     Returns a persistent MySQL connection object (cached by Streamlit).
     This function establishes the connection using credentials from Secrets Manager.
-    Stops execution if connection fails.
     """
-    credentials = get_db_credentials() # Retrieve creds using the strict AWS function
-    
+    c = get_db_credentials()
     try:
         conn = mysql.connector.connect(
-            host=credentials["DB_HOST"],
-            user=credentials["DB_USER"],
-            password=credentials["DB_PASSWORD"],
-            database=credentials["DB_NAME"],
-            port=DEFAULT_DB_PORT,
+            host=c["DB_HOST"],
+            user=c["DB_USER"],
+            password=c["DB_PASSWORD"],
+            database=c["DB_NAME"],
+            port=3306,
             autocommit=True, # Ensure changes are saved immediately
             connection_timeout=10,
         )
         return conn
-    except mysql.connector.Error as err:
-        st.error(f"FATAL: Database Connection Error: Cannot connect to MySQL.")
-        st.info(f"Please check credentials, database name ('{credentials['DB_NAME']}'), and network access.")
-        st.write(f"Error Details: {err.msg}")
-        st.stop()
-    except Exception as e:
-        st.error(f"FATAL: Unexpected Connection Error: {e}")
+    except mysql.connector.Error as e:
+        st.error(f"Database Connection Error: Could not connect to MySQL. Please check credentials and network access. Details: {e}")
         st.stop()
 
 
-# ==============================================================================
-# 2. SECURITY AND UTILITY HELPERS
-# ==============================================================================
-
+# --- Security Helper Functions ---
 def hash_password(password):
-    """Hashes a plaintext password using bcrypt."""
+    """Hashes a plaintext password using bcrypt for secure storage."""
+    # Generate a salt and hash the password
+    # 12 is a secure default work factor
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
 
 def check_password(password, hashed_password):
     """Verifies a plaintext password against a stored bcrypt hash."""
     try:
+        # bcrypt.checkpw handles both hashing the input and comparing the result
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
     except Exception:
+        # Handle cases where the hash might be malformed or password encoding fails
         return False
 
+# --- Utility Function ---
 def _get_image_base64(path):
-    """Converts a local image file to a base64 string for embedding (Placeholder)."""
-    # In this environment, we use a placeholder handler
-    return "" 
+    """Converts a local image file to a base64 string for embedding in HTML/CSS."""
+    # This is necessary for embedding local images directly into Streamlit's markdown/HTML
+    try:
+        with open(path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception:
+        # Returns an empty string if the file is not found, preventing errors
+        return ""
 
+# --- State Management Helper ---
 def set_auth_view(view):
-    """Changes the current view and forces a Streamlit re-render."""
-    st.session_state['visitor_auth_view'] = view
-    # Clear reset state when changing views
-    if 'reset_user_id' in st.session_state:
-        del st.session_state['reset_user_id']
-    sleep(0.1) 
+    """Changes the current authentication view (login, register, forgot_password) and forces a re-render."""
+    st.session_state['conf_auth_view'] = view
     st.rerun()
 
-# ==============================================================================
-# 3. DB INTERACTION FUNCTIONS
-# ==============================================================================
+# -----------------------------------------------------
+# --- VIEW RENDERING FUNCTIONS (DB INTEGRATED) ---
+# -----------------------------------------------------
 
-# Assumed Schema (Based on current app logic):
-# - admin_users: (id, company_id, name, email, password_hash, is_active=1)
-# - companies: (id, company_name)
-
-def get_admin_by_email(conn, email):
-    """Fetches user ID, hash, name, and company details for login/lookup."""
-    cursor = conn.cursor(dictionary=True) 
-    query = """
-    SELECT au.id, au.password_hash, au.name, c.id AS company_id, c.company_name
-    FROM admin_users au
-    JOIN companies c ON au.company_id = c.id
-    WHERE au.email = %s AND au.is_active = 1;
-    """
-    try:
-        cursor.execute(query, (email.lower(),))
-        return cursor.fetchone()
-    except Exception as e:
-        st.error(f"DB Error fetching admin: {e}")
-        return None
-    finally:
-        cursor.close()
-
-def create_company_and_admin(conn, company_name, admin_name, email, password_hash):
-    """Inserts a new company and its first admin user within a single transaction."""
-    cursor = conn.cursor()
-    try:
-        # 1. Insert Company
-        company_query = "INSERT INTO companies (company_name) VALUES (%s)"
-        cursor.execute(company_query, (company_name,))
-        company_id = cursor.lastrowid # Get the ID of the new company
-
-        # 2. Insert Admin User
-        admin_query = """
-        INSERT INTO admin_users (company_id, name, email, password_hash, is_active)
-        VALUES (%s, %s, %s, %s, 1)
-        """
-        cursor.execute(admin_query, (company_id, admin_name, email.lower(), password_hash))
-
-        conn.commit()
-        return True
-    except mysql.connector.Error as err:
-        conn.rollback()
-        # Check for duplicate entry error (1062) for unique fields (email, company_name)
-        if err.errno == 1062:
-            st.error("Registration failed: An account with this email or company name already exists.")
-        else:
-            st.error(f"Registration failed (DB error): {err.msg}")
-            # Log the full traceback for debugging the transaction failure
-            st.error(f"Full Error Trace: {traceback.format_exc()}")
-        return False
-    except Exception as e:
-        conn.rollback()
-        st.error(f"Registration failed (General error): {e}")
-        return False
-    finally:
-        cursor.close()
-
-def update_admin_password_directly(conn, user_id, new_password_hash):
-    """Updates the admin's password hash directly by user ID (simplified reset)."""
-    cursor = conn.cursor()
-    update_admin_query = "UPDATE admin_users SET password_hash = %s WHERE id = %s"
-    try:
-        cursor.execute(update_admin_query, (new_password_hash, user_id))
-        conn.commit()
-        return True
-    except Exception as e:
-        st.error(f"DB Error during direct password update: {e}")
-        conn.rollback()
-        return False
-    finally:
-        cursor.close()
-
-
-# ==============================================================================
-# 4. STREAMLIT VIEW RENDERING FUNCTIONS
-# ==============================================================================
-
-def render_admin_register_view():
-    """Renders the form for registering a new Company and its initial Admin user."""
-    conn = get_fast_connection() 
+def render_login_view():
+    """Renders the standard login form and handles DB authentication."""
+    conn = get_fast_connection()
     
-    with st.form("admin_register_form"):
-        st.markdown("**Company and Admin Details**")
+    with st.form("conf_login_form"):
+        email = st.text_input("Email ID", key="conf_login_email")
+        password = st.text_input("Password", type="password", key="conf_login_password")
         
-        company_name = st.text_input("Company Name", key="reg_company_name")
-        admin_name = st.text_input("Admin Full Name", key="reg_admin_name")
-        admin_email = st.text_input("Email ID (Used for Login)", key="reg_admin_email").lower()
-        
-        st.markdown("---")
-        
-        password = st.text_input(f"Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reg_password")
-        confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password")
-        
-        submitted = st.form_submit_button("Create Company & Admin Account", type="primary")
-        
-        if submitted:
-            if not all([company_name, admin_name, admin_email, password, confirm_password]):
-                st.error("Please fill in all required fields.")
-                return
-            elif password != confirm_password:
-                st.error("Passwords do not match.")
-                return
-            elif len(password) < MIN_PASSWORD_LENGTH:
-                st.error(f"Password must be at least {MIN_PASSWORD_LENGTH} characters long.")
-                return
-
-            hashed_pass = hash_password(password)
-            
-            if create_company_and_admin(conn, company_name, admin_name, admin_email, hashed_pass):
-                st.success(f"Company '{company_name}' and Admin '{admin_name}' successfully registered!")
-                st.info("You can now sign in using your Email ID.")
-                set_auth_view('admin_login') 
-            return
-    
-    st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Existing Admin Login", key="existing_admin_login_btn", use_container_width=True):
-            set_auth_view('admin_login')
-    with col2:
-        if st.button("Forgot Password?", key="admin_forgot_pass_btn", use_container_width=True):
-            set_auth_view('forgot_password')
-
-
-def render_existing_admin_login_view():
-    """
-    Renders the Admin login form for existing users and handles DB authentication.
-    """
-    conn = get_fast_connection() 
-
-    with st.form("admin_login_form"):
-        email = st.text_input("Admin Email ID", key="admin_login_email").lower()
-        password = st.text_input("Password", type="password", key="admin_login_password")
-        
-        submitted = st.form_submit_button("Admin Sign In →", type="primary")
+        submitted = st.form_submit_button("Sign In →", type="primary")
         
         if submitted:
             if not email or not password:
                 st.error("Please enter both email and password.")
                 return
 
-            user_data = get_admin_by_email(conn, email)
-
-            if user_data:
-                stored_hash = user_data['password_hash']
-                is_authenticated = check_password(password, stored_hash)
-
-                if is_authenticated:
-                    # Successful Login 
-                    st.session_state['admin_logged_in'] = True
-                    st.session_state['admin_id'] = user_data['id']
-                    st.session_state['admin_email'] = email
-                    st.session_state['admin_name'] = user_data['name']
-                    st.session_state['company_id'] = user_data['company_id']
-                    st.session_state['company_name'] = user_data['company_name']
-                    st.success(f"Welcome, {st.session_state['admin_name']}! Redirecting to dashboard...")
-                    
-                    # Navigate to the dashboard view
-                    set_auth_view('visitor_dashboard') 
-                    return
+            cursor = conn.cursor(dictionary=True) # Use dictionary=True to get results as dicts
+            try:
+                # 1. Look up user by email in the conference_users table
+                query = "SELECT id, name, password_hash FROM conference_users WHERE email = %s AND is_active = TRUE"
+                cursor.execute(query, (email,))
+                user_record = cursor.fetchone()
+                
+                if user_record and check_password(password, user_record['password_hash']):
+                    # 2. Login successful: Set session state for the user
+                    st.success(f"Welcome, {user_record['name']}! Logged in successfully.")
+                    st.session_state['logged_in'] = True
+                    st.session_state['user_id'] = user_record['id']
+                    st.session_state['user_email'] = email
+                    st.session_state['user_name'] = user_record['name']
+                    # Redirect to the main dashboard or app page
+                    st.session_state['current_page'] = 'conference_dashboard' 
+                    st.rerun()
                 else:
-                    st.error("Invalid Admin Email ID or Password.")
-            else:
-                st.error("Invalid Admin Email ID or Password.")
+                    # 3. Login failed 
+                    st.error("Invalid Email ID or Password.")
+            except mysql.connector.Error as err:
+                st.error(f"Database error during login: {err}")
+            finally:
+                cursor.close()
     
+    # Navigation Buttons 
     st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
-        if st.button("← New Registration", key="admin_new_reg_btn", use_container_width=True):
-            set_auth_view('admin_register')
+        if st.button("New Registration", key="conf_new_reg_btn", use_container_width=True):
+            set_auth_view('register')
     with col2:
-        if st.button("Forgot Password?", key="admin_forgot_pass_link", use_container_width=True):
+        if st.button("Forgot Password?", key="conf_forgot_pass_btn", use_container_width=True):
             set_auth_view('forgot_password')
 
-def render_visitor_dashboard_view():
-    """
-    The main hub for the logged-in administrator.
-    """
-    # Enforce login
-    if not st.session_state.get('admin_logged_in'):
-        st.warning("Please log in to view the dashboard.")
-        set_auth_view('admin_login')
-        return
+def render_register_view():
+    """Renders the new delegate registration form and inserts user into DB."""
+    conn = get_fast_connection()
 
-    company_name = st.session_state.get('company_name', 'Your Company')
-    admin_name = st.session_state.get('admin_name', 'Admin')
+    # Define the department options for the select box
+    DEPARTMENT_OPTIONS = [
+        "SELECT",
+        "SALES",
+        "HR",
+        "FINANCE",
+        "DELIVERY/TECH",
+        "DIGITAL MARKETING",
+        "IT"
+    ]
 
-    st.markdown(f"## 📊 {company_name} - Admin Dashboard")
-    st.markdown(f"Welcome back, **{admin_name}**.")
-    st.markdown("---")
+    with st.form("conf_register_form"):
+        name = st.text_input("Name", key="reg_name")
+        email = st.text_input("Email ID", key="reg_email")
+        company = st.text_input("Company", key="reg_company")
+        
+        # --- Department field changed to a select box (dropdown) ---
+        department = st.selectbox(
+            "Department", 
+            options=DEPARTMENT_OPTIONS, 
+            key="reg_department"
+        )
+        # -----------------------------------------------------------
+        password = st.text_input("Password (min 8 chars)", type="password", key="reg_password")
+        confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password")
+        
+        submitted = st.form_submit_button("Register Account", type="primary")
+
+        if submitted:
+            # Check if a valid department has been selected
+            is_department_selected = department != "SELECT"
+            
+            # --- VALIDATION UPDATED HERE ---
+            if not all([name, email, company, password, confirm_password]):
+                st.error("Please fill in all fields.")
+            elif not is_department_selected:
+                st.error("Please select a Department.")
+            # -------------------------------
+            elif password != confirm_password:
+                st.error("Passwords do not match.")
+            elif len(password) < 8:
+                st.error("Password must be at least 8 characters long.")
+            else:
+                cursor = conn.cursor()
+                try:
+                    # 1. Check if Email ID is already registered (unique constraint check)
+                    check_query = "SELECT COUNT(*) FROM conference_users WHERE email = %s"
+                    cursor.execute(check_query, (email,))
+                    if cursor.fetchone()[0] > 0:
+                        st.error("This Email ID is already registered. Please try logging in.")
+                        return
+
+                    # 2. Hash the password securely
+                    hashed_password = hash_password(password)
+
+                    # 3. Insert new user into the database
+                    insert_query = """
+                    INSERT INTO conference_users (name, email, company, department, password_hash)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """
+                    # The Department variable is now the selected value from the dropdown
+                    cursor.execute(insert_query, (name, email, company, department, hashed_password))
+                    
+                    st.success("Registration successful! You can now sign in.")
+                    set_auth_view('login')
+                except mysql.connector.Error as err:
+                    st.error(f"Database error during registration: {err}")
+                finally:
+                    cursor.close()
     
-    st.info(f"You are logged in as Admin ID: **{st.session_state['admin_id']}** at **{company_name}** (Company ID: {st.session_state['company_id']}).")
-
-    # Dashboard Navigation
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("👥 View Visitor History", key="dash_view_history_btn", use_container_width=True, type="primary"):
-            st.info("Feature not yet implemented. This would show the list of visitors.")
-    with col2:
-        if st.button("⚙️ Admin Settings", key="dash_admin_settings_btn", use_container_width=True):
-            st.info("Feature not yet implemented.")
-
-    st.markdown('<div style="margin-top: 35px;"></div>', unsafe_allow_html=True)
-    if st.button("← Logout", key="dashboard_logout_btn", use_container_width=True):
-        # Clear all admin session state
-        for key in ['admin_logged_in', 'admin_id', 'admin_email', 'admin_name', 'company_id', 'company_name']:
-            if key in st.session_state:
-                del st.session_state[key]
-        set_auth_view('admin_login') # Redirect to the login page
-
+    st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
+    if st.button("← Back to Login", key="reg_back_login_btn", use_container_width=True):
+        set_auth_view('login')
 
 def render_forgot_password_view():
     """
-    Renders the simplified TWO-STEP password reset flow:
-    1. Check email existence.
-    2. Allow direct password change if email is found.
+    Renders the password reset flow. 
+    NOTE: This implementation focuses on the Streamlit UI and DB update.
+    The complex parts (token generation, email sending, token verification from the
+    'conference_reset_password' table) are simulated.
     """
-    st.warning("⚠️ **ADMIN OVERRIDE:** This simplified two-step flow allows direct password reset by only verifying the email's existence in the database. This is HIGHLY INSECURE for a real application.")
-    
     conn = get_fast_connection()
+    
+    # Initialize state variables for the two-step process
+    if 'reset_email' not in st.session_state:
+        st.session_state['reset_email'] = None
+        st.session_state['email_found'] = False
+        
+    with st.form("forgot_pass_email_form", clear_on_submit=False):
+        email_to_check = st.text_input("Enter your registered Email ID", key="forgot_email_input", value=st.session_state.get('reset_email', ''))
+        
+        if st.form_submit_button("Search Account", type="primary"):
+            if not email_to_check:
+                st.warning("Please enter an email address.")
+                return
 
-    # --- STAGE 1: EMAIL VERIFICATION ---
-    if 'reset_user_id' not in st.session_state:
-        st.session_state['reset_user_id'] = None
+            cursor = conn.cursor()
+            try:
+                # Check if email exists to proceed
+                check_query = "SELECT id FROM conference_users WHERE email = %s"
+                cursor.execute(check_query, (email_to_check,))
+                user_id = cursor.fetchone()
 
-    if st.session_state['reset_user_id'] is None:
-        st.subheader("1. Verify Email ID")
-        with st.form("forgot_pass_verify_form"):
-            email_to_check = st.text_input("Enter your Admin Email ID", key="forgot_email_input").lower()
-            submitted = st.form_submit_button("Check Email Existence", type="primary")
-
-            if submitted:
-                if not email_to_check:
-                    st.error("Please enter an email address for lookup.")
-                    return
-                
-                user_data = get_admin_by_email(conn, email_to_check)
-                
-                if user_data:
-                    st.session_state['reset_user_id'] = user_data['id']
-                    st.success("✅ Email ID verified! You can now set your new password below.")
-                    # Force a re-run to display the next step
+                if user_id:
+                    st.session_state['reset_email'] = email_to_check
+                    st.session_state['email_found'] = True
+                    st.success("Account found. (In a production app, a secure reset link would be sent to this email.) Please enter a new password below.")
                     st.rerun() 
                 else:
+                    st.session_state['email_found'] = False
                     st.error("Email ID not found in our records.")
-    
-    # --- STAGE 2: PASSWORD RESET ---
-    if st.session_state['reset_user_id'] is not None:
-        st.subheader("2. Set New Password")
-        user_id_to_reset = st.session_state['reset_user_id']
+            except mysql.connector.Error as err:
+                st.error(f"Database error during email check: {err}")
+            finally:
+                cursor.close()
 
+    # --- Step 2: Password Reset (If Email Found) ---
+    if st.session_state.email_found:
+        st.markdown("---")
+        st.write(f"**Resetting password for:** `{st.session_state['reset_email']}`")
         with st.form("forgot_pass_reset_form"):
-            # New password fields
-            new_password = st.text_input(f"New Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reset_new_password")
+            new_password = st.text_input("New Password (min 8 chars)", type="password", key="reset_new_password")
             confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
             
-            submitted = st.form_submit_button("Finalize Password Reset", type="primary")
-            
-            if submitted:
+            if st.form_submit_button("Change Password", type="primary"):
                 if new_password != confirm_password:
                     st.error("Passwords do not match.")
-                    return
-                elif len(new_password) < MIN_PASSWORD_LENGTH:
-                    st.error(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
-                    return
-
-                new_hash = hash_password(new_password)
-
-                # --- ACTUAL DB INTERACTION POINT (Direct Password Update) ---
-                if update_admin_password_directly(conn, user_id_to_reset, new_hash):
-                    st.success("Password successfully changed! Redirecting to login...")
-                    # Clear state and redirect
-                    del st.session_state['reset_user_id']
-                    set_auth_view('admin_login')
+                elif len(new_password) < 8:
+                    st.error("Password must be at least 8 characters.")
                 else:
-                    st.error("Password reset failed due to a database error. Please check logs.")
-        
-    st.markdown('<div style="margin-top: 25px;"></div>', unsafe_allow_html=True)
-    if st.button("← Back to Admin Login", key="forgot_back_login_btn", use_container_width=True):
-        set_auth_view('admin_login')
+                    # In a real app, this update would only happen after token validation.
+                    cursor = conn.cursor()
+                    try:
+                        new_hashed_password = hash_password(new_password)
+                        
+                        update_query = "UPDATE conference_users SET password_hash = %s, updated_at = CURRENT_TIMESTAMP WHERE email = %s"
+                        cursor.execute(update_query, (new_hashed_password, st.session_state['reset_email']))
+                        
+                        st.success("Password successfully changed! You can now log in.")
+                        
+                        # Clear state and redirect to login
+                        st.session_state.email_found = False
+                        st.session_state.reset_email = None
+                        set_auth_view('login')
+                    except mysql.connector.Error as err:
+                        st.error(f"Database error during password change: {err}")
+                    finally:
+                        cursor.close()
 
-# ==============================================================================
-# 5. MAIN APPLICATION ENTRY POINT (CSS/HTML is correctly applied)
-# ==============================================================================
+    st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
+    if st.button("← Back to Login", key="forgot_back_login_btn", use_container_width=True):
+        st.session_state.email_found = False
+        st.session_state.reset_email = None
+        set_auth_view('login')
 
-def render_visitor_login_page():
-    # --- Default view is 'admin_login' ---
-    if 'visitor_auth_view' not in st.session_state:
-        st.session_state['visitor_auth_view'] = 'admin_login'
 
-    view = st.session_state['visitor_auth_view']
-    if view == 'admin_register':
-        header_title = "VISITOR MANAGEMENT - ADMIN REGISTRATION"
-    elif view == 'admin_login':
-        header_title = "VISITOR MANAGEMENT - ADMIN LOGIN"
-    elif view == 'visitor_dashboard':
-        header_title = "VISITOR MANAGEMENT - DASHBOARD" 
+# -----------------------------------------------------
+# --- MAIN FUNCTION (Page Layout and Routing) ---
+# -----------------------------------------------------
+
+def render_conference_login_page():
+    # Initialize the view state
+    if 'conf_auth_view' not in st.session_state:
+        st.session_state['conf_auth_view'] = 'login'
+
+    # Determine the header title based on the current view state
+    view = st.session_state['conf_auth_view']
+    if view == 'login':
+        header_title = "CONFERENCE BOOKING - SIGN IN"
+    elif view == 'register':
+        header_title = "NEW REGISTRATION"
     elif view == 'forgot_password':
-        header_title = "VISITOR MANAGEMENT - RESET PASSWORD"
+        header_title = "RESET PASSWORD"
         
     # 1. Inject Custom CSS for styling
     st.markdown(f"""
@@ -455,18 +360,19 @@ def render_visitor_login_page():
         padding: 20px 40px;
         margin-top: 0px; 
         margin-bottom: 40px;
-        border-radius: 0 0 15px 15px;
+        border-radius: 0 0 15px 15px; /* Only round the bottom corners */
         box-shadow: 0 4px 15px rgba(0,0,0,0.25);
         display: flex;
         justify-content: space-between;
         align-items: center;
+        /* Force full width in Streamlit's main content area */
         width: calc(100% + 4rem); 
         margin-left: -2rem; 
         margin-right: -2rem; 
     }}
     .header-title {{
         font-family: 'Inter', sans-serif; 
-        font-size: 30px;
+        font-size: 34px;
         font-weight: 800;
         color: #FFFFFF; 
         letter-spacing: 1.5px;
@@ -477,9 +383,22 @@ def render_visitor_login_page():
         font-weight: bold;
         color: #FFFFFF;
     }}
+    /* Streamlit selectbox styling */
+    .stSelectbox div[data-baseweb="select"] {{
+        background-color: #f0f2f6;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 0; /* Select boxes have internal padding */
+        font-size: 16px;
+    }}
+    .stSelectbox div[data-baseweb="select"] input:focus {{
+        border-color: var(--secondary-color);
+        box-shadow: 0 0 0 2px rgba(122, 66, 255, 0.4);
+        outline: none;
+    }}
     
-    /* Form and Input Styling */
-    .stTextInput input, .stTextArea textarea {{
+    /* Form and Input Styling for text inputs */
+    .stTextInput input {{
         font-family: 'Inter', sans-serif;
         background-color: #f0f2f6;
         border: 1px solid #e0e0e0;
@@ -487,15 +406,15 @@ def render_visitor_login_page():
         padding: 12px 15px;
         font-size: 16px;
     }}
-    .stTextInput input:focus, .stTextArea textarea:focus {{
+    .stTextInput input:focus {{
         border-color: var(--secondary-color);
         box-shadow: 0 0 0 2px rgba(122, 66, 255, 0.4);
         outline: none;
     }}
     
-    /* Primary Button Style (Gradient) */
+    /* Primary Button Style (Used for all gradient buttons) */
     .stForm button[kind="primary"],
-    .stButton > button:not([key*="back_login_btn"]):not([key*="logout_btn"]):not([key*="existing_admin_login_btn"]):not([key*="checkin_back_dash_btn"]):not([key*="admin_new_reg_btn"]) {{
+    .stButton > button:not([key*="back_login_btn"]):not([key*="conf_back_main_btn"]) {{
         background: var(--header-gradient) !important;
         color: white !important;
         border: none !important;
@@ -509,17 +428,14 @@ def render_visitor_login_page():
         transition: all 0.2s ease;
     }}
     .stForm button[kind="primary"]:hover,
-    .stButton > button:not([key*="back_login_btn"]):not([key*="logout_btn"]):not([key*="existing_admin_login_btn"]):not([key*="checkin_back_dash_btn"]):not([key*="admin_new_reg_btn"]):hover {{
-        opacity: 0.9;
+    .stButton > button:not([key*="back_login_btn"]):not([key*="conf_back_main_btn"]):hover {{
+        opacity: 0.95;
         transform: translateY(-2px);
     }}
     
-    /* Secondary (Back/Login/Logout) Buttons */
+    /* Secondary (Back) Buttons */
     .stButton > button[key*="back_login_btn"],
-    .stButton > button[key*="logout_btn"],
-    .stButton > button[key*="existing_admin_login_btn"],
-    .stButton > button[key*="admin_new_reg_btn"],
-    .stButton > button[key*="checkin_back_dash_btn"] {{
+    .stButton > button[key*="conf_back_main_btn"] {{
         background: #FFFFFF !important; 
         color: #555555 !important;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
@@ -530,11 +446,15 @@ def render_visitor_login_page():
         font-size: 14px !important;
         width: 100%;
     }}
+    .stButton > button[key*="back_login_btn"]:hover,
+    .stButton > button[key*="conf_back_main_btn"]:hover {{
+        background: #F0F2F6 !important;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
 
-    # 2. HEADER 
+    # 2. HEADER (Dynamic Title & Logo)
     logo_base64 = _get_image_base64(LOGO_PATH)
     if logo_base64:
         logo_html = f'<img src="data:image/png;base64,{logo_base64}" class="header-logo-img" style="height: 50px; border-radius: 8px;">'
@@ -551,15 +471,12 @@ def render_visitor_login_page():
         unsafe_allow_html=True
     )
 
-    # 3. Dynamic View Rendering
-    if view == 'admin_register':
-        render_admin_register_view()
-    elif view == 'admin_login':
-        render_existing_admin_login_view()
-    elif view == 'visitor_dashboard':
-        render_visitor_dashboard_view()
+    # 3. Dynamic View Rendering (The central logic)
+    # The content is centered automatically by Streamlit's default layout
+    if view == 'login':
+        render_login_view()
+    elif view == 'register':
+        render_register_view()
     elif view == 'forgot_password':
         render_forgot_password_view()
-        
-if __name__ == '__main__':
-    render_visitor_login_page()
+    
