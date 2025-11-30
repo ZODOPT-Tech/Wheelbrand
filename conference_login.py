@@ -15,7 +15,7 @@ AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbr
 # --- Configuration (Shared Constants) ---
 # NOTE: Using a placeholder path for the logo. In a real environment, 
 # you'd need to ensure this path is accessible or use a hosted URL.
-LOGO_PATH = "images/zodopt.png" 
+LOGO_PATH = "zodopt.png" 
 LOGO_PLACEHOLDER_TEXT = "zodopt"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" # Primary Color for header and main buttons
 
@@ -115,7 +115,7 @@ def render_login_view():
     """Renders the standard login form and handles DB authentication."""
     conn = get_fast_connection()
     
-    st.subheader("Sign In")
+    # st.subheader("Sign In") <-- Removed as requested
     with st.form("conf_login_form"):
         email = st.text_input("Email ID", key="conf_login_email")
         password = st.text_input("Password", type="password", key="conf_login_password")
@@ -166,7 +166,7 @@ def render_register_view():
     """Renders the new delegate registration form and inserts user into DB."""
     conn = get_fast_connection()
 
-    st.subheader("New Delegate Registration")
+    # st.subheader("New Delegate Registration") <-- Removed as requested
     with st.form("conf_register_form"):
         name = st.text_input("Name", key="reg_name")
         email = st.text_input("Email ID", key="reg_email")
@@ -228,7 +228,7 @@ def render_forgot_password_view():
         st.session_state['reset_email'] = None
         st.session_state['email_found'] = False
         
-    st.subheader("Reset Password")
+    # st.subheader("Reset Password") <-- Removed as requested
     
     # --- Step 1: Email Input (Simulate Account Search) ---
     with st.form("forgot_pass_email_form", clear_on_submit=False):
@@ -311,11 +311,11 @@ def render_conference_login_page():
     # Determine the header title based on the current view state
     view = st.session_state['conf_auth_view']
     if view == 'login':
-        header_title = "CONFERENCE BOOKING" 
+        header_title = "CONFERENCE BOOKING - SIGN IN" # Updated for clarity in the main header
     elif view == 'register':
-        header_title = "NEW REGISTRATION"  
+        header_title = "CONFERENCE BOOKING - NEW REGISTRATION"  # Updated for clarity in the main header
     elif view == 'forgot_password':
-        header_title = "RESET PASSWORD"     
+        header_title = "CONFERENCE BOOKING - RESET PASSWORD"     # Updated for clarity in the main header
         
     # 1. Inject Custom CSS for styling
     st.markdown(f"""
@@ -445,4 +445,12 @@ def render_conference_login_page():
     elif view == 'forgot_password':
         render_forgot_password_view()
     
-  
+    # Optional: Back to Main Menu Button
+    st.markdown("---")
+    if st.button("← Back to Main Menu", key="conf_back_main_btn", use_container_width=True):
+        # Clear specific auth state for clean transition
+        if 'conf_auth_view' in st.session_state:
+            del st.session_state['conf_auth_view']
+        # Assuming there is a 'main_screen' in the user's overall app structure
+        st.session_state['current_page'] = 'main_screen'
+        st.rerun()
