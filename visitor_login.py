@@ -47,6 +47,7 @@ def get_fast_connection():
 # --- Security Helper Functions ---
 def hash_password(password):
     """Hashes a plaintext password using bcrypt."""
+    # Using bcrypt to hash the new password before storing it
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
 
 def check_password(password, hashed_password):
@@ -73,6 +74,39 @@ def set_auth_view(view):
     # Using time.sleep(0.1) to ensure the rerun happens cleanly
     sleep(0.1) 
     st.rerun()
+
+# -----------------------------------------------------
+# --- PLACEHOLDER DB INTERACTION FUNCTIONS ---
+# -----------------------------------------------------
+
+def check_admin_exists_by_email(conn, email):
+    """
+    Placeholder: Checks the admin_users table for the email.
+    If found, returns the user ID.
+    """
+    # --- ACTUAL DB QUERY ---
+    # In a real app: SELECT id FROM admin_users WHERE email = %s
+    # Mock behavior: only 'test@example.com' exists
+    if email == "test@example.com":
+        st.info("DB Mock: Admin user found (ID: 99).")
+        return 99 # Mock user ID
+    return None
+
+def update_admin_password(conn, user_id, new_password):
+    """
+    Placeholder: Updates the password_hash in the admin_users table.
+    """
+    new_hash = hash_password(new_password)
+    
+    # --- ACTUAL DB UPDATE ---
+    # In a real app: 
+    # 1. UPDATE admin_users SET password_hash = %s WHERE id = %s
+    # 2. UPDATE password_reset_tokens SET is_used = TRUE WHERE user_id = %s AND token = %s
+    
+    # Mock behavior: simulate success
+    st.info(f"DB Mock: Updating user {user_id} with new password hash.")
+    return True # Return success
+
 
 # -----------------------------------------------------
 # --- VIEW RENDERING FUNCTIONS ---
@@ -113,13 +147,16 @@ def render_admin_register_view():
                 return
 
             # --- Mock/Simulated DB Interaction ---
+            # --- Actual DB Logic (Commented out, requires real connection) ---
+            # 1. Hash the password: hashed_pass = hash_password(password)
+            # 2. Insert Company: INSERT INTO companies (company_name) VALUES (%s)
+            # 3. Get new company_id
+            # 4. Insert Admin User: INSERT INTO admin_users (company_id, name, email, password_hash) VALUES (%s, %s, %s, %s)
+            
             st.success(f"Company '{company_name}' and Admin '{admin_name}' successfully registered!")
             st.info("You can now sign in using your Email ID.")
             set_auth_view('admin_login') 
             return
-            
-            # --- Actual DB Logic (Commented out, requires real connection) ---
-            # ... (DB insertion logic here) ...
 
     
     # Navigation Buttons 
@@ -155,6 +192,10 @@ def render_existing_admin_login_view():
                 return
 
             # --- Mock/Simulated DB Interaction ---
+            # --- Actual DB Logic (Commented out, requires real connection) ---
+            # 1. Query admin_users by email to get password_hash, company_id, name
+            # 2. Verify password: if check_password(password, stored_hash):
+            
             if email == "admin@zodopt.com" and password == "securepass":
                 # Successful Login Simulation
                 st.session_state['admin_logged_in'] = True
@@ -169,9 +210,6 @@ def render_existing_admin_login_view():
                 return
             else:
                 st.error("Invalid Admin Email ID or Password.")
-            
-            # --- Actual DB Logic (Commented out, requires real connection) ---
-            # ... (DB authentication logic here) ...
     
     # Navigation Buttons 
     st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
@@ -221,43 +259,51 @@ def render_visitor_dashboard_view():
         set_auth_view('admin_login') # Redirect to the login page
 
 
-# --- REMOVED: render_visitor_check_in_view() and all its associated logic ---
-
-
 def render_forgot_password_view():
-    """Renders the password reset flow for admin users."""
+    """
+    Renders the password reset flow for admin users.
+    Refined to simulate database interaction for user lookup and password update.
+    """
     st.markdown("### Admin Password Reset")
-    st.warning("Password reset requires a functional email service, which is simulated here.")
+    st.warning("Password reset requires a functional email service and database connection, which are currently simulated.")
     
     if 'reset_email' not in st.session_state:
         st.session_state['reset_email'] = None
         st.session_state['email_found'] = False
+        st.session_state['reset_user_id'] = None # Store user ID after finding them
         
-    with st.form("forgot_pass_email_form", clear_on_submit=False):
-        email_to_check = st.text_input("Enter your registered Admin Email ID", key="forgot_email_input", value=st.session_state.get('reset_email', ''))
-        
-        if st.form_submit_button("Search Account", type="primary"):
-            if not email_to_check:
-                st.warning("Please enter an email address.")
-                return
+    conn = get_fast_connection() # Placeholder connection
 
-            # --- Mock/Simulated DB Interaction ---
-            if email_to_check.endswith("@zodopt.com"): 
-                st.session_state['reset_email'] = email_to_check
-                st.session_state['email_found'] = True
-                st.success("Account found. (Simulated: Please enter a new password below.)")
-                st.rerun() 
-            else:
-                st.session_state['email_found'] = False
-                st.error("Email ID not found in our records.")
+    # --- Step 1: Check Email Existence ---
+    if not st.session_state.email_found:
+        with st.form("forgot_pass_email_form", clear_on_submit=False):
+            email_to_check = st.text_input("Enter your registered Admin Email ID", key="forgot_email_input")
             
-            # --- Actual DB Logic (Commented out, requires real connection) ---
-            # ... database check logic here ...
+            if st.form_submit_button("Search Account", type="primary"):
+                if not email_to_check:
+                    st.warning("Please enter an email address.")
+                    return
+                
+                # --- ACTUAL DB INTERACTION POINT (User Existence Check) ---
+                user_id = check_admin_exists_by_email(conn, email_to_check)
+
+                if user_id:
+                    st.session_state['reset_email'] = email_to_check
+                    st.session_state['reset_user_id'] = user_id
+                    st.session_state['email_found'] = True
+                    
+                    # NOTE: In a real app, this is where you'd GENERATE the token (password_reset_tokens table), 
+                    # send an email, and then wait for the user to click the link.
+                    st.success("Account found. (Simulated: Please enter a new password below.)")
+                    st.rerun() 
+                else:
+                    st.session_state['email_found'] = False
+                    st.error("Email ID not found in our records.")
 
     # --- Step 2: Password Reset (If Email Found) ---
     if st.session_state.email_found:
         st.markdown("---")
-        st.write(f"**Resetting password for:** `{st.session_state['reset_email']}`")
+        st.write(f"**Resetting password for:** `{st.session_state['reset_email']}` (User ID: {st.session_state['reset_user_id']})")
         with st.form("forgot_pass_reset_form"):
             new_password = st.text_input("New Password (min 8 chars)", type="password", key="reset_new_password")
             confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
@@ -268,21 +314,27 @@ def render_forgot_password_view():
                 elif len(new_password) < 8:
                     st.error("Password must be at least 8 characters.")
                 else:
-                    # --- Mock/Simulated DB Interaction ---
-                    st.success("Password successfully changed! You can now log in.")
+                    # --- ACTUAL DB INTERACTION POINT (Password Update) ---
+                    user_id_to_update = st.session_state['reset_user_id']
                     
-                    st.session_state.email_found = False
-                    st.session_state.reset_email = None
-                    set_auth_view('admin_login')
-                    
-                    # --- Actual DB Logic (Commented out, requires real connection) ---
-                    # ... database update logic here ...
+                    if update_admin_password(conn, user_id_to_update, new_password):
+                        # NOTE: In a real app, you would also mark the reset token as used here.
+                        st.success("Password successfully changed! You can now log in.")
+                        
+                        # Clean up state and redirect
+                        st.session_state.email_found = False
+                        st.session_state.reset_email = None
+                        st.session_state.reset_user_id = None
+                        set_auth_view('admin_login')
+                    else:
+                         st.error("Failed to update password in the database.")
 
 
     st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
     if st.button("← Back to Admin Login", key="forgot_back_login_btn", use_container_width=True):
         st.session_state.email_found = False
         st.session_state.reset_email = None
+        st.session_state.reset_user_id = None
         set_auth_view('admin_login')
 
 # -----------------------------------------------------
@@ -302,7 +354,6 @@ def render_visitor_login_page():
         header_title = "VISITOR MANAGEMENT - ADMIN LOGIN"
     elif view == 'visitor_dashboard':
         header_title = "VISITOR MANAGEMENT - DASHBOARD" 
-    # REMOVED: elif view == 'visitor_check_in':
     elif view == 'forgot_password':
         header_title = "VISITOR MANAGEMENT - RESET PASSWORD"
         
@@ -430,8 +481,6 @@ def render_visitor_login_page():
         render_existing_admin_login_view()
     elif view == 'visitor_dashboard':
         render_visitor_dashboard_view()
-    # REMOVED: elif view == 'visitor_check_in':
-    # REMOVED:     render_visitor_check_in_view()
     elif view == 'forgot_password':
         render_forgot_password_view()
         
