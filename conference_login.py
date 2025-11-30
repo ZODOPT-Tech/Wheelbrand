@@ -313,9 +313,9 @@ def render_conference_login_page():
     if view == 'login':
         header_title = "CONFERENCE BOOKING - SIGN IN" # Updated for clarity in the main header
     elif view == 'register':
-        header_title = "CONFERENCE BOOKING - NEW REGISTRATION"  # Updated for clarity in the main header
+        header_title = "NEW REGISTRATION"  # Updated for clarity in the main header
     elif view == 'forgot_password':
-        header_title = "CONFERENCE BOOKING - RESET PASSWORD"     # Updated for clarity in the main header
+        header_title = "RESET PASSWORD"     # Updated for clarity in the main header
         
     # 1. Inject Custom CSS for styling
     st.markdown(f"""
