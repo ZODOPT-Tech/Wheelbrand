@@ -9,110 +9,104 @@ from time import sleep
 from datetime import datetime, timedelta
 import secrets
 
+# ==============================================================================
+# 1. CONFIGURATION & CREDENTIALS
+# ==============================================================================
+
 # --- AWS & DB Configuration ---
-# IMPORTANT: Replace these with your actual configuration details for a live environment.
-AWS_REGION = "ap-south-1"
-# Set this to your actual AWS Secrets Manager ARN or remove if using env vars.
-AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
-DATABASE_NAME = "zodopt"
+# IMPORTANT: Replace these with your actual AWS region and secret name
+AWS_REGION = "ap-south-1" 
+AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
 
 # --- Configuration (Shared Constants) ---
+# NOTE: Using a placeholder path for the logo. In a real environment, 
+# you'd need to ensure this path is accessible or use a hosted URL.
 LOGO_PATH = "zodopt.png"
-LOGO_PLACEHOLDER_TEXT = "VISITOR ADMIN"
-HEADER_GRADIENT = "linear-gradient(90deg, #1A4D2E, #4CBF80)"
+LOGO_PLACEHOLDER_TEXT = "zodopt"
+HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" # Primary Color for header and main buttons
+MIN_PASSWORD_LENGTH = 8
+DEFAULT_DB_PORT = 3306 # Standard MySQL port
 
-# --- AWS SECRET MANAGER & DB CONNECTION ---
-
+# --- AWS SECRET MANAGER ----------------
+@st.cache_resource
 def get_db_credentials():
     """
-    Retrieves MySQL credentials from AWS Secrets Manager or environment variables.
+    Loads DB credentials from AWS Secrets Manager.
+    Secret must be a JSON string with keys:
+    DB_HOST, DB_NAME, DB_USER, DB_PASSWORD
     
-    NOTE: In a live environment, you must have AWS credentials configured 
-    or use Streamlit Secrets for local testing.
+    If credentials cannot be obtained, the app execution is halted.
     """
-    # 1. Try to fetch from AWS Secrets Manager (Boto3)
-    # Using a try block to handle environments without AWS access
+    if not AWS_SECRET_NAME:
+        st.error("FATAL: AWS_SECRET_NAME is not configured. Cannot proceed with database connection.")
+        st.stop()
+        
     try:
-        if AWS_SECRET_NAME and AWS_SECRET_NAME != "MOCK":
-            client = boto3.client('secretsmanager', region_name=AWS_REGION)
-            response = client.get_secret_value(SecretId=AWS_SECRET_NAME)
-            if 'SecretString' in response:
-                creds = json.loads(response['SecretString'])
-                creds["database"] = DATABASE_NAME
-                return creds
-    except Exception:
-        # Fallback to Environment Variables/Streamlit Secrets
-        pass
-    
-    # 2. Fallback to Streamlit Secrets / Environment Variables for local testing
-    host = os.environ.get("DB_HOST", "mock_host") 
-    user = os.environ.get("DB_USER", "mock_user")
-    password = os.environ.get("DB_PASS", "mock_password")
-    
-    if host == "mock_host":
-        st.warning("Using mock DB credentials and connection. Data will NOT be saved persistently.")
-    
-    return {
-        "host": host, 
-        "user": user, 
-        "password": password, 
-        "database": DATABASE_NAME, 
-    }
+        # Initialize AWS Secrets Manager client
+        client = boto3.client("secretsmanager", region_name=AWS_REGION)
+        
+        # Fetch the secret value.
+        resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
+        
+        # SecretsManager stores text in 'SecretString'
+        if "SecretString" not in resp:
+            raise RuntimeError("SecretString missing in AWS secrets response.")
+            
+        creds = json.loads(resp["SecretString"])
+        required_keys = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]
+        
+        for k in required_keys:
+            if k not in creds:
+                raise RuntimeError(f"Missing required database key in secret: {k}")
+                
+        return creds
+        
+    except Exception as e:
+        # Display a user-friendly error in Streamlit
+        st.error(f"FATAL: Configuration Error: Could not retrieve database credentials from AWS Secrets Manager.")
+        st.info("Please verify the AWS_REGION, AWS_SECRET_NAME, and IAM permissions.")
+        st.write(f"Details: {e}")
+        # Log the full traceback for the developer in the console
+        st.write(traceback.format_exc())
+        st.stop()
 
+
+# ---------------- FAST DB CONNECTION ----------------
 @st.cache_resource
 def get_fast_connection():
     """
     Returns a persistent MySQL connection object (cached by Streamlit).
-    Uses real mysql.connector logic if credentials are not 'mock'.
+    This function establishes the connection using credentials from Secrets Manager.
+    Stops execution if connection fails.
     """
-    credentials = get_db_credentials()
+    credentials = get_db_credentials() # Retrieve creds using the strict AWS function
     
-    # --- MOCK IMPLEMENTATION for local debugging (NO PERSISTENCE) ---
-    if credentials["host"] == "mock_host":
-        class MockConnection:
-            def cursor(self, dictionary=False):
-                return self
-            def execute(self, query, params=None):
-                st.info(f"MOCK EXECUTE: {query.split()[0]} {query.split()[1]} with parameters...")
-            def fetchone(self):
-                # Mock login response needs to be handled *outside* this function or be complex
-                # For safety, mock returns None, forcing logic to handle no user found.
-                return None 
-            def fetchall(self):
-                return []
-            def rowcount(self):
-                return 1
-            def lastrowid(self):
-                return 100 
-            def commit(self):
-                st.info("MOCK COMMIT: Simulated successful transaction.")
-            def close(self):
-                pass
-            def rollback(self):
-                st.error("MOCK ROLLBACK: Simulated transaction failure.")
-        return MockConnection()
-
-    # --- REAL DB IMPLEMENTATION ---
     try:
         conn = mysql.connector.connect(
-            host=credentials["host"],
-            user=credentials["user"],
-            password=credentials["password"],
-            database=credentials["database"],
-            # Add port, ssl_mode, etc. if required
+            host=credentials["DB_HOST"],
+            user=credentials["DB_USER"],
+            password=credentials["DB_PASSWORD"],
+            database=credentials["DB_NAME"],
+            port=DEFAULT_DB_PORT,
+            autocommit=True, # Ensure changes are saved immediately
+            connection_timeout=10,
         )
         st.success("Successfully connected to MySQL database.")
         return conn
     except mysql.connector.Error as err:
-        st.error(f"Database Connection Error: Cannot connect to MySQL. Error: {err.msg}")
-        # Stop app execution if connection fails to prevent runtime errors
+        st.error(f"FATAL: Database Connection Error: Cannot connect to MySQL.")
+        st.info(f"Please check credentials, database name ('{credentials['DB_NAME']}'), and network access.")
+        st.write(f"Error Details: {err.msg}")
         st.stop()
     except Exception as e:
-        st.error(f"Unexpected Connection Error: {e}")
+        st.error(f"FATAL: Unexpected Connection Error: {e}")
         st.stop()
 
 
-# --- Security Helper Functions ---
+# ==============================================================================
+# 2. SECURITY AND UTILITY HELPERS
+# ==============================================================================
+
 def hash_password(password):
     """Hashes a plaintext password using bcrypt."""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
@@ -124,29 +118,28 @@ def check_password(password, hashed_password):
     except Exception:
         return False
 
-# --- Utility Function ---
 def _get_image_base64(path):
-    """Converts a local image file to a base64 string for embedding."""
-    try:
-        # NOTE: Placeholder path handler
-        return "" 
-    except Exception:
-        return ""
+    """Converts a local image file to a base64 string for embedding (Placeholder)."""
+    # In this environment, we use a placeholder handler
+    return "" 
 
-# --- State Management Helper ---
 def set_auth_view(view):
-    """Changes the current view and forces a re-render."""
+    """Changes the current view and forces a Streamlit re-render."""
     st.session_state['visitor_auth_view'] = view
     sleep(0.1) 
     st.rerun()
 
-# -----------------------------------------------------
-# --- REAL DB INTERACTION FUNCTIONS ---
-# -----------------------------------------------------
+# ==============================================================================
+# 3. REAL DB INTERACTION FUNCTIONS
+# ==============================================================================
+
+# Assumed Schema:
+# - admin_users: (id, company_id, name, email, password_hash, is_active=1)
+# - companies: (id, company_name)
+# - password_reset_tokens: (user_id, token, expires_at, is_used=FALSE)
 
 def get_admin_by_email(conn, email):
     """Fetches user ID, hash, name, and company details for login/lookup."""
-    # Using dictionary=True to return results as dictionaries (easier access)
     cursor = conn.cursor(dictionary=True) 
     query = """
     SELECT au.id, au.password_hash, au.name, c.id AS company_id, c.company_name
@@ -155,35 +148,16 @@ def get_admin_by_email(conn, email):
     WHERE au.email = %s AND au.is_active = 1;
     """
     try:
-        cursor.execute(query, (email,))
-        
-        # --- MOCK DATA INJECTION ---
-        # This handles the specific case where the mock connection fails to return data
-        if conn.__class__.__name__ == 'MockConnection' and email == "admin@example.com":
-            st.info("MOCK LOGIN: Simulating successful login for 'admin@example.com'.")
-            # Simulating data that would be fetched from the DB
-            mock_hash = hash_password("password123") # Hash a known mock password
-            return {
-                'id': 1, 
-                'password_hash': mock_hash,
-                'name': 'Mock Admin', 
-                'company_id': 101, 
-                'company_name': 'Mock Corp'
-            }
-        
+        cursor.execute(query, (email.lower(),))
         return cursor.fetchone()
     except Exception as e:
         st.error(f"DB Error fetching admin: {e}")
         return None
     finally:
-        # Check if the cursor is closed only if it's a real cursor
-        if conn.__class__.__name__ != 'MockConnection':
-            cursor.close()
+        cursor.close()
 
 def create_company_and_admin(conn, company_name, admin_name, email, password_hash):
-    """
-    Inserts a new company and its first admin user, respecting the provided schemas.
-    """
+    """Inserts a new company and its first admin user within a single transaction."""
     cursor = conn.cursor()
     try:
         # 1. Insert Company
@@ -193,28 +167,29 @@ def create_company_and_admin(conn, company_name, admin_name, email, password_has
 
         # 2. Insert Admin User
         admin_query = """
-        INSERT INTO admin_users (company_id, name, email, password_hash)
-        VALUES (%s, %s, %s, %s)
+        INSERT INTO admin_users (company_id, name, email, password_hash, is_active)
+        VALUES (%s, %s, %s, %s, 1)
         """
-        cursor.execute(admin_query, (company_id, admin_name, email, password_hash))
+        cursor.execute(admin_query, (company_id, admin_name, email.lower(), password_hash))
 
         conn.commit()
         return True
     except mysql.connector.Error as err:
         conn.rollback()
-        # Check for specific error codes like duplicate entry (1062) for unique fields (email, company_name)
+        # Check for duplicate entry error (1062) for unique fields (email, company_name)
         if err.errno == 1062:
             st.error("Registration failed: An account with this email or company name already exists.")
         else:
             st.error(f"Registration failed (DB error): {err.msg}")
+            # Log the full traceback for debugging the transaction failure
+            st.error(f"Full Error Trace: {traceback.format_exc()}")
         return False
     except Exception as e:
         conn.rollback()
         st.error(f"Registration failed (General error): {e}")
         return False
     finally:
-        if conn.__class__.__name__ != 'MockConnection':
-            cursor.close()
+        cursor.close()
 
 def generate_reset_token(conn, user_id):
     """Generates a secure token and saves it to the password_reset_tokens table."""
@@ -222,10 +197,9 @@ def generate_reset_token(conn, user_id):
     token = secrets.token_urlsafe(32)
     expires_at = datetime.now() + timedelta(hours=1)
 
-    # NOTE: Assuming you have a password_reset_tokens table with columns: user_id, token, expires_at, is_used
     query = """
-    INSERT INTO password_reset_tokens (user_id, token, expires_at)
-    VALUES (%s, %s, %s)
+    INSERT INTO password_reset_tokens (user_id, token, expires_at, is_used)
+    VALUES (%s, %s, %s, FALSE)
     """
     try:
         cursor.execute(query, (user_id, token, expires_at))
@@ -236,25 +210,19 @@ def generate_reset_token(conn, user_id):
         conn.rollback()
         return None
     finally:
-        if conn.__class__.__name__ != 'MockConnection':
-            cursor.close()
+        cursor.close()
 
 def validate_and_reset_password(conn, user_id, token, new_password):
     """
-    Checks token validity and updates the password, marking the token as used.
+    Checks token validity and updates the password, marking the token as used, 
+    all within a single transaction.
     """
     cursor = conn.cursor()
     new_hash = hash_password(new_password)
     
-    # NOTE: Token validation logic is simplified/skipped in this Streamlit flow 
-    # but the DB update and token-use marking remain critical.
-    
     try:
-        # 1. Update Admin Password
-        update_admin_query = "UPDATE admin_users SET password_hash = %s WHERE id = %s"
-        cursor.execute(update_admin_query, (new_hash, user_id))
-        
-        # 2. Mark the token as used (Using NOW() to check for non-expired, unused tokens)
+        # 1. Mark the token as used (Verifies the token is valid, non-expired, and unused)
+        # This update must occur first to ensure token validity before password change
         update_token_query = """
         UPDATE password_reset_tokens 
         SET is_used = TRUE 
@@ -262,23 +230,28 @@ def validate_and_reset_password(conn, user_id, token, new_password):
         """
         cursor.execute(update_token_query, (user_id, token))
 
+        if cursor.rowcount == 0:
+            conn.rollback()
+            # If the token update failed, the token was likely invalid, expired, or already used.
+            return False
+
+        # 2. Update Admin Password
+        update_admin_query = "UPDATE admin_users SET password_hash = %s WHERE id = %s"
+        cursor.execute(update_admin_query, (new_hash, user_id))
+
         conn.commit()
-        
-        # In a real app, we check if rowcount for token update > 0 to confirm validity.
-        # Here we assume success if update_admin_query succeeded.
         return True
     except Exception as e:
         st.error(f"DB Error during password reset: {e}")
         conn.rollback()
         return False
     finally:
-        if conn.__class__.__name__ != 'MockConnection':
-            cursor.close()
+        cursor.close()
 
 
-# -----------------------------------------------------
-# --- VIEW RENDERING FUNCTIONS (No changes needed here) ---
-# -----------------------------------------------------
+# ==============================================================================
+# 4. STREAMLIT VIEW RENDERING FUNCTIONS
+# ==============================================================================
 
 def render_admin_register_view():
     """Renders the form for registering a new Company and its initial Admin user."""
@@ -287,7 +260,6 @@ def render_admin_register_view():
     st.markdown("### Register Your Company & Admin Account")
     
     with st.form("admin_register_form"):
-        # --- Company & Admin Details ---
         st.markdown("**Company and Admin Details**")
         
         company_name = st.text_input("Company Name", key="reg_company_name")
@@ -296,8 +268,7 @@ def render_admin_register_view():
         
         st.markdown("---")
         
-        # Password Fields
-        password = st.text_input("Password (min 8 chars)", type="password", key="reg_password")
+        password = st.text_input(f"Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reg_password")
         confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password")
         
         submitted = st.form_submit_button("Create Company & Admin Account", type="primary")
@@ -309,21 +280,18 @@ def render_admin_register_view():
             elif password != confirm_password:
                 st.error("Passwords do not match.")
                 return
-            elif len(password) < 8:
-                st.error("Password must be at least 8 characters long.")
+            elif len(password) < MIN_PASSWORD_LENGTH:
+                st.error(f"Password must be at least {MIN_PASSWORD_LENGTH} characters long.")
                 return
 
-            # --- DB Interaction ---
             hashed_pass = hash_password(password)
             
             if create_company_and_admin(conn, company_name, admin_name, admin_email, hashed_pass):
                 st.success(f"Company '{company_name}' and Admin '{admin_name}' successfully registered!")
                 st.info("You can now sign in using your Email ID.")
                 set_auth_view('admin_login') 
-            # Note: create_company_and_admin handles failure messages internally.
             return
     
-    # Navigation Buttons 
     st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
@@ -337,7 +305,6 @@ def render_admin_register_view():
 def render_existing_admin_login_view():
     """
     Renders the Admin login form for existing users and handles DB authentication.
-    Redirects to 'visitor_dashboard' on success.
     """
     conn = get_fast_connection() 
 
@@ -354,17 +321,11 @@ def render_existing_admin_login_view():
                 st.error("Please enter both email and password.")
                 return
 
-            # --- DB Interaction ---
             user_data = get_admin_by_email(conn, email)
 
             if user_data:
                 stored_hash = user_data['password_hash']
-                # MOCK check: If using mock, the hash is pre-computed for "password123"
-                if conn.__class__.__name__ == 'MockConnection' and email == "admin@example.com":
-                     # Check against the known mock password "password123"
-                     is_authenticated = password == "password123" 
-                else:
-                    is_authenticated = check_password(password, stored_hash)
+                is_authenticated = check_password(password, stored_hash)
 
                 if is_authenticated:
                     # Successful Login 
@@ -384,7 +345,6 @@ def render_existing_admin_login_view():
             else:
                 st.error("Invalid Admin Email ID or Password.")
     
-    # Navigation Buttons 
     st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
     col1, col2 = st.columns(2)
     with col1:
@@ -397,7 +357,6 @@ def render_existing_admin_login_view():
 def render_visitor_dashboard_view():
     """
     The main hub for the logged-in administrator.
-    It will show current visitors, history, and navigation options.
     """
     # Enforce login
     if not st.session_state.get('admin_logged_in'):
@@ -418,10 +377,10 @@ def render_visitor_dashboard_view():
     col1, col2 = st.columns(2)
     with col1:
         if st.button("👥 View Visitor History", key="dash_view_history_btn", use_container_width=True, type="primary"):
-            st.warning("Feature not yet implemented. This would show the list of visitors.")
+            st.info("Feature not yet implemented. This would show the list of visitors.")
     with col2:
         if st.button("⚙️ Admin Settings", key="dash_admin_settings_btn", use_container_width=True):
-            st.warning("Feature not yet implemented.")
+            st.info("Feature not yet implemented.")
 
     st.markdown('<div style="margin-top: 35px;"></div>', unsafe_allow_html=True)
     if st.button("← Logout", key="dashboard_logout_btn", use_container_width=True):
@@ -434,18 +393,17 @@ def render_visitor_dashboard_view():
 
 def render_forgot_password_view():
     """
-    Renders the password reset flow for admin users, simulating token generation/update.
+    Renders the password reset flow for admin users.
     """
     st.markdown("### Admin Password Reset")
-    st.warning("Password reset requires a functional email service and database connection, which are currently simulated.")
+    st.warning("A functional email service is required for a real password reset flow. This implementation simulates the link generation and uses the DB.")
     
-    # State management for the reset flow
     if 'reset_state' not in st.session_state:
         st.session_state['reset_state'] = {
             'step': 1, # 1: Email check, 2: Token verification/password reset
             'email': None,
             'user_id': None,
-            'token': None # The simulated token
+            'token': None # The generated token
         }
     
     state = st.session_state['reset_state']
@@ -460,7 +418,7 @@ def render_forgot_password_view():
                 if not email_to_check:
                     st.warning("Please enter an email address.")
                     return
-                
+                    
                 user_data = get_admin_by_email(conn, email_to_check)
 
                 if user_data:
@@ -476,30 +434,32 @@ def render_forgot_password_view():
                         state['step'] = 2
                         
                         st.success("A password reset link has been (simulated) sent to your email.")
-                        st.info(f"**MOCK TOKEN:** `{reset_token}`. In a real app, you would click the link containing this token to proceed.")
+                        st.info(f"**TOKEN:** `{reset_token}`. You would typically click a link containing this token.")
                         st.rerun() 
                     else:
                         st.error("Failed to generate a reset token. Please try again.")
                 else:
                     st.error("Email ID not found in our records.")
 
-    # --- Step 2: Password Reset (Simulating token arrival via email link) ---
+    # --- Step 2: Password Reset (Requires token input) ---
     elif state['step'] == 2:
         st.markdown("---")
         st.write(f"**Resetting password for:** `{state['email']}` (User ID: {state['user_id']})")
         
-        # We are using the stored token for this mock.
-        reset_token_input = st.text_input("Enter Reset Token (Simulated Link)", value=state['token'], key="reset_token_input", disabled=True)
+        # User would normally copy the token from the email link or the app would extract it from the URL
+        reset_token_input = st.text_input("Enter Reset Token", value=state['token'], key="reset_token_input")
         
         with st.form("forgot_pass_reset_form"):
-            new_password = st.text_input("New Password (min 8 chars)", type="password", key="reset_new_password")
+            new_password = st.text_input(f"New Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reset_new_password")
             confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
             
             if st.form_submit_button("Change Password", type="primary"):
                 if new_password != confirm_password:
                     st.error("Passwords do not match.")
-                elif len(new_password) < 8:
-                    st.error("Password must be at least 8 characters.")
+                elif len(new_password) < MIN_PASSWORD_LENGTH:
+                    st.error(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
+                elif not reset_token_input or reset_token_input != state['token']: # Simple check for the demo flow
+                    st.error("Please enter a valid reset token.")
                 else:
                     # --- ACTUAL DB INTERACTION POINT (Validate Token & Update Password) ---
                     if validate_and_reset_password(conn, state['user_id'], reset_token_input, new_password):
@@ -517,16 +477,15 @@ def render_forgot_password_view():
         st.session_state['reset_state'] = { 'step': 1, 'email': None, 'user_id': None, 'token': None }
         set_auth_view('admin_login')
 
-# -----------------------------------------------------
-# --- MAIN PAGE RENDERING (CSS/HTML is correctly applied) ---
-# -----------------------------------------------------
+# ==============================================================================
+# 5. MAIN APPLICATION ENTRY POINT (CSS/HTML is correctly applied)
+# ==============================================================================
 
 def render_visitor_login_page():
     # --- Default view is 'admin_login' ---
     if 'visitor_auth_view' not in st.session_state:
         st.session_state['visitor_auth_view'] = 'admin_login'
 
-    # Determine the header title
     view = st.session_state['visitor_auth_view']
     if view == 'admin_register':
         header_title = "VISITOR MANAGEMENT - ADMIN REGISTRATION"
@@ -543,9 +502,9 @@ def render_visitor_login_page():
     /* CSS variables for consistency */
     :root {{
         --header-gradient: {HEADER_GRADIENT};
-        --primary-color: #1A4D2E;
-        --secondary-color: #4CBF80;
-        --header-box-shadow: 0 4px 10px rgba(26, 77, 46, 0.4);
+        --primary-color: #50309D;
+        --secondary-color: #7A42FF;
+        --header-box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4);
     }}
 
     /* Streamlit layout reset */
@@ -592,13 +551,13 @@ def render_visitor_login_page():
     }}
     .stTextInput input:focus, .stTextArea textarea:focus {{
         border-color: var(--secondary-color);
-        box-shadow: 0 0 0 2px rgba(76, 191, 128, 0.4);
+        box-shadow: 0 0 0 2px rgba(122, 66, 255, 0.4);
         outline: none;
     }}
     
     /* Primary Button Style (Gradient) */
     .stForm button[kind="primary"],
-    .stButton > button:not([key*="back_login_btn"]):not([key*="logout_btn"]):not([key*="existing_admin_login_btn"]):not([key*="checkin_back_dash_btn"]) {{
+    .stButton > button:not([key*="back_login_btn"]):not([key*="logout_btn"]):not([key*="existing_admin_login_btn"]):not([key*="checkin_back_dash_btn"]):not([key*="admin_new_reg_btn"]) {{
         background: var(--header-gradient) !important;
         color: white !important;
         border: none !important;
@@ -612,7 +571,7 @@ def render_visitor_login_page():
         transition: all 0.2s ease;
     }}
     .stForm button[kind="primary"]:hover,
-    .stButton > button:not([key*="back_login_btn"]):not([key*="logout_btn"]):not([key*="existing_admin_login_btn"]):not([key*="checkin_back_dash_btn"]):hover {{
+    .stButton > button:not([key*="back_login_btn"]):not([key*="logout_btn"]):not([key*="existing_admin_login_btn"]):not([key*="checkin_back_dash_btn"]):not([key*="admin_new_reg_btn"]):hover {{
         opacity: 0.9;
         transform: translateY(-2px);
     }}
