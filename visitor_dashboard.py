@@ -21,18 +21,17 @@ def render_dashboard():
     
     # This button triggers the navigation to the 'visitor_details' module/page
     if st.button("Manage My Details →", type="primary", use_container_width=True):
-        # We assume the main application router uses a session state key 
-        # like 'current_page' to switch views.
-        st.session_state['visitor_auth_view'] = 'visitor_details'
+        # Corrected: Use 'current_page' for routing as defined in main.py
+        st.session_state['current_page'] = 'visitor_details'
         st.rerun()
 
     st.markdown('<div style="margin-top: 30px;"></div>', unsafe_allow_html=True)
     
     # Logout functionality (adjust session state keys as needed for the visitor flow)
     if st.button("← Logout", key="visitor_dashboard_logout_btn"):
-        # Clear visitor session state data and redirect to visitor login
+        # Clear visitor session state data
         if 'visitor_logged_in' in st.session_state:
             del st.session_state['visitor_logged_in']
-        # Set the view back to the main admin/visitor selection page or login
-        st.session_state['visitor_auth_view'] = 'admin_login' 
+        # Corrected: Use 'current_page' and the correct target page 'visitor_login'
+        st.session_state['current_page'] = 'visitor_login' 
         st.rerun()
