@@ -30,7 +30,7 @@ PAGE_MODULES = {
     'main_screen': {'module': main_screen, 'func': 'render_main_screen'},
 
     # --- VISITOR FLOW ---
-    'visitor_login': {'module': visitor_login, 'func': 'render_login_page'},
+    'visitor_login': {'module': visitor_login, 'func': 'render_visitor_login_page'},
     'visitor_dashboard': {'module': visitor_dashboard, 'func': 'render_dashboard'},
     'visitor_details': {'module': visitor_details, 'func': 'render_details_page'},
     'visitor_identity': {'module': visitor_identity, 'func': 'render_identity_page'},
