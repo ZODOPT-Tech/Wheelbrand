@@ -19,9 +19,8 @@ AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
 
 # --- Configuration (Shared Constants) ---
-# NOTE: Using a placeholder path for the logo. In a real environment, 
-# you'd need to ensure this path is accessible or use a hosted URL.
-LOGO_PATH = "zodopt.png"
+# The logo path and placeholder text confirmed by the user
+LOGO_PATH = "zodopt.png" 
 LOGO_PLACEHOLDER_TEXT = "zodopt"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" # Primary Color for header and main buttons
 MIN_PASSWORD_LENGTH = 8
