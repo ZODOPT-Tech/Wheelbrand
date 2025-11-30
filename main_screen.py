@@ -126,8 +126,10 @@ def render_main_screen():
         font-size: 18px !important;
         font-weight: 600 !important;
         box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4) !important; /* Shadow using main color */
-        width: 100% !important;
-        margin-top: 15px;
+        /* Changes to make button proportional (like 200px wide) and centered: */
+        max-width: 200px !important; 
+        margin: 25px auto 0 auto !important; /* Center the button and adjust top margin */
+        display: block !important; 
         transition: all 0.2s ease-in-out;
     }}
     .stButton > button:hover {{
@@ -187,7 +189,6 @@ def render_main_screen():
                     <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-calendar"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                 </div>
                 <div class="card-title">Plan Your Visit</div>
-                <p style="color: #666; font-size: 0.95rem;">Quickly check in and get directions for your pre-booked visit plan.</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -198,6 +199,7 @@ def render_main_screen():
             # Trigger rerun to switch page
             st.rerun() 
         
+        # Removed use_container_width=True to allow CSS to control width
         if st.button("VISITPLAN", key="visit_plan_btn", on_click=set_page_visit):
              pass 
 
@@ -210,7 +212,6 @@ def render_main_screen():
                     <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-book-open"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
                 </div>
                 <div class="card-title">Book a Conference Slot</div>
-                <p style="color: #666; font-size: 0.95rem;">Schedule a meeting or book a conference room easily.</p>
             </div>
             """,
             unsafe_allow_html=True
@@ -220,6 +221,7 @@ def render_main_screen():
             # Trigger rerun to switch page
             st.rerun()
 
+        # Removed use_container_width=True to allow CSS to control width
         if st.button("CONFERENCE BOOKING", key="conference_booking_btn", on_click=set_page_conference):
             pass
 
