@@ -445,12 +445,3 @@ def render_conference_login_page():
     elif view == 'forgot_password':
         render_forgot_password_view()
     
-    # Optional: Back to Main Menu Button
-    st.markdown("---")
-    if st.button("← Back to Main Menu", key="conf_back_main_btn", use_container_width=True):
-        # Clear specific auth state for clean transition
-        if 'conf_auth_view' in st.session_state:
-            del st.session_state['conf_auth_view']
-        # Assuming there is a 'main_screen' in the user's overall app structure
-        st.session_state['current_page'] = 'main_screen'
-        st.rerun()
