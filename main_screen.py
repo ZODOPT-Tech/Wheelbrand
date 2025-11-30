@@ -126,12 +126,10 @@ def render_main_screen():
         font-size: 18px !important;
         font-weight: 600 !important;
         box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4) !important; /* Shadow using main color */
-        /* Changes for full width button */
-        width: 100% !important; /* Make it full width of container */
-        max-width: none !important; /* Ensure no max-width limits it */
-        margin-top: 25px !important; /* Keep top margin */
-        margin-left: 0 !important; /* Remove auto centering margins */
-        margin-right: 0 !important; /* Remove auto centering margins */
+        /* Set width to 120px to match the icon, and center it */
+        width: 120px !important; 
+        max-width: 120px !important; 
+        margin: 25px auto 0 auto !important; 
         display: block !important; 
         transition: all 0.2s ease-in-out;
     }}
@@ -196,13 +194,10 @@ def render_main_screen():
             """,
             unsafe_allow_html=True
         )
-        # Using a wrapper function for the button action is cleaner
+        # Placeholder callback
         def set_page_visit():
             st.session_state['current_page'] = 'visitor_login'
-            # Trigger rerun to switch page
-            st.rerun() 
         
-        # Removed use_container_width=True to allow CSS to control width
         if st.button("VISITPLAN", key="visit_plan_btn", on_click=set_page_visit):
              pass 
 
@@ -219,27 +214,10 @@ def render_main_screen():
             """,
             unsafe_allow_html=True
         )
+        # Placeholder callback
         def set_page_conference():
             st.session_state['current_page'] = 'conference_login'
-            # Trigger rerun to switch page
-            st.rerun()
 
-        # Removed use_container_width=True to allow CSS to control width
         if st.button("CONFERENCE BOOKING", key="conference_booking_btn", on_click=set_page_conference):
             pass
-
-# --- Simple Navigation Logic (Required to make the buttons work) ---
-
-# Placeholder functions for other pages
-def visitor_login_page():
-    st.title("Visitor Login Page (Placeholder)")
-    if st.button("Back to Main"):
-        st.session_state['current_page'] = 'main_screen'
-        st.rerun()
-
-def conference_login_page():
-    st.title("Conference Login Page (Placeholder)")
-    if st.button("Back to Main"):
-        st.session_state['current_page'] = 'main_screen'
-        st.rerun()
-
+render_main_screen()
