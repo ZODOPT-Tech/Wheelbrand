@@ -261,6 +261,7 @@ def render_admin_register_view():
 def render_existing_admin_login_view():
     """
     Renders the Admin login form for existing users and handles DB authentication.
+    Redirects to the admin dashboard upon successful login.
     """
     conn = get_fast_connection() 
 
@@ -291,8 +292,8 @@ def render_existing_admin_login_view():
                     st.session_state['company_name'] = user_data['company_name']
                     st.success(f"Welcome, {st.session_state['admin_name']}! Redirecting to dashboard...")
                     
-                    # Navigate to the dashboard view
-                    set_auth_view('visitor_dashboard') 
+                    # --- UPDATED: Use 'admin_dashboard_home' as the central post-login view ---
+                    set_auth_view('admin_dashboard_home') 
                     return
                 else:
                     st.error("Invalid Admin Email ID or Password.")
@@ -308,10 +309,11 @@ def render_existing_admin_login_view():
         if st.button("Forgot Password?", key="admin_forgot_pass_link", use_container_width=True):
             set_auth_view('forgot_password')
 
-def render_visitor_dashboard_view():
+def render_admin_dashboard_home_view():
     """
     The main hub for the logged-in administrator.
-    (This function simulates the target 'visitor_dashboard' module's 'render_dashboard' function).
+    This function immediately routes the Admin to the required default page,
+    which is 'visitor_details' as per the user's requirement.
     """
     # Enforce login
     if not st.session_state.get('admin_logged_in'):
@@ -319,16 +321,27 @@ def render_visitor_dashboard_view():
         set_auth_view('admin_login')
         return
 
+    # --- IMMEDIATE REDIRECT TO TARGET PAGE ---
+    # The required target for the admin is the page that manages visitor details.
+    # The application state needs to be managed externally if this file were integrated.
+    # Since this file controls the view via 'visitor_auth_view', we set the next state
+    # to the required target page's identifier.
+
+    # NOTE: Since the current file only handles auth views ('admin_login', 'admin_register', etc.),
+    # and not the actual content views (like 'visitor_details'), we need to assume 
+    # the main app's page control logic is in 'st.session_state['current_page']'
+    # which is used in other modules (like 'visitor_dashboard.py' which was provided).
+    
+    st.session_state['current_page'] = 'visitor_details'
+    
+    # Placeholder to simulate immediate navigation until the main app re-runs and renders the correct module
     company_name = st.session_state.get('company_name', 'Your Company')
     admin_name = st.session_state.get('admin_name', 'Admin')
-
-    # Placeholder content simulating the 'visitor_dashboard' module's output
     st.markdown(f"## 📊 {company_name} - Visitor Management Dashboard")
-    st.markdown(f"Welcome, **{admin_name}**. This is the main dashboard area.")
-    st.markdown("---")
+    st.markdown(f"Welcome, **{admin_name}**. Navigating to Visitor Details...")
+    st.rerun() # Force the re-run to pick up the 'current_page' change
     
-    st.info("Content from the actual visitor management dashboard module would load here.")
-
+    # This block will realistically never be reached due to st.rerun() but acts as a fallback/visual guide
     st.markdown('<div style="margin-top: 50px;"></div>', unsafe_allow_html=True)
     if st.button("← Logout", key="dashboard_logout_btn", use_container_width=True):
         # Clear all admin session state
@@ -422,8 +435,10 @@ def render_visitor_login_page():
         header_title = "VISITOR MANAGEMENT - ADMIN REGISTRATION"
     elif view == 'admin_login':
         header_title = "VISITOR MANAGEMENT - ADMIN LOGIN"
-    elif view == 'visitor_dashboard':
-        header_title = "VISITOR MANAGEMENT - DASHBOARD" 
+    # --- UPDATED: Use new view name for the admin hub ---
+    elif view == 'admin_dashboard_home':
+        # Since this view immediately redirects to 'visitor_details', the title reflects the action.
+        header_title = "VISITOR MANAGEMENT - DASHBOARD (REDIRECTING)" 
     elif view == 'forgot_password':
         header_title = "VISITOR MANAGEMENT - RESET PASSWORD"
         
@@ -549,8 +564,9 @@ def render_visitor_login_page():
         render_admin_register_view()
     elif view == 'admin_login':
         render_existing_admin_login_view()
-    elif view == 'visitor_dashboard':
-        render_visitor_dashboard_view()
+    # --- UPDATED: Use new view name for the admin hub ---
+    elif view == 'admin_dashboard_home':
+        render_admin_dashboard_home_view()
     elif view == 'forgot_password':
         render_forgot_password_view()
         
