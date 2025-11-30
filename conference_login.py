@@ -167,7 +167,7 @@ def render_register_view():
 
     # Define the department options for the select box
     DEPARTMENT_OPTIONS = [
-        "SELECT SHOULD BE DEFAULT",
+        "SELECT",
         "SALES",
         "HR",
         "FINANCE",
