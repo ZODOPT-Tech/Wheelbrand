@@ -164,7 +164,7 @@ def render_existing_admin_login_view():
                 st.session_state['company_name'] = "Zodopt Corp" 
                 st.success(f"Welcome, {st.session_state['admin_name']}! Redirecting to dashboard...")
                 
-                # *** CHANGE: Navigate to the new dashboard view ***
+                # Navigate to the dashboard view
                 set_auth_view('visitor_dashboard') 
                 return
             else:
@@ -185,7 +185,7 @@ def render_existing_admin_login_view():
 
 def render_visitor_dashboard_view():
     """
-    PLACEHOLDER: This will be the main hub for the logged-in administrator.
+    The main hub for the logged-in administrator.
     It will show current visitors, history, and navigation options.
     """
     # Enforce login
@@ -203,15 +203,12 @@ def render_visitor_dashboard_view():
     
     st.info("This is the main dashboard area. In a complete application, this page would display real-time checked-in visitors and historical data.")
 
-    # Dashboard Navigation
-    col1, col2, col3 = st.columns(3)
+    # Dashboard Navigation - Check-in button is removed as requested
+    col1, col2 = st.columns(2)
     with col1:
-        if st.button("📝 Check-in New Visitor", key="dash_new_checkin_btn", use_container_width=True, type="primary"):
-            set_auth_view('visitor_check_in')
-    with col2:
-        if st.button("👥 View Visitor History", key="dash_view_history_btn", use_container_width=True):
+        if st.button("👥 View Visitor History", key="dash_view_history_btn", use_container_width=True, type="primary"):
             st.warning("Feature not yet implemented. This would show the list of visitors.")
-    with col3:
+    with col2:
         if st.button("⚙️ Admin Settings", key="dash_admin_settings_btn", use_container_width=True):
             st.warning("Feature not yet implemented.")
 
@@ -224,63 +221,7 @@ def render_visitor_dashboard_view():
         set_auth_view('admin_login') # Redirect to the login page
 
 
-def render_visitor_check_in_view():
-    """Renders the visitor check-in form and inserts data into the visitors table."""
-    # Enforce login
-    if not st.session_state.get('admin_logged_in'):
-        st.warning("Please log in to check-in visitors.")
-        set_auth_view('admin_login')
-        return
-
-    # conn = get_fast_connection() # Use actual connection in production
-    conn = None # Mocking connection
-    
-    company_name = st.session_state.get('company_name', 'Your Company')
-    company_id = st.session_state.get('company_id', 0)
-    
-    st.markdown(f"## 📝 Check-in for {company_name}")
-    st.markdown(f"Logged in as: **{st.session_state['admin_name']}**")
-    st.markdown("---")
-
-    with st.form("visitor_check_in_form"):
-        col_name, col_phone = st.columns(2)
-        with col_name:
-            name = st.text_input("Visitor Name", key="visitor_name")
-        with col_phone:
-            phone = st.text_input("Phone Number", key="visitor_phone")
-        
-        visitor_company = st.text_input("Visitor's Company/Origin", key="visitor_company")
-        reason = st.text_area("Reason for Visit/Host", key="visitor_reason")
-        
-        submitted = st.form_submit_button("Check-in Visitor", type="primary")
-
-        if submitted:
-            if not all([name, phone, visitor_company, reason]):
-                st.error("Please fill in all visitor details.")
-                return
-            
-            # --- Mock/Simulated DB Interaction ---
-            st.success(f"✅ Visitor '{name}' successfully checked in to **{company_name}**.")
-            st.info("You are now being redirected to the Dashboard.")
-            
-            # Navigate back to the dashboard after check-in
-            set_auth_view('visitor_dashboard')
-
-            # --- Actual DB Logic (Commented out, requires real connection) ---
-            # ... (DB insertion logic here) ...
-    
-    st.markdown('<div style="margin-top: 25px;"></div>', unsafe_allow_html=True)
-    col_back, col_out = st.columns(2)
-    with col_back:
-        if st.button("← Back to Dashboard", key="checkin_back_dash_btn", use_container_width=True):
-            set_auth_view('visitor_dashboard')
-    with col_out:
-        if st.button("Logout", key="visitor_logout_btn_checkin", use_container_width=True):
-            # Clear all admin session state
-            for key in ['admin_logged_in', 'admin_email', 'admin_name', 'company_id', 'company_name']:
-                if key in st.session_state:
-                    del st.session_state[key]
-            set_auth_view('admin_login') # Redirect to the login page
+# --- REMOVED: render_visitor_check_in_view() and all its associated logic ---
 
 
 def render_forgot_password_view():
@@ -360,10 +301,8 @@ def render_visitor_login_page():
     elif view == 'admin_login':
         header_title = "VISITOR MANAGEMENT - ADMIN LOGIN"
     elif view == 'visitor_dashboard':
-        # *** CHANGE: New Dashboard Header Title ***
         header_title = "VISITOR MANAGEMENT - DASHBOARD" 
-    elif view == 'visitor_check_in':
-        header_title = "VISITOR MANAGEMENT - CHECK-IN PORTAL"
+    # REMOVED: elif view == 'visitor_check_in':
     elif view == 'forgot_password':
         header_title = "VISITOR MANAGEMENT - RESET PASSWORD"
         
@@ -490,10 +429,9 @@ def render_visitor_login_page():
     elif view == 'admin_login':
         render_existing_admin_login_view()
     elif view == 'visitor_dashboard':
-        # *** CHANGE: Render the new dashboard view ***
         render_visitor_dashboard_view()
-    elif view == 'visitor_check_in':
-        render_visitor_check_in_view()
+    # REMOVED: elif view == 'visitor_check_in':
+    # REMOVED:     render_visitor_check_in_view()
     elif view == 'forgot_password':
         render_forgot_password_view()
         
