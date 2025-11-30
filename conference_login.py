@@ -115,7 +115,6 @@ def render_login_view():
     """Renders the standard login form and handles DB authentication."""
     conn = get_fast_connection()
     
-    # st.subheader("Sign In") <-- Removed as requested
     with st.form("conf_login_form"):
         email = st.text_input("Email ID", key="conf_login_email")
         password = st.text_input("Password", type="password", key="conf_login_password")
@@ -166,19 +165,44 @@ def render_register_view():
     """Renders the new delegate registration form and inserts user into DB."""
     conn = get_fast_connection()
 
-    # st.subheader("New Delegate Registration") <-- Removed as requested
+    # Define the department options for the select box
+    DEPARTMENT_OPTIONS = [
+        "SELECT SHOULD BE DEFAULT",
+        "SALES",
+        "HR",
+        "FINANCE",
+        "DELIVERY/TECH",
+        "DIGITAL MARKETING",
+        "IT"
+    ]
+
     with st.form("conf_register_form"):
         name = st.text_input("Name", key="reg_name")
         email = st.text_input("Email ID", key="reg_email")
         company = st.text_input("Company", key="reg_company")
+        
+        # --- Department field changed to a select box (dropdown) ---
+        department = st.selectbox(
+            "Department", 
+            options=DEPARTMENT_OPTIONS, 
+            key="reg_department"
+        )
+        # -----------------------------------------------------------
         password = st.text_input("Password (min 8 chars)", type="password", key="reg_password")
         confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password")
         
         submitted = st.form_submit_button("Register Account", type="primary")
 
         if submitted:
+            # Check if a valid department has been selected
+            is_department_selected = department != "SELECT SHOULD BE DEFAULT"
+            
+            # --- VALIDATION UPDATED HERE ---
             if not all([name, email, company, password, confirm_password]):
                 st.error("Please fill in all fields.")
+            elif not is_department_selected:
+                st.error("Please select a Department.")
+            # -------------------------------
             elif password != confirm_password:
                 st.error("Passwords do not match.")
             elif len(password) < 8:
@@ -198,10 +222,11 @@ def render_register_view():
 
                     # 3. Insert new user into the database
                     insert_query = """
-                    INSERT INTO conference_users (name, email, company, password_hash)
-                    VALUES (%s, %s, %s, %s)
+                    INSERT INTO conference_users (name, email, company, department, password_hash)
+                    VALUES (%s, %s, %s, %s, %s)
                     """
-                    cursor.execute(insert_query, (name, email, company, hashed_password))
+                    # The Department variable is now the selected value from the dropdown
+                    cursor.execute(insert_query, (name, email, company, department, hashed_password))
                     
                     st.success("Registration successful! You can now sign in.")
                     set_auth_view('login')
@@ -228,9 +253,6 @@ def render_forgot_password_view():
         st.session_state['reset_email'] = None
         st.session_state['email_found'] = False
         
-    # st.subheader("Reset Password") <-- Removed as requested
-    
-    # --- Step 1: Email Input (Simulate Account Search) ---
     with st.form("forgot_pass_email_form", clear_on_submit=False):
         email_to_check = st.text_input("Enter your registered Email ID", key="forgot_email_input", value=st.session_state.get('reset_email', ''))
         
@@ -311,11 +333,11 @@ def render_conference_login_page():
     # Determine the header title based on the current view state
     view = st.session_state['conf_auth_view']
     if view == 'login':
-        header_title = "CONFERENCE BOOKING - SIGN IN" # Updated for clarity in the main header
+        header_title = "CONFERENCE BOOKING - SIGN IN"
     elif view == 'register':
-        header_title = "NEW REGISTRATION"  # Updated for clarity in the main header
+        header_title = "CONFERENCE BOOKING - NEW REGISTRATION"
     elif view == 'forgot_password':
-        header_title = "RESET PASSWORD"     # Updated for clarity in the main header
+        header_title = "CONFERENCE BOOKING - RESET PASSWORD"
         
     # 1. Inject Custom CSS for styling
     st.markdown(f"""
@@ -361,8 +383,21 @@ def render_conference_login_page():
         font-weight: bold;
         color: #FFFFFF;
     }}
-
-    /* Form and Input Styling */
+    /* Streamlit selectbox styling */
+    .stSelectbox div[data-baseweb="select"] {{
+        background-color: #f0f2f6;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 0; /* Select boxes have internal padding */
+        font-size: 16px;
+    }}
+    .stSelectbox div[data-baseweb="select"] input:focus {{
+        border-color: var(--secondary-color);
+        box-shadow: 0 0 0 2px rgba(122, 66, 255, 0.4);
+        outline: none;
+    }}
+    
+    /* Form and Input Styling for text inputs */
     .stTextInput input {{
         font-family: 'Inter', sans-serif;
         background-color: #f0f2f6;
