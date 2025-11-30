@@ -126,9 +126,12 @@ def render_main_screen():
         font-size: 18px !important;
         font-weight: 600 !important;
         box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4) !important; /* Shadow using main color */
-        /* Changes to make button proportional (like 200px wide) and centered: */
-        max-width: 200px !important; 
-        margin: 25px auto 0 auto !important; /* Center the button and adjust top margin */
+        /* Changes for full width button */
+        width: 100% !important; /* Make it full width of container */
+        max-width: none !important; /* Ensure no max-width limits it */
+        margin-top: 25px !important; /* Keep top margin */
+        margin-left: 0 !important; /* Remove auto centering margins */
+        margin-right: 0 !important; /* Remove auto centering margins */
         display: block !important; 
         transition: all 0.2s ease-in-out;
     }}
@@ -239,3 +242,4 @@ def conference_login_page():
     if st.button("Back to Main"):
         st.session_state['current_page'] = 'main_screen'
         st.rerun()
+
