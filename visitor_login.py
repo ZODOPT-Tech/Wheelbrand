@@ -125,6 +125,9 @@ def _get_image_base64(path):
 def set_auth_view(view):
     """Changes the current view and forces a Streamlit re-render."""
     st.session_state['visitor_auth_view'] = view
+    # Clear reset state when changing views
+    if 'reset_user_id' in st.session_state:
+        del st.session_state['reset_user_id']
     sleep(0.1) 
     st.rerun()
 
@@ -345,51 +348,71 @@ def render_visitor_dashboard_view():
 
 def render_forgot_password_view():
     """
-    Renders the simplified password reset flow: check email existence and allow direct password change.
+    Renders the simplified TWO-STEP password reset flow:
+    1. Check email existence.
+    2. Allow direct password change if email is found.
     """
-    st.warning("⚠️ **ADMIN OVERRIDE:** This simplified flow allows direct password reset by only verifying the email's existence in the database. This is HIGHLY INSECURE for a real application.")
+    st.warning("⚠️ **ADMIN OVERRIDE:** This simplified two-step flow allows direct password reset by only verifying the email's existence in the database. This is HIGHLY INSECURE for a real application.")
     
     conn = get_fast_connection()
 
-    with st.form("forgot_pass_reset_form"):
-        st.markdown("---")
-        email_to_check = st.text_input("Enter your Admin Email ID to verify existence", key="forgot_email_input").lower()
-        
-        # New password fields
-        new_password = st.text_input(f"New Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reset_new_password")
-        confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
-        
-        submitted = st.form_submit_button("Reset Password Directly", type="primary")
-        
-        if submitted:
-            if not email_to_check:
-                st.error("Please enter an email address for lookup.")
-                return
-            
-            user_data = get_admin_by_email(conn, email_to_check)
-            
-            if not user_data:
-                st.error("Email ID not found in our records.")
-                return
-            
-            if new_password != confirm_password:
-                st.error("Passwords do not match.")
-                return
-            elif len(new_password) < MIN_PASSWORD_LENGTH:
-                st.error(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
-                return
+    # --- STAGE 1: EMAIL VERIFICATION ---
+    if 'reset_user_id' not in st.session_state:
+        st.session_state['reset_user_id'] = None
 
-            user_id = user_data['id']
-            new_hash = hash_password(new_password)
+    if st.session_state['reset_user_id'] is None:
+        st.subheader("1. Verify Email ID")
+        with st.form("forgot_pass_verify_form"):
+            email_to_check = st.text_input("Enter your Admin Email ID", key="forgot_email_input").lower()
+            submitted = st.form_submit_button("Check Email Existence", type="primary")
 
-            # --- ACTUAL DB INTERACTION POINT (Direct Password Update) ---
-            if update_admin_password_directly(conn, user_id, new_hash):
-                st.success("Password successfully changed! You can now log in with the new password.")
-                set_auth_view('admin_login')
-            else:
-                st.error("Password reset failed due to a database error. Please check logs.")
+            if submitted:
+                if not email_to_check:
+                    st.error("Please enter an email address for lookup.")
+                    return
+                
+                user_data = get_admin_by_email(conn, email_to_check)
+                
+                if user_data:
+                    st.session_state['reset_user_id'] = user_data['id']
+                    st.success("✅ Email ID verified! You can now set your new password below.")
+                    # Force a re-run to display the next step
+                    st.rerun() 
+                else:
+                    st.error("Email ID not found in our records.")
+    
+    # --- STAGE 2: PASSWORD RESET ---
+    if st.session_state['reset_user_id'] is not None:
+        st.subheader("2. Set New Password")
+        user_id_to_reset = st.session_state['reset_user_id']
+
+        with st.form("forgot_pass_reset_form"):
+            # New password fields
+            new_password = st.text_input(f"New Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reset_new_password")
+            confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
+            
+            submitted = st.form_submit_button("Finalize Password Reset", type="primary")
+            
+            if submitted:
+                if new_password != confirm_password:
+                    st.error("Passwords do not match.")
+                    return
+                elif len(new_password) < MIN_PASSWORD_LENGTH:
+                    st.error(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.")
+                    return
+
+                new_hash = hash_password(new_password)
+
+                # --- ACTUAL DB INTERACTION POINT (Direct Password Update) ---
+                if update_admin_password_directly(conn, user_id_to_reset, new_hash):
+                    st.success("Password successfully changed! Redirecting to login...")
+                    # Clear state and redirect
+                    del st.session_state['reset_user_id']
+                    set_auth_view('admin_login')
+                else:
+                    st.error("Password reset failed due to a database error. Please check logs.")
         
-    st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="margin-top: 25px;"></div>', unsafe_allow_html=True)
     if st.button("← Back to Admin Login", key="forgot_back_login_btn", use_container_width=True):
         set_auth_view('admin_login')
 
