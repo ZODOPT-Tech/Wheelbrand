@@ -3,7 +3,7 @@ import os
 import base64
 
 # --- Configuration (Shared Constants) ---
-LOGO_PATH = r"C:\Users\DELL\Documents\zodopt\images\zodopt.png"
+LOGO_PATH = r"zodopt.png"
 LOGO_PLACEHOLDER_TEXT = "zodopt"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" # Primary Color for header and main buttons
 
