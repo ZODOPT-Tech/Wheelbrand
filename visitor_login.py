@@ -78,6 +78,8 @@ def get_fast_connection():
     Returns a persistent MySQL connection object (cached by Streamlit).
     This function establishes the connection using credentials from Secrets Manager.
     Stops execution if connection fails.
+    
+    NOTE: The success message is removed to clean up the UI.
     """
     credentials = get_db_credentials() # Retrieve creds using the strict AWS function
     
@@ -91,7 +93,7 @@ def get_fast_connection():
             autocommit=True, # Ensure changes are saved immediately
             connection_timeout=10,
         )
-        st.success("Successfully connected to MySQL database.")
+        # st.success("Successfully connected to MySQL database.") <-- REMOVED
         return conn
     except mysql.connector.Error as err:
         st.error(f"FATAL: Database Connection Error: Cannot connect to MySQL.")
@@ -257,7 +259,7 @@ def render_admin_register_view():
     """Renders the form for registering a new Company and its initial Admin user."""
     conn = get_fast_connection() 
 
-    st.markdown("### Register Your Company & Admin Account")
+    # st.markdown("### Register Your Company & Admin Account") <-- REMOVED
     
     with st.form("admin_register_form"):
         st.markdown("**Company and Admin Details**")
@@ -308,7 +310,7 @@ def render_existing_admin_login_view():
     """
     conn = get_fast_connection() 
 
-    st.markdown("### Admin Access - Sign In")
+    # st.markdown("### Admin Access - Sign In") <-- REMOVED
     
     with st.form("admin_login_form"):
         email = st.text_input("Admin Email ID", key="admin_login_email").lower()
@@ -395,7 +397,7 @@ def render_forgot_password_view():
     """
     Renders the password reset flow for admin users.
     """
-    st.markdown("### Admin Password Reset")
+    # st.markdown("### Admin Password Reset") <-- REMOVED
     st.warning("A functional email service is required for a real password reset flow. This implementation simulates the link generation and uses the DB.")
     
     if 'reset_state' not in st.session_state:
