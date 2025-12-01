@@ -26,9 +26,8 @@ st.set_page_config(
 # This dictionary maps the page keys used in st.session_state['current_page'] to the 
 # correct module and function to render that page.
 PAGE_MODULES = {
-    # Entry Point: Accepting both 'main_screen' (new key) and 'main' (for compatibility)
+    # Entry Point
     'main_screen': {'module': main_screen, 'func': 'render_main_screen'},
-    'main': {'module': main_screen, 'func': 'render_main_screen'}, # <-- ADDED FOR COMPATIBILITY WITH OLD SESSION STATE
 
     # --- VISITOR FLOW ---
     'visitor_login': {'module': visitor_login, 'func': 'render_visitor_login_page'},
@@ -37,6 +36,7 @@ PAGE_MODULES = {
     'visitor_identity': {'module': visitor_identity, 'func': 'render_identity_page'},
     
     # --- CONFERENCE FLOW (Corrected Function Name) ---
+    # The function name MUST match the definition in conference_login.py
     'conference_login': {'module': conference_login, 'func': 'render_conference_login_page'}, 
     'conference_dashboard': {'module': conference_dashboard, 'func': 'render_dashboard'},
     'conference_bookings': {'module': conference_booking, 'func': 'render_booking_page'},
@@ -45,14 +45,13 @@ PAGE_MODULES = {
 def initialize_session_state():
     """Ensures all necessary session state variables are initialized."""
     if 'current_page' not in st.session_state:
-        # Sets the standard new key for the main screen
-        st.session_state['current_page'] = 'main_screen' 
+        st.session_state['current_page'] = 'main_screen'
     
     # Initialize flow-specific variables to prevent errors on first load
     # if 'user_email' not in st.session_state:
-    #    st.session_state['user_email'] = None 
+    #     st.session_state['user_email'] = None 
     # if 'conf_auth_view' not in st.session_state:
-    #    st.session_state['conf_auth_view'] = 'login'
+    #     st.session_state['conf_auth_view'] = 'login'
 
 def main():
     # 1. Initialize State
@@ -76,8 +75,7 @@ def main():
                 st.rerun()
 
     else:
-        # This block now handles other undefined keys, but 'main' is handled above.
-        st.error(f"Navigation Error: Page key '{page_key}' is not defined. Resetting to main screen.")
+        st.error(f"Navigation Error: Page key '{page_key}' is not defined.")
         if st.button("Reset to Main Screen"):
             st.session_state['current_page'] = 'main_screen'
             st.rerun()
