@@ -13,7 +13,7 @@ import traceback
 LOGO_PATH = "zodopt.png"  
 
 # ==============================================================================
-# 1. CONFIGURATION & CREDENTIALS (AWS Integration - Duplicated for self-contained file)
+# 1. CONFIGURATION & CREDENTIALS (AWS Integration)
 # ==============================================================================
 
 AWS_REGION = "ap-south-1" 
@@ -27,7 +27,6 @@ def get_db_credentials():
     st.info("Attempting to retrieve DB credentials from AWS Secrets Manager...")
     
     try:
-        # Boto3 automatically uses the EC2 Instance Profile credentials
         client = boto3.client('secretsmanager', region_name=AWS_REGION)
         
         get_secret_value_response = client.get_secret_value(
@@ -40,7 +39,6 @@ def get_db_credentials():
         secret = get_secret_value_response['SecretString']
         secret_dict = json.loads(secret)
         
-        # Verify and return the dictionary structure
         required_keys = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]
         if not all(key in secret_dict for key in required_keys):
             raise KeyError("Missing required DB keys (DB_HOST, DB_NAME, etc.) in the AWS secret.")
@@ -82,7 +80,6 @@ def get_fast_connection():
         )
         return conn
     except EnvironmentError:
-        # get_db_credentials already logged error and raised EnvironmentError
         st.stop()
     except Error as err:
         error_msg = f"FATAL: MySQL Connection Error: Cannot connect. Details: {err.msg}"
@@ -92,6 +89,7 @@ def get_fast_connection():
         error_msg = f"FATAL: Unexpected Connection Error: {e}"
         st.error(error_msg)
         st.stop()
+
 
 # ==============================================================================
 # 2. CONFIGURATION & STATE SETUP
@@ -103,10 +101,8 @@ def initialize_session_state():
         st.session_state['registration_step'] = 'primary'
     if 'visitor_data' not in st.session_state:
         st.session_state['visitor_data'] = {}
-    # Ensure company_id exists (it is set by visitor_login.py)
     if 'company_id' not in st.session_state:
-        # Fallback only if running visitor_details.py directly without login flow
-        st.session_state['company_id'] = 1 
+        st.session_state['company_id'] = None 
 
 # ==============================================================================
 # 3. DATABASE INTERACTION & SERVICE
@@ -115,13 +111,12 @@ def initialize_session_state():
 def save_visitor_data_to_db(data):
     """Saves the complete visitor registration data to the MySQL database."""
     
-    conn = get_fast_connection() # Use the integrated AWS connection
+    conn = get_fast_connection() 
     if conn is None:
         return False
     
     cursor = conn.cursor()
     
-    # List of fields in the 'visitors' table (must match the order of 'values')
     fields = (
         "company_id", "registration_timestamp", "full_name", "phone_number", "email", 
         "visit_type", "from_company", "department", "designation", "address_line_1", 
@@ -130,7 +125,6 @@ def save_visitor_data_to_db(data):
         "has_laptop", "has_charger", "has_power_bank"
     )
     
-    # Collect values in the exact order of fields
     values = (
         st.session_state['company_id'],
         datetime.now(),
@@ -157,7 +151,6 @@ def save_visitor_data_to_db(data):
         data.get('has_power_bank', False)
     )
     
-    # Construct the SQL INSERT statement
     placeholders = ", ".join(["%s"] * len(fields))
     columns = ", ".join(fields)
     sql = f"INSERT INTO visitors ({columns}) VALUES ({placeholders})"
@@ -172,7 +165,6 @@ def save_visitor_data_to_db(data):
         return False
     finally:
         cursor.close()
-        # NOTE: Do NOT close 'conn' if it's managed by st.cache_resource
         pass 
 
 
@@ -293,6 +285,7 @@ def render_primary_details_form():
         
         with st.form("primary_details_form", clear_on_submit=False):
             st.markdown("### Primary Details")
+            
             # 1. Full Name
             st.write("Name *")
             full_name = st.text_input("Name", key="name_input", placeholder="Full Name", 
@@ -302,8 +295,9 @@ def render_primary_details_form():
             # 2. Phone Number
             col_code, col_number = st.columns([1, 4])
             with col_code:
-                st.write("Phone *", help="Country Code (default +91)")
-                st.text_input("Country Code", value="+91", disabled=True, label_visibility="collapsed")
+                st.write("Phone *") 
+                st.text_input("Country Code", value="+91", disabled=True, label_visibility="collapsed",
+                              help="Country Code (default +91)") 
             with col_number:
                 st.write("<br>", unsafe_allow_html=True)
                 phone_number = st.text_input("Phone Number", key="phone_input", placeholder="81234 56789", 
@@ -316,25 +310,31 @@ def render_primary_details_form():
 
             # Submit/Next and Reset buttons
             col_reset, col_spacer, col_next = st.columns([1, 2, 1])
+            
             with col_reset:
-                if st.button("Reset", use_container_width=True, key="reset_primary"):
-                    for key in ['name', 'phone', 'email']:
-                        st.session_state['visitor_data'].pop(key, None)
-                    st.rerun()
-
+                reset_clicked = st.button("Reset", use_container_width=True, key="reset_primary")
+            
             with col_next:
-                if st.form_submit_button("Next →", use_container_width=True):
-                    # Basic validation
-                    if not (full_name and phone_number and email):
-                        st.error("⚠️ Please fill in all required fields (*).")
-                    else:
-                        st.session_state['visitor_data'].update({
-                            'name': full_name,
-                            'phone': phone_number,
-                            'email': email
-                        })
-                        st.session_state['registration_step'] = 'secondary'
-                        st.rerun()
+                submitted = st.form_submit_button("Next →", use_container_width=True)
+            
+            # --- Logic check for Reset ---
+            if reset_clicked:
+                for key in ['name', 'phone', 'email']:
+                    st.session_state['visitor_data'].pop(key, None)
+                st.rerun()
+
+            # --- Logic check for Submission (Next) ---
+            if submitted:
+                if not (full_name and phone_number and email):
+                    st.error("⚠️ Please fill in all required fields (*).")
+                else:
+                    st.session_state['visitor_data'].update({
+                        'name': full_name,
+                        'phone': phone_number,
+                        'email': email
+                    })
+                    st.session_state['registration_step'] = 'secondary'
+                    st.rerun()
 
 # ==============================================================================
 # 6. STEP 2: Secondary Details Form
@@ -346,7 +346,6 @@ def render_secondary_details_form():
     with st.container(border=False):
         st.markdown("### Other Details")
 
-        # Define the button columns OUTSIDE the form (to handle navigation before form submission)
         col_prev, col_next_container = st.columns(2)
         
         with col_prev:
@@ -354,7 +353,6 @@ def render_secondary_details_form():
                 st.session_state['registration_step'] = 'primary'
                 st.rerun()
 
-        # The rest of the form fields and the submit button go inside st.form
         with st.form("secondary_details_form", clear_on_submit=False):
             
             # --- FORM FIELDS ---
@@ -377,7 +375,6 @@ def render_secondary_details_form():
                               value=st.session_state['visitor_data'].get('designation', ''),
                               placeholder="e.g., Manager, Engineer")
             
-            # 2. Organization Address Fields
             st.text_input("Organization Address", placeholder="Address Line 1", key='address_line_1',
                           value=st.session_state['visitor_data'].get('address_line_1', ''))
             
@@ -400,7 +397,6 @@ def render_secondary_details_form():
 
             st.markdown("---") 
             
-            # 3. Gender, Purpose, Person to Meet
             st.radio("Gender", ["Male", "Female", "Others"], horizontal=True, key='gender',
                       index=["Male", "Female", "Others"].index(st.session_state['visitor_data'].get('gender', 'Male')),
                       help="Select your gender.")
@@ -415,7 +411,6 @@ def render_secondary_details_form():
                               value=st.session_state['visitor_data'].get('person_to_meet', ''),
                               placeholder="e.g., Alice, Bob")
             
-            # 4. Belongings (Checkboxes)
             st.markdown("#### Belongings")
             default_belongings = {
                 'has_bags': False, 'has_documents': False, 'has_electronic_items': False,
@@ -435,44 +430,43 @@ def render_secondary_details_form():
             
             # --- SUBMISSION BUTTON ---
             with col_next_container:
-                if st.form_submit_button("Complete Registration →", use_container_width=True):
+                submitted = st.form_submit_button("Complete Registration →", use_container_width=True)
+            
+            if submitted:
+                # 1. Update session_state['visitor_data'] with all current form values
+                final_data = st.session_state['visitor_data']
+                final_data.update({
+                    'visit_type': st.session_state['visit_type'],
+                    'from_company': st.session_state['from_company'],
+                    'department': st.session_state['department'],
+                    'designation': st.session_state['designation'],
+                    'address_line_1': st.session_state['address_line_1'],
+                    'city': st.session_state['city'],
+                    'state': st.session_state['state'],
+                    'postal_code': st.session_state['postal_code'],
+                    'country': st.session_state['country'],
+                    'gender': st.session_state['gender'],
+                    'purpose': st.session_state['purpose'],
+                    'person_to_meet': st.session_state['person_to_meet'],
+                    'has_bags': st.session_state['has_bags'],
+                    'has_documents': st.session_state['has_documents'],
+                    'has_electronic_items': st.session_state['has_electronic_items'],
+                    'has_laptop': st.session_state['has_laptop'],
+                    'has_charger': st.session_state['has_charger'],
+                    'has_power_bank': st.session_state['has_power_bank']
+                })
+                
+                # 2. Save data to database
+                if save_visitor_data_to_db(final_data):
+                    st.balloons()
+                    st.success("🎉 Visitor Registration Complete! Redirecting to Dashboard...")
                     
-                    # 1. Update session_state['visitor_data'] with all current form values
-                    final_data = st.session_state['visitor_data']
-                    final_data.update({
-                        'visit_type': st.session_state['visit_type'],
-                        'from_company': st.session_state['from_company'],
-                        'department': st.session_state['department'],
-                        'designation': st.session_state['designation'],
-                        'address_line_1': st.session_state['address_line_1'],
-                        'city': st.session_state['city'],
-                        'state': st.session_state['state'],
-                        'postal_code': st.session_state['postal_code'],
-                        'country': st.session_state['country'],
-                        'gender': st.session_state['gender'],
-                        'purpose': st.session_state['purpose'],
-                        'person_to_meet': st.session_state['person_to_meet'],
-                        'has_bags': st.session_state['has_bags'],
-                        'has_documents': st.session_state['has_documents'],
-                        'has_electronic_items': st.session_state['has_electronic_items'],
-                        'has_laptop': st.session_state['has_laptop'],
-                        'has_charger': st.session_state['has_charger'],
-                        'has_power_bank': st.session_state['has_power_bank']
-                    })
-                    
-                    # 2. Save data to database
-                    if save_visitor_data_to_db(final_data):
-                        st.balloons()
-                        st.success("🎉 Visitor Registration Complete! Details have been recorded. Redirecting to Dashboard...")
-                        
-                        # Clear registration state and REDIRECT TO DASHBOARD
-                        st.session_state['registration_step'] = 'primary'
-                        st.session_state['visitor_data'] = {} 
-                        st.session_state['current_page'] = 'visitor_dashboard' 
-                        st.rerun() 
-                    
-                    # Rerunning even on failure to clear form submission state/update messages
+                    st.session_state['registration_step'] = 'primary'
+                    st.session_state['visitor_data'] = {} 
+                    st.session_state['current_page'] = 'visitor_dashboard' 
                     st.rerun() 
+                
+                st.rerun() 
 
 # ==============================================================================
 # 7. Main Application Logic
@@ -488,9 +482,13 @@ def render_details_page():
         st.rerun()
         return
         
-    # 2. Initialize session state at the entry point to prevent KeyError
+    # 2. Initialize session state
     initialize_session_state() 
     
+    # Attempt to establish connection early
+    get_fast_connection()
+    
+    # 3. Render content
     render_header(st.session_state['registration_step'])
 
     if st.session_state['registration_step'] == 'primary':
@@ -501,7 +499,6 @@ def render_details_page():
     
 
 if __name__ == "__main__":
-    # Simulate a logged-in state for direct testing
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = True
         st.session_state['company_id'] = 1 
