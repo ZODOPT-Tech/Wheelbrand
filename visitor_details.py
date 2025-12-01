@@ -1,39 +1,91 @@
 import streamlit as st
 
+
 # --- Session State Management ---
-# Initialize session state for multi-page/multi-step navigation
+# Initialize session state keys for navigation and form data persistence
 if 'current_step' not in st.session_state:
     st.session_state['current_step'] = 'primary'
+    
+if 'name' not in st.session_state:
+    st.session_state['name'] = ""
+if 'phone' not in st.session_state:
+    st.session_state['phone'] = ""
+if 'email' not in st.session_state:
+    st.session_state['email'] = ""
+# Initialize other secondary fields to prevent key errors
+if 'visit_type' not in st.session_state: st.session_state['visit_type'] = ""
+if 'from_company' not in st.session_state: st.session_state['from_company'] = ""
+if 'gender' not in st.session_state: st.session_state['gender'] = "Male"
 
-# --- Logo Path (Assuming 'zodopt.png' is in the same directory) ---
-LOGO_PATH = "zodopt.png"
 
-# --- Utility Function for Header with Logo ---
+# --- Utility Function for Header with Logo (Refined to match banner image) ---
 def render_header():
-    """Renders the custom header with a logo on the right."""
-    # Use columns to align the title and the logo
-    col1, col2 = st.columns([3, 1])
-
-    with col1:
-        st.markdown(
-            """
-            <div style='padding-top: 10px; padding-bottom: 5px;'>
-                <h1 style='color: #4A148C; font-size: 32px;'>Visitor Registration</h1>
-                <p style='color: #90A4AE; font-size: 16px;'>Please fill in your details</p>
+    """Renders the custom header similar to the ZODOPT MEETEAZE banner."""
+    
+    # Custom CSS to create the purple-blue gradient banner effect and style
+    st.markdown(
+        """
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;800&display=swap');
+            
+            .zodopt-header {
+                background: linear-gradient(to right, #4A148C, #8C2CFE); /* Purple to Blue Gradient */
+                color: white;
+                padding: 15px 20px;
+                border-radius: 10px;
+                margin-bottom: 20px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            }
+            .zodopt-title-text {
+                font-family: 'Poppins', sans-serif;
+                font-size: 24px;
+                font-weight: 800; /* Extra bold for primary text */
+                letter-spacing: 1px;
+                margin: 0;
+            }
+            .zodopt-logo-text {
+                font-family: 'Poppins', sans-serif;
+                font-size: 24px;
+                font-weight: 600; /* Semi-bold for logo text */
+                letter-spacing: 0.5px;
+            }
+            .zodopt-logo-red { color: #FF4B4B; } /* Red part of zodopt */
+            .zodopt-logo-blue { color: #4059A1; } /* Blue part of zodopt (approximate match) */
+            
+            /* Overriding Streamlit's default header margin */
+            .stApp > header { display: none; }
+            
+            /* Styles for step navigation */
+            .step-container {
+                display: flex;
+                margin-bottom: 20px;
+                border-bottom: 3px solid #E0E0E0; /* Light gray line under tabs */
+            }
+            .step {
+                padding: 10px 20px;
+                text-align: center;
+                cursor: pointer;
+                border-bottom: 3px solid transparent;
+                font-weight: bold;
+                color: #616161;
+            }
+            .active-step {
+                color: #4A148C; /* Purple for active tab text */
+                border-bottom: 3px solid #4A148C !important; /* Purple line for active tab */
+            }
+        </style>
+        <div class="zodopt-header">
+            <h1 class="zodopt-title-text">VISITOR REGISTRATION</h1>
+            <div class="zodopt-logo-text">
+                <span class="zodopt-logo-red">zo</span><span class="zodopt-logo-blue">dopt</span>
             </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-    with col2:
-        try:
-            # Display the logo if it exists
-            st.image(LOGO_PATH, width=100)
-        except FileNotFoundError:
-            # Fallback if the logo file isn't found
-            st.warning("Logo file 'zodopt.png' not found.")
-
-    st.markdown("---") # Separator after the header
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
 # --- Step Functions ---
 
@@ -41,91 +93,62 @@ def render_primary_details():
     """Renders the Primary Details form (Name, Phone, Email)."""
     render_header()
     
-    # Custom CSS for the tab-like navigation (Primary is active)
+    # Custom HTML for the tab-like navigation
     st.markdown("""
-    <style>
-        .step-container {
-            display: flex;
-            margin-bottom: 20px;
-        }
-        .step {
-            padding: 10px 20px;
-            text-align: center;
-            cursor: pointer;
-            border-bottom: 3px solid transparent;
-            font-weight: bold;
-            color: #616161;
-        }
-        .active-step {
-            color: #4A148C; /* Purple for active tab text */
-            border-bottom: 3px solid #4A148C !important; /* Purple line for active tab */
-        }
-    </style>
     <div class="step-container">
         <div class="step active-step">PRIMARY DETAILS</div>
-        <div class="step" style="border-bottom: 3px solid #E0E0E0; color: #9E9E9E;">SECONDARY DETAILS</div>
+        <div class="step" style="color: #9E9E9E;">SECONDARY DETAILS</div>
     </div>
     """, unsafe_allow_html=True)
 
     with st.form("primary_form"):
         # Based on image_4e6d9f.png
-        st.text_input("Name *", key="name", placeholder="Full Name")
+        # Use initial value from session state to allow reset
+        st.text_input("Name *", key="name", placeholder="Full Name", value=st.session_state.name)
         
-        # Phone input simulation (Streamlit doesn't natively support splitting the country code)
+        # Phone input simulation 
         col_code, col_number = st.columns([1, 4])
         with col_code:
             st.text_input("Phone * (Code)", value="+91", label_visibility="collapsed")
         with col_number:
-            st.text_input("Phone * (Number)", key="phone", placeholder="81234 56789", label_visibility="collapsed")
+            # Use initial value from session state to allow reset
+            st.text_input("Phone * (Number)", key="phone", placeholder="81234 56789", label_visibility="collapsed", value=st.session_state.phone)
         
-        st.text_input("Email *", key="email", placeholder="your.email@example.com")
+        # Use initial value from session state to allow reset
+        st.text_input("Email *", key="email", placeholder="your.email@example.com", value=st.session_state.email)
 
         st.markdown("---")
         
-        # Button to proceed
-        if st.form_submit_button("Next →", use_container_width=True, type="primary"):
-            # Basic validation
-            if st.session_state.name and st.session_state.phone and st.session_state.email:
-                st.session_state['current_step'] = 'secondary'
+        col_reset, col_next = st.columns(2)
+        
+        # Reset button (FIXED: now uses st.form_submit_button inside the form)
+        with col_reset:
+            if st.form_submit_button("Reset", key="reset_primary_submit", use_container_width=True, type="secondary"):
+                # Clear inputs by resetting session state keys and rerunning
+                st.session_state.name = ""
+                st.session_state.phone = ""
+                st.session_state.email = ""
                 st.rerun()
-            else:
-                st.error("Please fill in all mandatory fields (*).")
-                
-        # Reset button
-        if st.button("Reset", key="reset_primary"):
-            # Clear inputs (will refresh the form)
-            st.session_state.name = ""
-            st.session_state.phone = ""
-            st.session_state.email = ""
-            st.rerun()
+
+        # Button to proceed
+        with col_next:
+            if st.form_submit_button("Next →", key="next_primary_submit", use_container_width=True, type="primary"):
+                # Basic validation
+                if st.session_state.name and st.session_state.phone and st.session_state.email:
+                    st.session_state['current_step'] = 'secondary'
+                    st.rerun()
+                else:
+                    st.error("Please fill in all mandatory fields (*).")
 
 
 def render_secondary_details():
     """Renders the Secondary Details form (Company info, Gender, Purpose, Belongings)."""
     render_header()
 
-    # Custom CSS for the tab-like navigation (Secondary is active)
+    # Custom HTML for the tab-like navigation (Secondary is active)
     st.markdown("""
-    <style>
-        .step-container {
-            display: flex;
-            margin-bottom: 20px;
-        }
-        .step {
-            padding: 10px 20px;
-            text-align: center;
-            cursor: pointer;
-            border-bottom: 3px solid transparent;
-            font-weight: bold;
-            color: #616161;
-        }
-        .active-step {
-            color: #4A148C; /* Purple for active tab text */
-            border-bottom: 3px solid #4A148C !important; /* Purple line for active tab */
-        }
-    </style>
     <div class="step-container">
-        <div class="step" style="border-bottom: 3px solid #E0E0E0; color: #9E9E9E;">PRIMARY DETAILS</div>
+        <div class="step" style="color: #9E9E9E;">PRIMARY DETAILS</div>
         <div class="step active-step">SECONDARY DETAILS</div>
     </div>
     """, unsafe_allow_html=True)
@@ -133,8 +156,8 @@ def render_secondary_details():
     # Based on image_4e6ddb.png
     with st.form("secondary_form"):
         st.subheader("🏢 Organizational Details")
-        st.text_input("Visit Type", key="visit_type", placeholder="e.g., Business, Personal")
-        st.text_input("From Company", key="from_company", placeholder="e.g., Tech Solutions Inc.")
+        st.text_input("Visit Type", key="visit_type", placeholder="e.g., Business, Personal", value=st.session_state.visit_type)
+        st.text_input("From Company", key="from_company", placeholder="e.g., Tech Solutions Inc.", value=st.session_state.from_company)
         st.text_input("Department", key="department", placeholder="e.g., Sales, HR, Engineering")
         st.text_input("Designation", key="designation", placeholder="e.g., Manager, Developer")
 
@@ -160,7 +183,7 @@ def render_secondary_details():
         st.subheader("🧑‍🤝‍👩 Other Details")
         
         # Gender (Radio button simulation)
-        st.radio("Gender", options=["Male", "Female", "Others"], horizontal=True, key="gender")
+        st.radio("Gender", options=["Male", "Female", "Others"], horizontal=True, key="gender", index=["Male", "Female", "Others"].index(st.session_state.gender))
 
         # Purpose (Input field instead of dropdown)
         st.text_input("Purpose", key="purpose", placeholder="e.g., Meeting, Delivery, Interview")
@@ -192,30 +215,22 @@ def render_secondary_details():
         col_prev, col_next = st.columns(2)
         
         with col_prev:
-            if st.form_submit_button("Previous", use_container_width=True, type="secondary"):
+            if st.form_submit_button("Previous", key="prev_secondary_submit", use_container_width=True, type="secondary"):
+                # Save current state before navigating back
                 st.session_state['current_step'] = 'primary'
                 st.rerun()
 
         with col_next:
             # Final submission button
-            if st.form_submit_button("Submit", use_container_width=True, type="primary"):
-                # Here you would typically process and save the data
-                
+            if st.form_submit_button("Submit", key="submit_secondary_submit", use_container_width=True, type="primary"):
                 # Retrieve all collected data
-                visitor_data = {
-                    "Name": st.session_state.get('name'),
-                    "Phone": st.session_state.get('phone'),
-                    "Email": st.session_state.get('email'),
-                    "Visit Type": st.session_state.get('visit_type'),
-                    "Company": st.session_state.get('from_company'),
-                    "Gender": st.session_state.get('gender'),
-                    # ... add all other fields
-                }
+                visitor_data = {key: st.session_state.get(key) for key in st.session_state if key not in ['current_step', 'visitor_data']}
                 
                 # Display success and confirmation
                 st.success("Visitor Registration Complete! Thank you.")
                 st.balloons()
-                # Optionally show the data collected
+                
+                # Update state for completion page
                 st.session_state['current_step'] = 'complete'
                 st.session_state['visitor_data'] = visitor_data
                 st.rerun()
@@ -231,13 +246,12 @@ def render_complete_page():
     st.subheader("Summary of Details")
     st.json(st.session_state.get('visitor_data', {}))
     
-    if st.button("Start New Registration"):
+    if st.button("Start New Registration", key="start_new_reg"):
         st.session_state['current_step'] = 'primary'
         # Clear specific session state keys to reset form data
-        keys_to_clear = ['name', 'phone', 'email', 'visit_type', 'from_company', 'gender', 'visitor_data']
+        keys_to_clear = [key for key in st.session_state if key not in ['current_step']]
         for key in keys_to_clear:
-            if key in st.session_state:
-                del st.session_state[key]
+            del st.session_state[key]
         st.rerun()
 
 
