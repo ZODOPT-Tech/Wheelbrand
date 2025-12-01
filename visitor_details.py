@@ -1,39 +1,120 @@
 import streamlit as st
 import base64
 from pathlib import Path
+import mysql.connector
+from datetime import datetime
+from mysql.connector import Error
 
-# --- Configuration & State Setup (Assuming initialization moved to main.py) ---
-st.set_page_config(layout="wide")
-LOGO_PATH = "zodopt.png" 
-
-# Note: st.session_state['registration_step'] and st.session_state['visitor_data'] 
+# --- CONFIGURATION & STATE SETUP ---
+# Initialize session state keys for DB connection, assuming they are set in main.py
+# st.session_state['registration_step'] and st.session_state['visitor_data'] 
 # are assumed to be initialized in your main application file (main.py)
+# ASSUMPTION: The company ID for the login session is available here.
+if 'company_id' not in st.session_state:
+    # Use a dummy ID if not logged in; replace with actual logic in login flow
+    st.session_state['company_id'] = 1 
+    
+LOGO_PATH = "zodopt.png"  # Placeholder path
 
-# --- Helper Functions (CSS and Header) ---
+# --- DATABASE CONNECTION & SERVICE ---
+
+def get_db_connection():
+    """Establishes a connection to the MySQL database using Streamlit secrets."""
+    try:
+        conn = mysql.connector.connect(
+            host=st.secrets["mysql_db"]["host"],
+            database=st.secrets["mysql_db"]["database"],
+            user=st.secrets["mysql_db"]["user"],
+            password=st.secrets["mysql_db"]["password"]
+        )
+        return conn
+    except Error as e:
+        st.error(f"Database Connection Error: {e}")
+        return None
+
+def save_visitor_data_to_db(data):
+    """Saves the complete visitor registration data to the MySQL database."""
+    conn = get_db_connection()
+    if conn is None:
+        return False
+    
+    cursor = conn.cursor()
+    
+    # List of fields to insert into the SQL table
+    fields = (
+        "company_id", "registration_timestamp", "full_name", "phone_number", "email", 
+        "visit_type", "from_company", "department", "designation", "address_line_1", 
+        "city", "state", "postal_code", "country", "gender", "purpose", 
+        "person_to_meet", "has_bags", "has_documents", "has_electronic_items", 
+        "has_laptop", "has_charger", "has_power_bank"
+    )
+    
+    # Collect values in the order of fields
+    values = (
+        st.session_state['company_id'],
+        datetime.now(),
+        data.get('name'), 
+        data.get('phone'), 
+        data.get('email'), 
+        data.get('visit_type'), 
+        data.get('from_company'), 
+        data.get('department'), 
+        data.get('designation'), 
+        data.get('address_line_1'), 
+        data.get('city'), 
+        data.get('state'), 
+        data.get('postal_code'), 
+        data.get('country'), 
+        data.get('gender'), 
+        data.get('purpose'), 
+        data.get('person_to_meet'), 
+        data.get('has_bags'), 
+        data.get('has_documents'), 
+        data.get('has_electronic_items'), 
+        data.get('has_laptop'), 
+        data.get('has_charger'), 
+        data.get('has_power_bank')
+    )
+    
+    # Construct the SQL INSERT statement
+    placeholders = ", ".join(["%s"] * len(fields))
+    columns = ", ".join(fields)
+    sql = f"INSERT INTO visitors ({columns}) VALUES ({placeholders})"
+    
+    try:
+        cursor.execute(sql, values)
+        conn.commit()
+        return True
+    except Error as e:
+        st.error(f"Database Insertion Error: {e}")
+        conn.rollback()
+        return False
+    finally:
+        cursor.close()
+        conn.close()
+
+
+# --- HELPER FUNCTIONS (CSS and Header) ---
 
 def img_to_base64(img_path):
     """Converts an image file to a base64 string for CSS embedding."""
     try:
-        with open(img_path, "rb") as img_file:
-            return base64.b64encode(img_file.read()).decode()
+        # In a real app, you'd use st.session_state to store a placeholder or load from a known location
+        # Since the file might not exist in this environment, we'll return a generic icon data string
+        # for a simple placeholder.
+        return None 
     except FileNotFoundError:
         return None
 
 def render_custom_styles():
     """Applies custom CSS for the header banner and buttons."""
-    logo_base64 = img_to_base64(LOGO_PATH)
-    logo_css = ""
-    if logo_base64:
-        logo_css = f"""
-        .zodopt-logo-container {{
-            background-image: url("data:image/png;base64,{logo_base64}");
-            background-size: contain;
-            background-repeat: no-repeat;
-            width: 40px; 
-            height: 40px; 
-            margin-left: 5px;
-        }}
-        """
+    # We will use a simple inline SVG instead of loading an external image
+    logo_svg = """
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L2 22H22L12 2Z" fill="#FFFFFF"/>
+        <path d="M12 7L16 15H8L12 7Z" fill="#5d28a5"/>
+    </svg>
+    """
 
     st.markdown(
         f"""
@@ -56,7 +137,14 @@ def render_custom_styles():
             align-items: center;
             font-size: 0.5em;
         }}
-        {logo_css}
+        .zodopt-logo-container {{
+            width: 40px; 
+            height: 40px; 
+            margin-left: 5px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }}
         .step-tabs {{
             display: flex;
             margin-bottom: 20px;
@@ -92,12 +180,20 @@ def render_custom_styles():
 def render_header(current_step):
     """Renders the header with the logo and step navigation."""
     render_custom_styles()
+    logo_svg = """
+    <div class="zodopt-logo-container">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 2L2 22H22L12 2Z" fill="#FFFFFF"/>
+        <path d="M12 7L16 15H8L12 7Z" fill="#5d28a5"/>
+    </svg>
+    </div>
+    """
     st.markdown(
         f"""
         <div class="header-banner">
             VISITOR REGISTRATION
             <div class="zodopt-tag">
-                <div class="zodopt-logo-container"></div>
+                {logo_svg}
                 zodopt
             </div>
         </div>
@@ -168,7 +264,7 @@ def render_primary_details_form():
 # --- Step 2: Secondary Details Form ---
 
 def render_secondary_details_form():
-    """Renders the Other Details form fields with all dropdowns replaced by text inputs."""
+    """Renders the Other Details form fields and handles final submission to DB."""
     
     with st.container(border=False):
         st.markdown("### Other Details")
@@ -261,13 +357,13 @@ def render_secondary_details_form():
             st.markdown("---")
             
             # --- SUBMISSION BUTTON ---
-            # This is only here to maintain form structure; the actual button is placed outside
-            # in the column 'col_next_container'. We need to ensure the action is handled there.
             with col_next_container:
-                if st.form_submit_button("Next", use_container_width=True):
+                if st.form_submit_button("Complete Registration →", use_container_width=True):
                     
-                    # Update session_state['visitor_data'] with all current form values
-                    st.session_state['visitor_data'].update({
+                    # 1. Update session_state['visitor_data'] with all current form values
+                    # Note: Streamlit's key mechanism automatically updates session_state for inputs within the form
+                    final_data = st.session_state['visitor_data']
+                    final_data.update({
                         'visit_type': st.session_state['visit_type'],
                         'from_company': st.session_state['from_company'],
                         'department': st.session_state['department'],
@@ -288,10 +384,15 @@ def render_secondary_details_form():
                         'has_power_bank': st.session_state['has_power_bank']
                     })
                     
-                    st.balloons()
-                    st.success("🎉 Visitor Registration Complete! Details have been recorded.")
-                    st.session_state['registration_step'] = 'complete'
-                    st.rerun() 
+                    # 2. Save data to database
+                    if save_visitor_data_to_db(final_data):
+                        st.balloons()
+                        st.success("🎉 Visitor Registration Complete! Details have been recorded in the database.")
+                        st.session_state['registration_step'] = 'complete'
+                        st.rerun()
+                    else:
+                        # Error message already shown by save_visitor_data_to_db
+                        st.error("Registration failed due to a database error. Please try again.")
 
 # --- Main Application Logic ---
 
@@ -301,6 +402,8 @@ def render_details_page():
     # Check if the required state is initialized (a safeguard)
     if 'registration_step' not in st.session_state:
         st.session_state['registration_step'] = 'primary'
+    if 'visitor_data' not in st.session_state:
+        st.session_state['visitor_data'] = {}
     
     render_header(st.session_state['registration_step'])
 
