@@ -96,6 +96,7 @@ def save_visitor_details(conn, data):
             return False
 
         # SQL Query updated to include company_id and registration_timestamp
+        # It's assumed the 'visitors' table includes (id, company_id, registration_timestamp, checkout_time, ...)
         sql = """
         INSERT INTO visitors (
             company_id, registration_timestamp, full_name, phone_number, email, 
@@ -134,10 +135,10 @@ def save_visitor_details(conn, data):
             cursor.close()
 
 # ==============================================================================
-# 3. STREAMLIT RENDERING: VISITOR FORM
+# 3. STREAMLIT RENDERING: VISITOR FORM (RENAMED)
 # ==============================================================================
 
-def render_visitor_details_form():
+def render_details_page():
     """Renders the visitor registration form."""
     
     # Check required session state variables
@@ -192,9 +193,6 @@ def render_visitor_details_form():
                 
                 # 3. Save to DB
                 if save_visitor_details(conn, visitor_data):
-                    # Clear inputs (optional) and redirect to dashboard
-                    # This requires resetting the form, which st.rerun handles implicitly after a successful save.
-                    
                     # Redirect back to the dashboard
                     st.session_state['current_page'] = 'visitor_dashboard'
                     st.rerun()
@@ -211,4 +209,4 @@ if __name__ == "__main__":
         st.session_state['admin_logged_in'] = True
         st.session_state['company_id'] = 1 # Required for saving records
     
-    render_visitor_details_form()
+    render_details_page()
