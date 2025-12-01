@@ -12,14 +12,12 @@ LOGO_PATH = "zodopt.png"
 
 def initialize_session_state():
     """Initializes all necessary session state variables if they do not exist."""
-    # Ensure all required state variables are set before accessing them
     if 'registration_step' not in st.session_state:
         st.session_state['registration_step'] = 'primary'
     if 'visitor_data' not in st.session_state:
         st.session_state['visitor_data'] = {}
-    # ASSUMPTION: The company ID for the login session is available here.
+    # Ensure company_id exists (it is set by visitor_login.py)
     if 'company_id' not in st.session_state:
-        # Use a dummy ID if not logged in; replace with actual logic in login flow
         st.session_state['company_id'] = 1
 
 # --- DATABASE CONNECTION & SERVICE ---
@@ -75,12 +73,12 @@ def save_visitor_data_to_db(data):
         data.get('gender'), 
         data.get('purpose'), 
         data.get('person_to_meet'), 
-        data.get('has_bags'), 
-        data.get('has_documents'), 
-        data.get('has_electronic_items'), 
-        data.get('has_laptop'), 
-        data.get('has_charger'), 
-        data.get('has_power_bank')
+        data.get('has_bags', False), 
+        data.get('has_documents', False), 
+        data.get('has_electronic_items', False), 
+        data.get('has_laptop', False), 
+        data.get('has_charger', False), 
+        data.get('has_power_bank', False)
     )
     
     # Construct the SQL INSERT statement
@@ -105,12 +103,10 @@ def save_visitor_data_to_db(data):
 
 def img_to_base64(img_path):
     """Converts an image file to a base64 string for CSS embedding."""
-    # Since the file might not exist in this environment, we rely on the CSS SVG fallback.
     return None 
 
 def render_custom_styles():
     """Applies custom CSS for the header banner and buttons."""
-    # Using a simple inline SVG for the logo as a robust placeholder
     logo_svg_data = """
     <div class="zodopt-logo-container">
     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -235,15 +231,15 @@ def render_primary_details_form():
             # 3. Email
             st.write("Email *")
             email = st.text_input("Email", key="email_input", placeholder="your.email@example.com", 
-                                  value=st.session_state['visitor_data'].get('email', ''), label_visibility="collapsed")
+                                     value=st.session_state['visitor_data'].get('email', ''), label_visibility="collapsed")
 
             # Submit/Next and Reset buttons
             col_reset, col_spacer, col_next = st.columns([1, 2, 1])
             with col_reset:
                 if st.button("Reset", use_container_width=True, key="reset_primary"):
-                     for key in ['name', 'phone', 'email']:
-                         st.session_state['visitor_data'].pop(key, None)
-                     st.rerun()
+                    for key in ['name', 'phone', 'email']:
+                        st.session_state['visitor_data'].pop(key, None)
+                    st.rerun()
 
             with col_next:
                 if st.form_submit_button("Next →", use_container_width=True):
@@ -279,12 +275,11 @@ def render_secondary_details_form():
         with st.form("secondary_details_form", clear_on_submit=False):
             
             # --- FORM FIELDS ---
-            # 1. Company/Visit Details (Text Inputs)
             col_vt, col_fc = st.columns(2)
             with col_vt:
                 st.text_input("Visit Type", key='visit_type', 
-                             value=st.session_state['visitor_data'].get('visit_type', ''), 
-                             placeholder="e.g., Business, Personal")
+                              value=st.session_state['visitor_data'].get('visit_type', ''), 
+                              placeholder="e.g., Business, Personal")
             with col_fc:
                 st.text_input("From Company", key='from_company', 
                               value=st.session_state['visitor_data'].get('from_company', ''))
@@ -292,12 +287,12 @@ def render_secondary_details_form():
             col_dept, col_des = st.columns(2)
             with col_dept:
                 st.text_input("Department", key='department',
-                             value=st.session_state['visitor_data'].get('department', ''),
-                             placeholder="e.g., Sales, HR, IT")
+                              value=st.session_state['visitor_data'].get('department', ''),
+                              placeholder="e.g., Sales, HR, IT")
             with col_des:
                 st.text_input("Designation", key='designation',
-                             value=st.session_state['visitor_data'].get('designation', ''),
-                             placeholder="e.g., Manager, Engineer")
+                              value=st.session_state['visitor_data'].get('designation', ''),
+                              placeholder="e.g., Manager, Engineer")
             
             # 2. Organization Address Fields
             st.text_input("Organization Address", placeholder="Address Line 1", key='address_line_1',
@@ -317,24 +312,25 @@ def render_secondary_details_form():
                               value=st.session_state['visitor_data'].get('postal_code', ''))
             with col_country:
                 st.text_input("Country", key='country',
-                             value=st.session_state['visitor_data'].get('country', ''),
-                             placeholder="e.g., India, USA")
+                              value=st.session_state['visitor_data'].get('country', ''),
+                              placeholder="e.g., India, USA")
 
             st.markdown("---") 
             
             # 3. Gender, Purpose, Person to Meet
             st.radio("Gender", ["Male", "Female", "Others"], horizontal=True, key='gender',
-                     index=["Male", "Female", "Others"].index(st.session_state['visitor_data'].get('gender', 'Male')))
+                      index=["Male", "Female", "Others"].index(st.session_state['visitor_data'].get('gender', 'Male')),
+                      help="Select your gender.")
             
             col_purpose, col_person = st.columns(2)
             with col_purpose:
                 st.text_input("Purpose", key='purpose',
-                             value=st.session_state['visitor_data'].get('purpose', ''),
-                             placeholder="e.g., Meeting, Interview")
+                              value=st.session_state['visitor_data'].get('purpose', ''),
+                              placeholder="e.g., Meeting, Interview")
             with col_person:
                 st.text_input("Person to Meet", key='person_to_meet',
-                             value=st.session_state['visitor_data'].get('person_to_meet', ''),
-                             placeholder="e.g., Alice, Bob")
+                              value=st.session_state['visitor_data'].get('person_to_meet', ''),
+                              placeholder="e.g., Alice, Bob")
             
             # 4. Belongings (Checkboxes)
             st.markdown("#### Belongings")
@@ -359,7 +355,6 @@ def render_secondary_details_form():
                 if st.form_submit_button("Complete Registration →", use_container_width=True):
                     
                     # 1. Update session_state['visitor_data'] with all current form values
-                    # These values are automatically updated by Streamlit's key mechanism
                     final_data = st.session_state['visitor_data']
                     final_data.update({
                         'visit_type': st.session_state['visit_type'],
@@ -385,8 +380,13 @@ def render_secondary_details_form():
                     # 2. Save data to database
                     if save_visitor_data_to_db(final_data):
                         st.balloons()
-                        st.success("🎉 Visitor Registration Complete! Details have been recorded in the database.")
-                        st.session_state['registration_step'] = 'complete'
+                        st.success("🎉 Visitor Registration Complete! Details have been recorded. Redirecting to Dashboard...")
+                        
+                        # Clear registration state and REDIRECT TO DASHBOARD
+                        st.session_state['registration_step'] = 'primary'
+                        st.session_state['visitor_data'] = {} 
+                        st.session_state['current_page'] = 'visitor_dashboard' 
+                        st.rerun() 
                     
                     # Rerunning even on failure to clear form submission state/update messages
                     st.rerun() 
@@ -396,7 +396,14 @@ def render_secondary_details_form():
 def render_details_page():
     """Main function to run the multi-step visitor registration form."""
     
-    # 1. Initialize session state at the entry point to prevent KeyError
+    # 1. ENFORCE LOGIN CHECK
+    if not st.session_state.get('admin_logged_in'):
+        st.error("Access Denied: Please log in as an Admin to register visitors.")
+        st.session_state['current_page'] = 'visitor_login'
+        st.rerun()
+        return
+        
+    # 2. Initialize session state at the entry point to prevent KeyError
     initialize_session_state() 
     
     render_header(st.session_state['registration_step'])
@@ -406,17 +413,8 @@ def render_details_page():
     
     elif st.session_state['registration_step'] == 'secondary':
         render_secondary_details_form()
-
-    elif st.session_state['registration_step'] == 'complete':
-        st.subheader("✅ Registration Summary")
-        st.info(f"Company ID: {st.session_state['company_id']}")
-        st.json(st.session_state['visitor_data'])
-        
-        st.markdown("---")
-        if st.button("Start New Registration", type="primary"):
-            st.session_state['registration_step'] = 'primary'
-            st.session_state['visitor_data'] = {} 
-            st.rerun()
+    
+    # The 'complete' block is removed as the app now redirects to the dashboard directly.
 
 if __name__ == "__main__":
     render_details_page()
