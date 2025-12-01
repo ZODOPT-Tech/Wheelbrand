@@ -8,6 +8,7 @@ import traceback
 from time import sleep
 from datetime import datetime, timedelta
 import secrets
+from typing import Dict, Any, Optional
 
 # ==============================================================================
 # 1. CONFIGURATION & CREDENTIALS
@@ -19,7 +20,6 @@ AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
 
 # --- Configuration (Shared Constants) ---
-# The logo path and placeholder text confirmed by the user
 LOGO_PATH = "zodopt.png" 
 LOGO_PLACEHOLDER_TEXT = "zodopt"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" # Primary Color for header and main buttons
@@ -28,13 +28,12 @@ DEFAULT_DB_PORT = 3306 # Standard MySQL port
 
 # --- AWS SECRET MANAGER ----------------
 @st.cache_resource
-def get_db_credentials():
+def get_db_credentials() -> Dict[str, str]:
     """
     Loads DB credentials from AWS Secrets Manager.
-    Secret must be a JSON string with keys:
-    DB_HOST, DB_NAME, DB_USER, DB_PASSWORD
+    Secret must be a JSON string with keys: DB_HOST, DB_NAME, DB_USER, DB_PASSWORD.
     
-    If credentials cannot be obtained, the app execution is halted.
+    Stops the app execution if credentials cannot be obtained.
     """
     if not AWS_SECRET_NAME:
         st.error("FATAL: AWS_SECRET_NAME is not configured. Cannot proceed with database connection.")
@@ -47,7 +46,6 @@ def get_db_credentials():
         # Fetch the secret value.
         resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
         
-        # SecretsManager stores text in 'SecretString'
         if "SecretString" not in resp:
             raise RuntimeError("SecretString missing in AWS secrets response.")
             
@@ -61,24 +59,21 @@ def get_db_credentials():
         return creds
         
     except Exception as e:
-        # Display a user-friendly error in Streamlit
         st.error(f"FATAL: Configuration Error: Could not retrieve database credentials from AWS Secrets Manager.")
         st.info("Please verify the AWS_REGION, AWS_SECRET_NAME, and IAM permissions.")
         st.write(f"Details: {e}")
-        # Log the full traceback for the developer in the console
         st.write(traceback.format_exc())
         st.stop()
 
 
 # ---------------- FAST DB CONNECTION ----------------
 @st.cache_resource
-def get_fast_connection():
+def get_fast_connection() -> mysql.connector.connection.MySQLConnection:
     """
     Returns a persistent MySQL connection object (cached by Streamlit).
-    This function establishes the connection using credentials from Secrets Manager.
     Stops execution if connection fails.
     """
-    credentials = get_db_credentials() # Retrieve creds using the strict AWS function
+    credentials = get_db_credentials()
     
     try:
         conn = mysql.connector.connect(
@@ -87,7 +82,7 @@ def get_fast_connection():
             password=credentials["DB_PASSWORD"],
             database=credentials["DB_NAME"],
             port=DEFAULT_DB_PORT,
-            autocommit=True, # Ensure changes are saved immediately
+            autocommit=True,
             connection_timeout=10,
         )
         return conn
@@ -105,23 +100,23 @@ def get_fast_connection():
 # 2. SECURITY AND UTILITY HELPERS
 # ==============================================================================
 
-def hash_password(password):
+def hash_password(password: str) -> str:
     """Hashes a plaintext password using bcrypt."""
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
 
-def check_password(password, hashed_password):
+def check_password(password: str, hashed_password: str) -> bool:
     """Verifies a plaintext password against a stored bcrypt hash."""
     try:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
     except Exception:
         return False
 
-def _get_image_base64(path):
+def _get_image_base64(path: str) -> str:
     """Converts a local image file to a base64 string for embedding (Placeholder)."""
-    # In this environment, we use a placeholder handler
-    return "" 
+    # Placeholder implementation returns a small purple square image data URI
+    return "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDTAgAQJUYAKYfBpZZXFw5AAAAAElFTkSuQmCC"
 
-def set_auth_view(view):
+def set_auth_view(view: str):
     """Changes the current view and forces a Streamlit re-render."""
     st.session_state['visitor_auth_view'] = view
     # Clear reset state when changing views
@@ -134,13 +129,8 @@ def set_auth_view(view):
 # 3. DB INTERACTION FUNCTIONS
 # ==============================================================================
 
-# Assumed Schema (Based on current app logic):
-# - admin_users: (id, company_id, name, email, password_hash, is_active=1)
-# - companies: (id, company_name)
-
-def get_admin_by_email(conn, email):
+def get_admin_by_email(conn, email: str) -> Optional[Dict[str, Any]]:
     """Fetches user ID, hash, name, and company details for login/lookup."""
-    cursor = conn.cursor(dictionary=True) 
     query = """
     SELECT au.id, au.password_hash, au.name, c.id AS company_id, c.company_name
     FROM admin_users au
@@ -148,63 +138,59 @@ def get_admin_by_email(conn, email):
     WHERE au.email = %s AND au.is_active = 1;
     """
     try:
-        cursor.execute(query, (email.lower(),))
-        return cursor.fetchone()
+        # Using context manager for cursor ensures it's closed
+        with conn.cursor(dictionary=True) as cursor:
+            cursor.execute(query, (email.lower(),))
+            return cursor.fetchone()
     except Exception as e:
         st.error(f"DB Error fetching admin: {e}")
         return None
-    finally:
-        cursor.close()
 
-def create_company_and_admin(conn, company_name, admin_name, email, password_hash):
+def create_company_and_admin(conn, company_name: str, admin_name: str, email: str, password_hash: str) -> bool:
     """Inserts a new company and its first admin user within a single transaction."""
-    cursor = conn.cursor()
     try:
-        # 1. Insert Company
-        company_query = "INSERT INTO companies (company_name) VALUES (%s)"
-        cursor.execute(company_query, (company_name,))
-        company_id = cursor.lastrowid # Get the ID of the new company
+        with conn.cursor() as cursor:
+            # 1. Insert Company
+            company_query = "INSERT INTO companies (company_name) VALUES (%s)"
+            cursor.execute(company_query, (company_name,))
+            company_id = cursor.lastrowid # Get the ID of the new company
 
-        # 2. Insert Admin User
-        admin_query = """
-        INSERT INTO admin_users (company_id, name, email, password_hash, is_active)
-        VALUES (%s, %s, %s, %s, 1)
-        """
-        cursor.execute(admin_query, (company_id, admin_name, email.lower(), password_hash))
+            # 2. Insert Admin User
+            admin_query = """
+            INSERT INTO admin_users (company_id, name, email, password_hash, is_active)
+            VALUES (%s, %s, %s, %s, 1)
+            """
+            cursor.execute(admin_query, (company_id, admin_name, email.lower(), password_hash))
 
-        conn.commit()
-        return True
+            conn.commit()
+            return True
     except mysql.connector.Error as err:
         conn.rollback()
-        # Check for duplicate entry error (1062) for unique fields (email, company_name)
+        # Check for duplicate entry error (1062)
         if err.errno == 1062:
             st.error("Registration failed: An account with this email or company name already exists.")
         else:
             st.error(f"Registration failed (DB error): {err.msg}")
-            # Log the full traceback for debugging the transaction failure
             st.error(f"Full Error Trace: {traceback.format_exc()}")
         return False
     except Exception as e:
         conn.rollback()
         st.error(f"Registration failed (General error): {e}")
         return False
-    finally:
-        cursor.close()
 
-def update_admin_password_directly(conn, user_id, new_password_hash):
+
+def update_admin_password_directly(conn, user_id: int, new_password_hash: str) -> bool:
     """Updates the admin's password hash directly by user ID (simplified reset)."""
-    cursor = conn.cursor()
     update_admin_query = "UPDATE admin_users SET password_hash = %s WHERE id = %s"
     try:
-        cursor.execute(update_admin_query, (new_password_hash, user_id))
-        conn.commit()
-        return True
+        with conn.cursor() as cursor:
+            cursor.execute(update_admin_query, (new_password_hash, user_id))
+            conn.commit()
+            return True
     except Exception as e:
         st.error(f"DB Error during direct password update: {e}")
         conn.rollback()
         return False
-    finally:
-        cursor.close()
 
 
 # ==============================================================================
@@ -216,7 +202,7 @@ def render_admin_register_view():
     conn = get_fast_connection() 
     
     with st.form("admin_register_form"):
-        st.markdown("**Company and Admin Details**")
+        st.markdown("### New Admin Registration")
         
         company_name = st.text_input("Company Name", key="reg_company_name")
         admin_name = st.text_input("Admin Full Name", key="reg_admin_name")
@@ -261,11 +247,11 @@ def render_admin_register_view():
 def render_existing_admin_login_view():
     """
     Renders the Admin login form for existing users and handles DB authentication.
-    Redirects to the admin dashboard upon successful login.
     """
     conn = get_fast_connection() 
 
     with st.form("admin_login_form"):
+        st.markdown("### Admin Sign In")
         email = st.text_input("Admin Email ID", key="admin_login_email").lower()
         password = st.text_input("Password", type="password", key="admin_login_password")
         
@@ -279,7 +265,7 @@ def render_existing_admin_login_view():
             user_data = get_admin_by_email(conn, email)
 
             if user_data:
-                stored_hash = user_data['password_hash']
+                stored_hash = user_data.get('password_hash', '')
                 is_authenticated = check_password(password, stored_hash)
 
                 if is_authenticated:
@@ -292,7 +278,7 @@ def render_existing_admin_login_view():
                     st.session_state['company_name'] = user_data['company_name']
                     st.success(f"Welcome, {st.session_state['admin_name']}! Redirecting to dashboard...")
                     
-                    # --- UPDATED: Use 'admin_dashboard_home' as the central post-login view ---
+                    # Redirect to the admin dashboard entry point
                     set_auth_view('admin_dashboard_home') 
                     return
                 else:
@@ -312,8 +298,8 @@ def render_existing_admin_login_view():
 def render_admin_dashboard_home_view():
     """
     The main hub for the logged-in administrator.
-    This function immediately routes the Admin to the required default page,
-    which is 'visitor_dashboard' as requested by the user.
+    This function immediately routes the Admin to the 'visitor_dashboard' page 
+    of the main application state.
     """
     # Enforce login
     if not st.session_state.get('admin_logged_in'):
@@ -321,52 +307,31 @@ def render_admin_dashboard_home_view():
         set_auth_view('admin_login')
         return
 
-    # --- IMMEDIATE REDIRECT TO TARGET PAGE ---
     # Set the main app's page control state to 'visitor_dashboard'
     st.session_state['current_page'] = 'visitor_dashboard'
     
-    # Placeholder to simulate immediate navigation
     company_name = st.session_state.get('company_name', 'Your Company')
     admin_name = st.session_state.get('admin_name', 'Admin')
-    st.markdown(f"## 📊 {company_name} - Visitor Management Dashboard")
-    st.markdown(f"Welcome, **{admin_name}**. Navigating to Visitor Dashboard...")
     
-    # Redirect to the main app view (which will render 'visitor_dashboard')
-    # Since the main app re-runs and checks 'current_page', we redirect back to a known auth view
-    # which will then be ignored by the main app, allowing 'current_page' to take precedence.
-    # We will just set the current auth view to a non-interactive one and let the main app handle the rest.
+    # Display message before redirecting
+    st.markdown(f"## 📊 {company_name} - Admin Hub")
+    st.info(f"Welcome, **{admin_name}**. Navigating to Visitor Dashboard...")
+    
+    # Set the auth view to a non-interactive state and force re-run for main app to switch pages
     st.session_state['visitor_auth_view'] = 'admin_dashboard_home_redirected'
-    st.rerun() 
-    
-    # This block will realistically never be reached due to st.rerun() but acts as a visual guide
-    st.markdown('<div style="margin-top: 50px;"></div>', unsafe_allow_html=True)
-    if st.button("← Logout", key="dashboard_logout_btn", use_container_width=True):
-        # Clear all admin session state
-        for key in ['admin_logged_in', 'admin_id', 'admin_email', 'admin_name', 'company_id', 'company_name']:
-            if key in st.session_state:
-                del st.session_state[key]
-        # Also clear the dashboard navigation state
-        if 'current_page' in st.session_state:
-            del st.session_state['current_page']
-        set_auth_view('admin_login') # Redirect to the login page
-
+    st.rerun()
 
 def render_forgot_password_view():
     """
-    Renders the simplified TWO-STEP password reset flow:
-    1. Check email existence.
-    2. Allow direct password change if email is found.
+    Renders the simplified TWO-STEP password reset flow (Insecure, but functional for demo).
     """
-    st.warning("⚠️ **ADMIN OVERRIDE:** This simplified two-step flow allows direct password reset by only verifying the email's existence in the database. This is HIGHLY INSECURE for a real application.")
+    st.warning("⚠️ **ADMIN OVERRIDE:** This simplified two-step flow allows direct password reset by only verifying the email's existence in the database. This is **HIGHLY INSECURE** for a real application and should be replaced with a secure email verification link system.")
     
     conn = get_fast_connection()
 
     # --- STAGE 1: EMAIL VERIFICATION ---
-    if 'reset_user_id' not in st.session_state:
-        st.session_state['reset_user_id'] = None
-
-    if st.session_state['reset_user_id'] is None:
-        st.subheader("1. Verify Email ID")
+    if 'reset_user_id' not in st.session_state or st.session_state['reset_user_id'] is None:
+        st.subheader("1. Verify Admin Email ID")
         with st.form("forgot_pass_verify_form"):
             email_to_check = st.text_input("Enter your Admin Email ID", key="forgot_email_input").lower()
             submitted = st.form_submit_button("Check Email Existence", type="primary")
@@ -380,19 +345,17 @@ def render_forgot_password_view():
                 
                 if user_data:
                     st.session_state['reset_user_id'] = user_data['id']
-                    st.success("✅ Email ID verified! You can now set your new password below.")
-                    # Force a re-run to display the next step
+                    st.success("✅ Email ID verified! Proceed to set your new password.")
                     st.rerun() 
                 else:
                     st.error("Email ID not found in our records.")
     
     # --- STAGE 2: PASSWORD RESET ---
-    if st.session_state['reset_user_id'] is not None:
+    if st.session_state.get('reset_user_id') is not None:
         st.subheader("2. Set New Password")
         user_id_to_reset = st.session_state['reset_user_id']
 
         with st.form("forgot_pass_reset_form"):
-            # New password fields
             new_password = st.text_input(f"New Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reset_new_password")
             confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
             
@@ -408,7 +371,6 @@ def render_forgot_password_view():
 
                 new_hash = hash_password(new_password)
 
-                # --- ACTUAL DB INTERACTION POINT (Direct Password Update) ---
                 if update_admin_password_directly(conn, user_id_to_reset, new_hash):
                     st.success("Password successfully changed! Redirecting to login...")
                     # Clear state and redirect
@@ -416,7 +378,7 @@ def render_forgot_password_view():
                     set_auth_view('admin_login')
                 else:
                     st.error("Password reset failed due to a database error. Please check logs.")
-        
+            
     st.markdown('<div style="margin-top: 25px;"></div>', unsafe_allow_html=True)
     if st.button("← Back to Admin Login", key="forgot_back_login_btn", use_container_width=True):
         set_auth_view('admin_login')
@@ -426,21 +388,25 @@ def render_forgot_password_view():
 # ==============================================================================
 
 def render_visitor_login_page():
+    """
+    Primary function to render the Admin Authentication page.
+    Handles dynamic header titles and routes to the appropriate sub-view.
+    """
     # --- Default view is 'admin_login' ---
     if 'visitor_auth_view' not in st.session_state:
         st.session_state['visitor_auth_view'] = 'admin_login'
 
     view = st.session_state['visitor_auth_view']
-    if view == 'admin_register':
-        header_title = "VISITOR MANAGEMENT - ADMIN REGISTRATION"
-    elif view == 'admin_login':
-        header_title = "VISITOR MANAGEMENT - ADMIN LOGIN"
-    # --- UPDATED: Use new view name for the admin hub ---
-    elif view in ['admin_dashboard_home', 'admin_dashboard_home_redirected']:
-        # Since this view immediately redirects, the title reflects the action.
-        header_title = "VISITOR MANAGEMENT - DASHBOARD (REDIRECTING)" 
-    elif view == 'forgot_password':
-        header_title = "VISITOR MANAGEMENT - RESET PASSWORD"
+    
+    # Determine Header Title based on current view
+    header_titles = {
+        'admin_register': "VISITOR MANAGEMENT - ADMIN REGISTRATION",
+        'admin_login': "VISITOR MANAGEMENT - ADMIN LOGIN",
+        'admin_dashboard_home': "VISITOR MANAGEMENT - DASHBOARD (REDIRECTING)",
+        'admin_dashboard_home_redirected': "VISITOR MANAGEMENT - DASHBOARD (REDIRECTED)",
+        'forgot_password': "VISITOR MANAGEMENT - RESET PASSWORD"
+    }
+    header_title = header_titles.get(view, "ADMIN AUTHENTICATION")
         
     # 1. Inject Custom CSS for styling
     st.markdown(f"""
@@ -448,7 +414,6 @@ def render_visitor_login_page():
     /* CSS variables for consistency */
     :root {{
         --header-gradient: {HEADER_GRADIENT};
-        --primary-color: #50309D;
         --secondary-color: #7A42FF;
         --header-box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4);
     }}
@@ -468,9 +433,9 @@ def render_visitor_login_page():
         display: flex;
         justify-content: space-between;
         align-items: center;
-        width: calc(100% + 4rem); 
-        margin-left: -2rem; 
-        margin-right: -2rem; 
+        /* Force full width by overriding Streamlit's container margins */
+        width: 100vw;
+        margin-left: calc(50% - 50vw);
     }}
     .header-title {{
         font-family: 'Inter', sans-serif; 
@@ -487,7 +452,7 @@ def render_visitor_login_page():
     }}
     
     /* Form and Input Styling */
-    .stTextInput input, .stTextArea textarea {{
+    .stTextInput input, .stTextArea textarea, .stSelectbox > div:first-child {{
         font-family: 'Inter', sans-serif;
         background-color: #f0f2f6;
         border: 1px solid #e0e0e0;
@@ -495,7 +460,7 @@ def render_visitor_login_page():
         padding: 12px 15px;
         font-size: 16px;
     }}
-    .stTextInput input:focus, .stTextArea textarea:focus {{
+    .stTextInput input:focus, .stTextArea textarea:focus, .stSelectbox > div:first-child:focus {{
         border-color: var(--secondary-color);
         box-shadow: 0 0 0 2px rgba(122, 66, 255, 0.4);
         outline: none;
@@ -564,11 +529,10 @@ def render_visitor_login_page():
         render_admin_register_view()
     elif view == 'admin_login':
         render_existing_admin_login_view()
-    # --- UPDATED: Handle new view name for the admin hub ---
     elif view == 'admin_dashboard_home':
         render_admin_dashboard_home_view()
-    # This view is a non-interactive one used right before the main app takes over
     elif view == 'admin_dashboard_home_redirected':
+        # Non-interactive view state used after redirecting
         pass 
     elif view == 'forgot_password':
         render_forgot_password_view()
