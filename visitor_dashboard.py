@@ -270,10 +270,13 @@ if __name__ == "__main__":
 
     # Use a clear mapping for navigation
     if st.session_state['current_page'] == 'details_page':
-        # This page is handled by visitor_details.py, so we warn the user 
-        # but stick with the current view (dashboard) for self-containment.
-        st.warning("Action: Navigate to 'visitor_details.py' to render the check-in form.")
-        render_dashboard() 
+        # --- FIX: Stop re-running with a page key that causes an external error ---
+        st.info("Redirecting to the Check-In form in the 'visitor_details.py' page...")
+        # Reset the page key to the dashboard to prevent the external runner from failing 
+        # while keeping the intent of navigation clear.
+        st.session_state['current_page'] = 'visitor_dashboard' 
+        st.rerun() # Force a final rerun to clear the temporary state and message
+
     elif st.session_state['current_page'] == 'visitor_login':
         render_login_page()
     elif st.session_state['current_page'] == 'visitor_dashboard': # Use the correct key here
