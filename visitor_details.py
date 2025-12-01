@@ -103,16 +103,12 @@ def initialize_session_state():
         st.session_state['company_id'] = None
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
-    
-    # Ensure current_page is always set, default to a known value
-    if 'current_page' not in st.session_state:
-        st.session_state['current_page'] = 'main_screen'
 
 
 def navigate_to_main_screen():
-    """Clears registration specific state and redirects to the main entry point."""
+    """Clears registration specific state and triggers a rerun."""
     
-    # 1. Clear ALL session state related to the current registration flow
+    # Clear ALL session state related to the current registration flow
     keys_to_clear = [
         'registration_step', 'visitor_data'
     ]
@@ -120,8 +116,7 @@ def navigate_to_main_screen():
         if key in st.session_state:
             del st.session_state[key]
     
-    # 2. Set the main navigation key (Assuming 'main_screen' is the target home page)
-    st.session_state['current_page'] = 'main_screen'
+    # Rerunning will restart the script, allowing the external app to manage navigation
     st.rerun()
 
 # ==============================================================================
@@ -323,6 +318,7 @@ def render_primary_details_form():
     # 1. Navigation Buttons (Outside the form)
     col_reset, col_spacer = st.columns([1, 3])
     with col_reset:
+        # Use navigate_to_main_screen() which only clears state and reruns
         if st.button("Reset / Main Menu", use_container_width=True, key="reset_primary"):
             navigate_to_main_screen()
 
@@ -398,6 +394,7 @@ def render_secondary_details_form():
             st.rerun()
 
     with col_main_menu:
+        # Use navigate_to_main_screen() which only clears state and reruns
         if st.button("Back to Main Menu", key='main_menu_button_secondary', use_container_width=True):
             navigate_to_main_screen()
             
@@ -525,14 +522,15 @@ def render_secondary_details_form():
             
             # Save to Database
             if save_visitor_data_to_db(final_data):
-                message_placeholder.success("🎉 Visitor Registration Complete! You are now checked in.")
+                message_placeholder.success("🎉 Visitor Registration Complete! You are now checked in. You will be redirected shortly.")
                 st.balloons()
                 
                 # Clear session state for next registration
                 st.session_state['registration_step'] = 'primary'
                 st.session_state['visitor_data'] = {} 
-                # Redirect to the main admin dashboard/main screen after submission
-                st.session_state['current_page'] = 'main_screen'
+                
+                # Triggers a reload of the main app or the current page
+                st.rerun() 
             else:
                 # Error already displayed in save_visitor_data_to_db
                 message_placeholder.error("Registration failed due to a database error.")
@@ -552,18 +550,17 @@ def render_visitor_registration():
     # 2. ENFORCE LOGIN CHECK
     if not st.session_state.get('admin_logged_in'):
         st.error("Access Denied: Please log in as an Admin to register visitors.")
-        st.session_state['current_page'] = 'visitor_login' # Redirect to login page
+        # Do NOT set 'current_page' key here, rely on the main app structure to handle the missing login state
         st.rerun()
         return
         
     if not st.session_state.get('company_id'):
         st.error("Session missing Company ID. Please log in again.")
-        st.session_state['current_page'] = 'visitor_login'
+        # Do NOT set 'current_page' key here
         st.rerun()
         return
         
     # 3. Connection Test (Stops app if connection fails)
-    # This call is placed here to ensure connection is ready before rendering forms
     conn = get_fast_connection()
     if conn is None:
         return # App should already be stopped by get_fast_connection
@@ -580,15 +577,10 @@ def render_visitor_registration():
     
 
 if __name__ == "__main__":
-    # --- Mock login state for direct file testing (Remove in production environment) ---
+    # --- Mock login state for testing ---
+    # We explicitly remove the setting of 'current_page' here.
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = True
         st.session_state['company_id'] = 1 
-    
-    # FIX: Changed 'visitor_details' to 'details_page' to match the error's expectation.
-    # This assumes this file is named 'details_page.py' in a multi-page app structure.
-    if 'current_page' not in st.session_state:
-        st.session_state['current_page'] = 'details_page' 
         
-    # Renamed main function for clarity
     render_visitor_registration()
