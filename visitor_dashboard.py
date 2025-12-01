@@ -5,6 +5,7 @@ from mysql.connector import Error
 import json
 import boto3
 import traceback
+from time import sleep
 
 # ==============================================================================
 # 1. CONFIGURATION & CREDENTIALS (Must match visitor_login.py)
@@ -15,30 +16,34 @@ DEFAULT_DB_PORT = 3306
 
 @st.cache_resource
 def get_db_credentials():
-    # Placeholder function for database credentials (using st.secrets for simplicity if AWS is complex)
-    # NOTE: In a real app, you should reuse the exact function from visitor_login.py
+    """Loads DB credentials from AWS Secrets Manager or st.secrets fallback."""
     try:
-        # Fallback to local Streamlit secrets if not running in AWS context
-        return st.secrets["mysql_db"]
+        # Fallback to local Streamlit secrets 
+        return {
+            "DB_HOST": st.secrets["mysql_db"]["host"],
+            "DB_NAME": st.secrets["mysql_db"]["database"],
+            "DB_USER": st.secrets["mysql_db"]["user"],
+            "DB_PASSWORD": st.secrets["mysql_db"]["password"],
+        }
     except KeyError:
-        # If st.secrets not configured, we halt
-        st.error("FATAL: Database credentials not found in st.secrets.")
+        st.error("FATAL: Database credentials not found in st.secrets['mysql_db'].")
         st.stop()
     except Exception as e:
-        # If using the original boto3 logic from visitor_login.py, replace this entire block 
-        # with the exact implementation from visitor_login.py
         st.error(f"FATAL: Error retrieving credentials: {e}")
         st.stop()
 
+
 @st.cache_resource
 def get_fast_connection():
+    """Returns a persistent MySQL connection object (cached by Streamlit)."""
     credentials = get_db_credentials()
+    
     try:
         conn = mysql.connector.connect(
-            host=credentials["host"],
-            user=credentials["user"],
-            password=credentials["password"],
-            database=credentials["database"],
+            host=credentials["DB_HOST"],
+            user=credentials["DB_USER"],
+            password=credentials["DB_PASSWORD"],
+            database=credentials["DB_NAME"],
             port=DEFAULT_DB_PORT,
             autocommit=True,
             connection_timeout=10,
@@ -79,8 +84,7 @@ def get_company_visitors(conn, company_id):
 
 def render_dashboard():
     """
-    Renders the main dashboard for a logged-in Admin.
-    Displays company-specific visitor data and provides navigation.
+    Renders the main dashboard for a logged-in Admin, displaying company-specific visitor data.
     """
     # 1. Enforce Admin Login State
     if not st.session_state.get('admin_logged_in'):
@@ -105,6 +109,7 @@ def render_dashboard():
     # --- Visitor Data Section ---
     st.subheader("Recent Visitor Check-Ins")
     
+    # Fetch data specific to the logged-in company
     visitor_records = get_company_visitors(conn, company_id)
 
     if visitor_records:
@@ -149,9 +154,8 @@ def render_dashboard():
                 if key in st.session_state:
                     del st.session_state[key]
             
-            # Navigate back to the login page
+            # Navigate back to the login page and ensure the auth view resets
             st.session_state['current_page'] = 'visitor_login'
-            # Also reset the internal view state of the login page
             if 'visitor_auth_view' in st.session_state:
                 del st.session_state['visitor_auth_view']
                 
