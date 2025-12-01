@@ -3,17 +3,27 @@ import os
 import base64
 
 # --- Configuration ---
+# Assuming these constants are defined globally or passed via session state
+# If this file is imported by app.py, these keys must match those in app.py
+PAGE_V_LOGIN = 'visitor_login'
+PAGE_C_LOGIN = 'conference_login'
+
 LOGO_PATH = r"zodopt.png"
-LOGO_PLACEHOLDER_TEXT = "zodopt"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" # Primary Color
+
+# --- Navigation Helper ---
+# Abstracted navigation logic for cleaner event handling
+def navigate_to(page_key: str):
+    """Updates the session state to change the currently rendered page."""
+    st.session_state['current_page'] = page_key
+    st.rerun()
 
 # Utility function to convert image to base64 for embedding
 def _get_image_base64(path):
     """Converts a local image file to a base64 string for embedding in HTML/CSS."""
+    # In a real environment, this would read the file.
+    # Since the file is not available here, we'll return an empty string.
     try:
-        # Placeholder for real file loading in Streamlit environment
-        # In a real environment, this would read the file.
-        # Since the file is not available here, we'll return an empty string.
         if os.path.exists(path):
             with open(path, "rb") as image_file:
                 return base64.b64encode(image_file.read()).decode()
@@ -22,39 +32,17 @@ def _get_image_base64(path):
     except Exception:
         return ""
 
-# To ensure the Streamlit app runs without errors in this context, 
-# we need to initialize session state if it doesn't exist.
-if 'current_page' not in st.session_state:
-    st.session_state['current_page'] = 'main'
-
-# Placeholder functions for navigation (required for st.rerun to work)
-def visitor_login():
-    st.title("Visitor Login Page (Placeholder)")
-    if st.button("Go Back"):
-        st.session_state['current_page'] = 'main'
-        st.rerun()
-
-def conference_login():
-    st.title("Conference Login Page (Placeholder)")
-    if st.button("Go Back"):
-        st.session_state['current_page'] = 'main'
-        st.rerun()
-
 def render_main_screen():
     
     # Define a consistent horizontal padding for content inside the full-width layout
     APP_PADDING_X = "2rem" 
     
     # 1. Inject Custom CSS 🎨
+    # NOTE: The global overrides for .stApp .main .block-container should ideally be 
+    # injected once in the main app.py, but are included here for modularity.
     st.markdown(f"""
     <style>
     /* Global Streamlit Overrides */
-    html, body {{
-        margin-top: 0 !important;
-        padding-top: 0 !important;
-        overflow-x: hidden; /* Prevent horizontal scrollbar */
-        font-family: 'Segoe UI', sans-serif;
-    }}
     .stApp .main {{
         padding-top: 0px !important; 
         margin-top: 0px !important;
@@ -62,29 +50,26 @@ def render_main_screen():
     .stApp > header {{ visibility: hidden; }}
     
     /* CRITICAL: Overrides to force full screen width and remove default margins/padding */
-    /* This merges the content with the screen edges and removes the sidebar spacer */
     .stApp .main .block-container, 
     .css-18e3th9, 
     .css-1rq2lgs {{ 
         padding: 0 !important;
-        max-width: 100% !important; /* Force to full width */
+        max-width: 100% !important; 
         margin: 0 !important;
     }}
     
-    /* Header Box (Style Matches Reference) */
+    /* Header Box */
     .header-box {{
         background: {HEADER_GRADIENT};
-        /* Use internal padding now that container is full width */
         padding: 20px {APP_PADDING_X}; 
         margin-top: 0px; 
         margin-bottom: 40px;
-        border-radius: 0; /* Remove radius to ensure sharp top edges */
         box-shadow: 0 4px 15px rgba(0,0,0,0.25);
         display: flex;
         justify-content: space-between;
         align-items: center;
-        width: 100%; /* Now that the container is full width, this is natural */
-        margin: 0; /* Remove any previous negative margins */
+        width: 100%;
+        margin: 0;
     }}
     
     .header-title {{
@@ -96,7 +81,7 @@ def render_main_screen():
         margin: 0;
     }}
 
-    /* NEW: Card container styling */
+    /* Card container styling */
     .dashboard-card-container {{
         background: white;
         border-radius: 12px;
@@ -106,11 +91,11 @@ def render_main_screen():
         display: flex;
         flex-direction: column;
         align-items: center;
-        min-height: 250px;
+        min-height: 280px; /* Slightly increased height to accommodate text */
         margin-bottom: 20px;
     }}
 
-    /* NEW: Icon styling */
+    /* Icon styling */
     .new-icon-circle {{
         width: 120px;
         height: 120px;
@@ -127,17 +112,29 @@ def render_main_screen():
     .conference-icon-gradient {{
         background: linear-gradient(135deg, #10b48a, #0d7056); /* Green gradient */
     }}
+    
+    .card-title {{
+        font-size: 24px;
+        font-weight: 700;
+        color: #333;
+        margin-bottom: 10px;
+    }}
+    .card-description {{
+        font-size: 16px;
+        color: #666;
+        margin-bottom: 20px;
+    }}
 
-    /* FIX: Streamlit Button Style (Matching Header Color) */
+    /* FIX: Streamlit Button Style */
     .stButton > button {{
-        background: {HEADER_GRADIENT} !important; /* MATCH HEADER GRADIENT */
+        background: {HEADER_GRADIENT} !important; 
         color: white !important;
         border: none !important;
         border-radius: 8px !important;
         padding: 15px 20px !important;
         font-size: 18px !important;
         font-weight: 600 !important;
-        box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4) !important; /* Shadow using main color */
+        box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4) !important; 
         width: 100% !important;
         margin-top: 15px;
         transition: all 0.2s ease-in-out;
@@ -151,8 +148,7 @@ def render_main_screen():
     """, unsafe_allow_html=True)
 
 
-    # 2. HEADER (Logo Inside Container) 🖼️
-    
+    # 2. HEADER 🖼️
     logo_html = f'<img src="data:image/png;base64,{_get_image_base64(LOGO_PATH)}" class="header-logo-img" style="height: 50px; border-radius: 8px;">'
 
     st.markdown(
@@ -166,43 +162,57 @@ def render_main_screen():
     )
 
     # 3. CARDS and BUTTONS
-    # We wrap the columns in a div to manually reintroduce the horizontal padding
-    st.markdown(f'<div style="padding: 0 {APP_PADDING_X}; margin-top: 1.5rem;">', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns(2)
+    # Use a Streamlit container to manage the main content area padding
+    with st.container():
+        # Apply padding via CSS in a markdown block for the container
+        st.markdown(f'<div style="padding: 0 {APP_PADDING_X}; margin-top: 1.5rem;">', unsafe_allow_html=True)
+        
+        col1, col2 = st.columns(2)
 
-    # --- Visit Plan Card and Button ---
-    with col1:
-        st.markdown(
-            """
-            <div class="dashboard-card-container">
-                <div class="new-icon-circle visitplan-icon-gradient">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-calendar"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+        # --- Visit Plan Card and Button ---
+        with col1:
+            st.markdown(
+                """
+                <div class="dashboard-card-container">
+                    <div class="new-icon-circle visitplan-icon-gradient">
+                        <!-- Feather icon for Calendar/Visit -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-calendar"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    </div>
+                    <div class="card-title">Plan Your Visit</div>
+                    <div class="card-description">
+                        Check-in for your pre-booked visit, verify your identity, and view your schedule.
+                    </div>
                 </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        if st.button("VISITPLAN", key="visit_plan_btn", use_container_width=True):
-            st.session_state['current_page'] = 'visitor_login'
-            st.rerun()
+                """,
+                unsafe_allow_html=True
+            )
+            # Use the abstracted navigate_to function
+            if st.button("VISIT CHECK-IN", key="visit_plan_btn", use_container_width=True):
+                navigate_to(PAGE_V_LOGIN)
 
-    # --- Conference Booking Card and Button ---
-    with col2:
-        st.markdown(
-            """
-            <div class="dashboard-card-container">
-                <div class="new-icon-circle conference-icon-gradient">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-book-open"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path></svg>
+        # --- Conference Booking Card and Button ---
+        with col2:
+            st.markdown(
+                """
+                <div class="dashboard-card-container">
+                    <div class="new-icon-circle conference-icon-gradient">
+                        <!-- Feather icon for Conference/Booking -->
+                        <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-briefcase"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
+                    </div>
+                    <div class="card-title">Manage Conferences</div>
+                    <div class="card-description">
+                        Login as an administrator to manage room bookings and view staff schedules.
+                    </div>
                 </div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-        if st.button("CONFERENCE BOOKING", key="conference_booking_btn", use_container_width=True):
-            st.session_state['current_page'] = 'conference_login'
-            st.rerun()
-            
-    # Close the content wrapper div
-    st.markdown('</div>', unsafe_allow_html=True)
+                """,
+                unsafe_allow_html=True
+            )
+            # Use the abstracted navigate_to function
+            if st.button("CONFERENCE ADMIN", key="conference_booking_btn", use_container_width=True):
+                navigate_to(PAGE_C_LOGIN)
+                
+        # Close the content wrapper div
+        st.markdown('</div>', unsafe_allow_html=True)
 
+# NOTE: The execution guard below is removed as this file is intended to be imported as a module.
+# The main application logic resides in app.py.
