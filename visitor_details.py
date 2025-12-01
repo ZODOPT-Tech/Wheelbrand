@@ -24,7 +24,7 @@ DEFAULT_DB_PORT = 3306
 def get_db_credentials():
     """Retrieves database credentials ONLY from AWS Secrets Manager."""
     
-    st.info("Attempting to retrieve DB credentials from AWS Secrets Manager...")
+    # NOTE: Debug messages removed to prevent cluttering the deployed UI.
     
     try:
         client = boto3.client('secretsmanager', region_name=AWS_REGION)
@@ -43,7 +43,6 @@ def get_db_credentials():
         if not all(key in secret_dict for key in required_keys):
             raise KeyError("Missing required DB keys (DB_HOST, DB_NAME, etc.) in the AWS secret.")
 
-        st.success("Successfully retrieved DB credentials from AWS.")
         return {
             "DB_HOST": secret_dict["DB_HOST"],
             "DB_NAME": secret_dict["DB_NAME"],
@@ -80,6 +79,7 @@ def get_fast_connection():
         )
         return conn
     except EnvironmentError:
+        # Error already logged in get_db_credentials
         st.stop()
     except Error as err:
         error_msg = f"FATAL: MySQL Connection Error: Cannot connect. Details: {err.msg}"
@@ -283,6 +283,18 @@ def render_primary_details_form():
     
     with st.container(border=False):
         
+        # --- BUTTON LOGIC (Reset button MUST be outside st.form) ---
+        col_reset_check, col_spacer_check, col_next_check = st.columns([1, 2, 1])
+        
+        with col_reset_check:
+            reset_clicked = st.button("Reset", use_container_width=True, key="reset_primary")
+
+        if reset_clicked:
+            for key in ['name', 'phone', 'email']:
+                st.session_state['visitor_data'].pop(key, None)
+            st.rerun()
+        # -------------------------------------------------------------
+        
         with st.form("primary_details_form", clear_on_submit=False):
             st.markdown("### Primary Details")
             
@@ -308,20 +320,12 @@ def render_primary_details_form():
             email = st.text_input("Email", key="email_input", placeholder="your.email@example.com", 
                                      value=st.session_state['visitor_data'].get('email', ''), label_visibility="collapsed")
 
-            # Submit/Next and Reset buttons
-            col_reset, col_spacer, col_next = st.columns([1, 2, 1])
-            
-            with col_reset:
-                reset_clicked = st.button("Reset", use_container_width=True, key="reset_primary")
+            # Submit/Next Button Container (Now inside the form)
+            col_spacer, col_next = st.columns([3, 1])
             
             with col_next:
+                # ONLY st.form_submit_button is allowed inside st.form
                 submitted = st.form_submit_button("Next →", use_container_width=True)
-            
-            # --- Logic check for Reset ---
-            if reset_clicked:
-                for key in ['name', 'phone', 'email']:
-                    st.session_state['visitor_data'].pop(key, None)
-                st.rerun()
 
             # --- Logic check for Submission (Next) ---
             if submitted:
@@ -481,6 +485,13 @@ def render_details_page():
         st.session_state['current_page'] = 'visitor_login'
         st.rerun()
         return
+    
+    # Check for Company ID which is set during login
+    if not st.session_state.get('company_id'):
+        st.error("Session missing Company ID. Please log in again.")
+        st.session_state['current_page'] = 'visitor_login'
+        st.rerun()
+        return
         
     # 2. Initialize session state
     initialize_session_state() 
@@ -499,6 +510,7 @@ def render_details_page():
     
 
 if __name__ == "__main__":
+    # Simulate a logged-in state for direct testing
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = True
         st.session_state['company_id'] = 1 
