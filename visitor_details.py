@@ -5,18 +5,22 @@ import mysql.connector
 from datetime import datetime
 from mysql.connector import Error
 
-# --- CONFIGURATION & STATE SETUP ---
-# Initialize session state keys for DB connection, assuming they are set in main.py
-if 'registration_step' not in st.session_state:
-    st.session_state['registration_step'] = 'primary'
-if 'visitor_data' not in st.session_state:
-    st.session_state['visitor_data'] = {}
-# ASSUMPTION: The company ID for the login session is available here.
-if 'company_id' not in st.session_state:
-    # Use a dummy ID if not logged in; replace with actual logic in login flow
-    st.session_state['company_id'] = 1 
-    
-LOGO_PATH = "zodopt.png"  # Placeholder path
+# Placeholder path
+LOGO_PATH = "zodopt.png"  
+
+# --- CONFIGURATION & STATE SETUP FUNCTION (FIXED) ---
+
+def initialize_session_state():
+    """Initializes all necessary session state variables if they do not exist."""
+    # Ensure all required state variables are set before accessing them
+    if 'registration_step' not in st.session_state:
+        st.session_state['registration_step'] = 'primary'
+    if 'visitor_data' not in st.session_state:
+        st.session_state['visitor_data'] = {}
+    # ASSUMPTION: The company ID for the login session is available here.
+    if 'company_id' not in st.session_state:
+        # Use a dummy ID if not logged in; replace with actual logic in login flow
+        st.session_state['company_id'] = 1
 
 # --- DATABASE CONNECTION & SERVICE ---
 
@@ -392,7 +396,8 @@ def render_secondary_details_form():
 def render_details_page():
     """Main function to run the multi-step visitor registration form."""
     
-    # Initialization safeguard is already at the top
+    # 1. Initialize session state at the entry point to prevent KeyError
+    initialize_session_state() 
     
     render_header(st.session_state['registration_step'])
 
