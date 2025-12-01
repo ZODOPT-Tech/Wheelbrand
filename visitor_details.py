@@ -4,11 +4,98 @@ from pathlib import Path
 import mysql.connector
 from datetime import datetime
 from mysql.connector import Error
+import json
+import boto3
+from botocore.exceptions import ClientError
+import traceback
 
 # Placeholder path
 LOGO_PATH = "zodopt.png"  
 
-# --- CONFIGURATION & STATE SETUP FUNCTION (FIXED) ---
+# ==============================================================================
+# 1. CONFIGURATION & CREDENTIALS (AWS Integration - Duplicated for self-contained file)
+# ==============================================================================
+
+AWS_REGION = "ap-south-1" 
+AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
+DEFAULT_DB_PORT = 3306
+
+@st.cache_resource(ttl=3600) 
+def get_db_credentials():
+    """Retrieves database credentials ONLY from AWS Secrets Manager."""
+    
+    st.info("Attempting to retrieve DB credentials from AWS Secrets Manager...")
+    
+    try:
+        # Boto3 automatically uses the EC2 Instance Profile credentials
+        client = boto3.client('secretsmanager', region_name=AWS_REGION)
+        
+        get_secret_value_response = client.get_secret_value(
+            SecretId=AWS_SECRET_NAME
+        )
+        
+        if 'SecretString' not in get_secret_value_response:
+            raise ValueError("SecretString is missing in the AWS response.")
+            
+        secret = get_secret_value_response['SecretString']
+        secret_dict = json.loads(secret)
+        
+        # Verify and return the dictionary structure
+        required_keys = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]
+        if not all(key in secret_dict for key in required_keys):
+            raise KeyError("Missing required DB keys (DB_HOST, DB_NAME, etc.) in the AWS secret.")
+
+        st.success("Successfully retrieved DB credentials from AWS.")
+        return {
+            "DB_HOST": secret_dict["DB_HOST"],
+            "DB_NAME": secret_dict["DB_NAME"],
+            "DB_USER": secret_dict["DB_USER"],
+            "DB_PASSWORD": secret_dict["DB_PASSWORD"],
+        }
+        
+    except ClientError as e:
+        error_msg = f"AWS Secrets Manager API Error ({e.response['Error']['Code']}): Check IAM Role and ARN."
+        st.error(error_msg)
+        raise EnvironmentError(error_msg)
+    except Exception as e:
+        error_msg = f"FATAL: Credential Retrieval Failure: {e}"
+        st.error(error_msg)
+        raise EnvironmentError(error_msg)
+
+@st.cache_resource(ttl=None) 
+def get_fast_connection():
+    """
+    Returns a persistent MySQL connection object by fetching credentials from AWS.
+    This function will now halt the app if credential retrieval fails.
+    """
+    try:
+        credentials = get_db_credentials()
+        
+        conn = mysql.connector.connect(
+            host=credentials["DB_HOST"],
+            user=credentials["DB_USER"],
+            password=credentials["DB_PASSWORD"],
+            database=credentials["DB_NAME"],
+            port=DEFAULT_DB_PORT,
+            autocommit=True,
+            connection_timeout=10,
+        )
+        return conn
+    except EnvironmentError:
+        # get_db_credentials already logged error and raised EnvironmentError
+        st.stop()
+    except Error as err:
+        error_msg = f"FATAL: MySQL Connection Error: Cannot connect. Details: {err.msg}"
+        st.error(error_msg)
+        st.stop()
+    except Exception as e:
+        error_msg = f"FATAL: Unexpected Connection Error: {e}"
+        st.error(error_msg)
+        st.stop()
+
+# ==============================================================================
+# 2. CONFIGURATION & STATE SETUP
+# ==============================================================================
 
 def initialize_session_state():
     """Initializes all necessary session state variables if they do not exist."""
@@ -18,28 +105,17 @@ def initialize_session_state():
         st.session_state['visitor_data'] = {}
     # Ensure company_id exists (it is set by visitor_login.py)
     if 'company_id' not in st.session_state:
-        st.session_state['company_id'] = 1
+        # Fallback only if running visitor_details.py directly without login flow
+        st.session_state['company_id'] = 1 
 
-# --- DATABASE CONNECTION & SERVICE ---
-
-def get_db_connection():
-    """Establishes a connection to the MySQL database using Streamlit secrets."""
-    try:
-        # NOTE: This relies on st.secrets being configured with mysql_db credentials
-        conn = mysql.connector.connect(
-            host=st.secrets["mysql_db"]["host"],
-            database=st.secrets["mysql_db"]["database"],
-            user=st.secrets["mysql_db"]["user"],
-            password=st.secrets["mysql_db"]["password"]
-        )
-        return conn
-    except Error as e:
-        st.error(f"Database Connection Error: Could not connect to MySQL. Details: {e}")
-        return None
+# ==============================================================================
+# 3. DATABASE INTERACTION & SERVICE
+# ==============================================================================
 
 def save_visitor_data_to_db(data):
     """Saves the complete visitor registration data to the MySQL database."""
-    conn = get_db_connection()
+    
+    conn = get_fast_connection() # Use the integrated AWS connection
     if conn is None:
         return False
     
@@ -96,14 +172,17 @@ def save_visitor_data_to_db(data):
         return False
     finally:
         cursor.close()
-        conn.close()
+        # NOTE: Do NOT close 'conn' if it's managed by st.cache_resource
+        pass 
 
 
-# --- HELPER FUNCTIONS (CSS and Header) ---
+# ==============================================================================
+# 4. HELPER FUNCTIONS (CSS and Header)
+# ==============================================================================
 
 def img_to_base64(img_path):
-    """Converts an image file to a base64 string for CSS embedding."""
-    return None 
+    """Converts a local image file to a base64 string for CSS embedding."""
+    return "" 
 
 def render_custom_styles():
     """Applies custom CSS for the header banner and buttons."""
@@ -203,7 +282,9 @@ def render_header(current_step):
         unsafe_allow_html=True
     )
 
-# --- Step 1: Primary Details Form ---
+# ==============================================================================
+# 5. STEP 1: Primary Details Form
+# ==============================================================================
 
 def render_primary_details_form():
     """Renders the Name, Phone, and Email form fields."""
@@ -255,7 +336,9 @@ def render_primary_details_form():
                         st.session_state['registration_step'] = 'secondary'
                         st.rerun()
 
-# --- Step 2: Secondary Details Form ---
+# ==============================================================================
+# 6. STEP 2: Secondary Details Form
+# ==============================================================================
 
 def render_secondary_details_form():
     """Renders the Other Details form fields and handles final submission to DB."""
@@ -391,7 +474,9 @@ def render_secondary_details_form():
                     # Rerunning even on failure to clear form submission state/update messages
                     st.rerun() 
 
-# --- Main Application Logic ---
+# ==============================================================================
+# 7. Main Application Logic
+# ==============================================================================
 
 def render_details_page():
     """Main function to run the multi-step visitor registration form."""
@@ -414,7 +499,11 @@ def render_details_page():
     elif st.session_state['registration_step'] == 'secondary':
         render_secondary_details_form()
     
-    # The 'complete' block is removed as the app now redirects to the dashboard directly.
 
 if __name__ == "__main__":
+    # Simulate a logged-in state for direct testing
+    if 'admin_logged_in' not in st.session_state:
+        st.session_state['admin_logged_in'] = True
+        st.session_state['company_id'] = 1 
+        
     render_details_page()
