@@ -131,12 +131,10 @@ def render_identity_page():
                     st.success("Check-In Complete! You are registered.")
                     st.balloons()
                     
-                    # Navigate to the dashboard or a completion page defined in main.py
+                    # Navigate to the dashboard (or completion page) defined in main.py
                     st.session_state['current_page'] = 'visitor_dashboard'
                     st.rerun()
                 elif not st.session_state.agree_terms:
                     st.error("You must agree to the Terms and Conditions to proceed.")
                 else:
                     st.error("Please capture your photo to complete registration.")
-
-# Note: The main application logic will be handled by your 'main.py' file.
