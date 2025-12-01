@@ -9,6 +9,61 @@ from datetime import datetime, timedelta
 import traceback
 
 # ==============================================================================
+# 0. HEADER RENDERING
+# ==============================================================================
+def render_header(company_id=None):
+    """Renders a professional header similar to the ZODOPT banner, including the logged-in company info."""
+    
+    st.markdown(
+        """
+        <style>
+            @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@600;800&display=swap');
+            
+            .zodopt-header {
+                background: linear-gradient(to right, #4A148C, #8C2CFE); /* Purple to Blue Gradient */
+                color: white;
+                padding: 15px 20px;
+                border-radius: 10px;
+                margin-bottom: 5px; /* Reduced margin before company info */
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            }
+            .zodopt-title-text {
+                font-family: 'Poppins', sans-serif;
+                font-size: 24px;
+                font-weight: 800; /* Extra bold for primary text */
+                letter-spacing: 1px;
+                margin: 0;
+            }
+            .zodopt-logo-text {
+                font-family: 'Poppins', sans-serif;
+                font-size: 24px;
+                font-weight: 600; /* Semi-bold for logo text */
+                letter-spacing: 0.5px;
+            }
+            .zodopt-logo-red { color: #FF4B4B; }
+            .zodopt-logo-blue { color: #4059A1; }
+            
+            /* Overriding Streamlit's default header margin */
+            .stApp > header { display: none; }
+        </style>
+        <div class="zodopt-header">
+            <h1 class="zodopt-title-text">VISITOR DASHBOARD</h1>
+            <div class="zodopt-logo-text">
+                <span class="zodopt-logo-red">zo</span><span class="zodopt-logo-blue">dopt</span>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+    if company_id is not None:
+        st.markdown(f"**Logged in as Admin | Company ID:** `{company_id}`", help="This dashboard displays visitor data exclusive to the logged-in Company ID.")
+        st.divider()
+
+
+# ==============================================================================
 # 1. CONFIGURATION & CREDENTIALS (AWS Integration)
 # ==============================================================================
 
@@ -88,6 +143,8 @@ def fetch_current_visitors(conn, company_id):
     """
     Fetches all visitor records for the given company_id who are currently checked in 
     (i.e., checkout_time IS NULL). Also fetches checked out visitors in the last 48 hours.
+    
+    This function ensures data isolation by querying ONLY records matching the company_id.
     """
     cursor = None
     try:
@@ -173,29 +230,27 @@ def render_dashboard():
 
     company_id = st.session_state.get('company_id')
     
-    st.title("🏛️ Visitor Management Dashboard")
-    st.markdown(f"**Company ID:** `{company_id}`") # Display for identification
+    # RENDER THE NEW PROFESSIONAL HEADER
+    render_header(company_id=company_id) 
 
     # --- Top Buttons ---
     col_new, col_refresh = st.columns([1, 4])
     with col_new:
         if st.button("➕ New Check-In", type="primary"):
             # Set the state to navigate to the Check-in page (in the main app logic)
-            st.session_state['current_page'] = 'details_page' 
+            st.session_state['current_page'] = 'visitor_details' # Changed 'details_page' to 'visitor_details' for consistency with main.py mapping
             st.rerun()
     with col_refresh:
         # Refresh button to force data reload (clears cache for fetch function)
         st.button("🔄 Refresh Data", on_click=lambda: st.cache_data.clear(), help="Click to force a fresh data fetch from the database.")
         
-    st.divider()
     st.header("Active & Recent Visitors")
 
-    # 2. Fetch Data
-    # st.cache_data is not used here to ensure dynamic updates on check-out/refresh button clicks
+    # 2. Fetch Data (Data Isolation check is inherent in fetch_current_visitors using company_id)
     visitor_data = fetch_current_visitors(conn, company_id)
 
     if visitor_data.empty:
-        st.info("No visitor records found for this company in the last 48 hours.")
+        st.info(f"No visitor records found for Company ID {company_id} in the last 48 hours.")
         return
         
     # Separate data into active and recent
@@ -219,6 +274,9 @@ def render_dashboard():
         st.markdown("---") # Separator after headers
 
         for index, row in active_visitors.iterrows():
+            # Use the visitor_id to ensure unique keys when rendering the loop
+            visitor_unique_id = row['visitor_id'] 
+
             col_id, col_name, col_meet, col_time, col_button = st.columns([0.5, 2.5, 1.5, 1.5, 1.5])
             
             # Display basic info
@@ -234,8 +292,8 @@ def render_dashboard():
             
             # Check Out Button Logic
             with col_button:
-                if st.button("🚪 Check Out", key=f"checkout_{row['visitor_id']}", type="secondary", use_container_width=True):
-                    if checkout_visitor(conn, row['visitor_id']):
+                if st.button("🚪 Check Out", key=f"checkout_{visitor_unique_id}", type="secondary", use_container_width=True):
+                    if checkout_visitor(conn, visitor_unique_id):
                         # Rerun to refresh the list and move the visitor to the 'Checked Out' section
                         st.rerun()
             st.divider()
@@ -258,7 +316,7 @@ def render_dashboard():
             
             # Rename columns for clarity
             recent_visitors_display.columns = ['ID', 'Visitor Name', 'Company', 'Met Person', 
-                                               'Check-In', 'Check-Out', 'Purpose']
+                                              'Check-In', 'Check-Out', 'Purpose']
 
             st.dataframe(
                 recent_visitors_display, 
@@ -307,9 +365,9 @@ if __name__ == "__main__":
         render_login_page()
     elif st.session_state['current_page'] == 'visitor_dashboard':
         render_dashboard()
-    elif st.session_state['current_page'] == 'details_page':
+    elif st.session_state['current_page'] == 'visitor_details': # Updated from 'details_page'
          # This block handles the redirection request to the external check-in page
-         st.info("Redirecting to the Check-In form in the 'visitor_details.py' page...")
+         st.info("Redirecting to the Check-In form in the 'visitor_details' page...")
          # Reset the state to dashboard to allow navigation back
          st.session_state['current_page'] = 'visitor_dashboard'
          # If this app were part of a multi-page Streamlit deployment, 'st.rerun()' 
