@@ -3,19 +3,16 @@ import os
 import base64
 import datetime
 
-# --- Configuration (Copied from visitor.py for consistency) ---
+# --- Configuration ---
 LOGO_PATH = "zodopt.png" 
 LOGO_PLACEHOLDER_TEXT = "zodopt"
 # Primary Color: Purple/Indigo gradient
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" 
 APP_PADDING_X = "2rem"
 
-# Initialize step state
-if 'current_step' not in st.session_state:
-    st.session_state['current_step'] = 1
-# Initialize data state to store form values across steps
-if 'visitor_data' not in st.session_state:
-    st.session_state['visitor_data'] = {}
+# NOTE: The initialization logic for 'current_step' and 'visitor_data' 
+# has been moved into render_details_page() to resolve the KeyError.
+
 
 # Utility function to convert image to base64 for embedding
 def _get_image_base64(path):
@@ -42,9 +39,9 @@ def render_navigation():
     # Generate the navigation HTML
     nav_html = '<div class="tab-navigation">'
     for step_num, label in steps.items():
+        # This check is now safe because initialization is guaranteed in render_details_page
         is_active = "active" if st.session_state['current_step'] == step_num else ""
-        # Using a div and handling clicks visually via state changes in the full app
-        # For a Streamlit component, this is the safest way to render styled tabs
+        
         nav_html += f"""
         <div class="tab-item {is_active}">
             {label}
@@ -70,9 +67,14 @@ def render_step_1_primary_details():
             # Simplified phone input, country code logic is simulated
             st.markdown("<label style='font-size: 14px; font-weight: 600;'>Phone Number *</label>", unsafe_allow_html=True)
             col_code, col_num = st.columns([1, 3])
+            
+            phone_codes = ["+91", "+1", "+44"]
+            default_phone_code = st.session_state['visitor_data'].get('phone_code', '+91')
+            default_code_index = phone_codes.index(default_phone_code) if default_phone_code in phone_codes else 0
+            
             with col_code:
-                st.selectbox("Code", options=["+91", "+1", "+44"], label_visibility="collapsed", key="reg_phone_code",
-                             index=["+91", "+1", "+44"].index(st.session_state['visitor_data'].get('phone_code', '+91')))
+                st.selectbox("Code", options=phone_codes, label_visibility="collapsed", key="reg_phone_code",
+                             index=default_code_index)
             with col_num:
                 phone_number = st.text_input("Number", key="reg_phone_number", label_visibility="collapsed", 
                                              value=st.session_state['visitor_data'].get('phone_number', ''), 
@@ -82,8 +84,6 @@ def render_step_1_primary_details():
                               value=st.session_state['visitor_data'].get('email', ''), 
                               placeholder="your.email@example.com")
         
-        # NOTE: Company Name removed from here as per request.
-
         st.markdown('<div style="margin-top: 30px; text-align: right;">', unsafe_allow_html=True)
         if st.form_submit_button("Next →", type="primary"):
             # Required fields validation (All are mandatory now)
@@ -108,7 +108,7 @@ def render_step_2_secondary_details():
     with st.form("step_2_form"):
         st.markdown("<p style='font-size: 16px; color: #555; margin-bottom: 20px;'>Details regarding your organization and visit plan.</p>", unsafe_allow_html=True)
         
-        # **NEW: Company Name is now here**
+        # Company Name is now here
         company = st.text_input("Company Name *", key="reg_company", 
                                 value=st.session_state['visitor_data'].get('company', ''))
         
@@ -117,14 +117,23 @@ def render_step_2_secondary_details():
         
         # Visit Type and Purpose
         col_type, col_purpose = st.columns(2)
+
+        visit_type_options = ["Business", "Interview", "Delivery", "Personal"]
+        default_visit_type = st.session_state['visitor_data'].get('visit_type', 'Business')
+        default_visit_type_index = visit_type_options.index(default_visit_type) if default_visit_type in visit_type_options else 0
+        
+        purpose_options = ["Project Review", "Meeting", "Inspection", "Other"]
+        default_purpose = st.session_state['visitor_data'].get('purpose', 'Project Review')
+        default_purpose_index = purpose_options.index(default_purpose) if default_purpose in purpose_options else 0
+        
         with col_type:
-             visit_type = st.selectbox("Visit Type *", options=["Business", "Interview", "Delivery", "Personal"], 
+             visit_type = st.selectbox("Visit Type *", options=visit_type_options, 
                                       key="reg_visit_type", 
-                                      index=["Business", "Interview", "Delivery", "Personal"].index(st.session_state['visitor_data'].get('visit_type', 'Business')))
+                                      index=default_visit_type_index)
         with col_purpose:
-            purpose = st.selectbox("Purpose *", options=["Project Review", "Meeting", "Inspection", "Other"],
+            purpose = st.selectbox("Purpose *", options=purpose_options,
                                   key="reg_purpose_visit", 
-                                  index=["Project Review", "Meeting", "Inspection", "Other"].index(st.session_state['visitor_data'].get('purpose', 'Project Review')))
+                                  index=default_purpose_index)
             
         # Dates
         col_arrival, col_departure = st.columns(2)
@@ -211,8 +220,7 @@ def render_step_3_identity():
 
         with col_submit:
             if st.form_submit_button("Finalize & Register", type="primary"):
-                # Check that final steps (photo/ID) are completed (simplified check for now)
-                # We need to explicitly check if the file_uploader and camera_input keys have values
+                # Check that final steps (photo/ID) are completed
                 is_photo_uploaded = st.session_state.get('reg_photo') is not None
                 is_id_uploaded = st.session_state.get('reg_id_upload') is not None
                 
@@ -231,7 +239,13 @@ def render_step_3_identity():
 def render_details_page():
     """Renders the main Visitor Registration page with header and multi-step form."""
     
-    # --- 1. Custom CSS for Styling ---
+    # --- 1. ENSURE STATE INITIALIZATION HERE TO PREVENT KEYERROR ---
+    if 'current_step' not in st.session_state:
+        st.session_state['current_step'] = 1
+    if 'visitor_data' not in st.session_state:
+        st.session_state['visitor_data'] = {}
+    
+    # --- 2. Custom CSS for Styling ---
     st.markdown(f"""
     <style>
     /* Global Streamlit Overrides to ensure full width and no margins */
@@ -367,7 +381,7 @@ def render_details_page():
     </style>
     """, unsafe_allow_html=True)
 
-    # --- 2. Header ---
+    # --- 3. Header ---
     header_title = "VISITOR REGISTRATION"
     logo_base64 = _get_image_base64(LOGO_PATH)
     if logo_base64:
@@ -385,13 +399,12 @@ def render_details_page():
         unsafe_allow_html=True
     )
     
-    # --- 3. Navigation Tabs ---
-    # The header bar from the image has the tabs right below it, without extra padding
+    # --- 4. Navigation Tabs ---
     st.markdown(f'<div style="padding: 0;">', unsafe_allow_html=True)
     render_navigation()
     st.markdown('</div>', unsafe_allow_html=True)
     
-    # --- 4. Content Area & Form Rendering ---
+    # --- 5. Content Area & Form Rendering ---
     
     # Wrap form in the styled container and apply padding here
     st.markdown('<div class="details-form-container">', unsafe_allow_html=True)
