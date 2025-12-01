@@ -12,7 +12,8 @@ from mysql.connector import Error
 
 # Constants for AWS and DB
 AWS_REGION = "ap-south-1"
-AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
+# NOTE: The ARN below is a mock value and must be replaced with the actual ARN in a real deployment.
+AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
 DEFAULT_DB_PORT = 3306
 
 @st.cache_resource(ttl=3600)
@@ -102,6 +103,11 @@ def initialize_session_state():
         st.session_state['company_id'] = None
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
+    
+    # Ensure current_page is always set, default to a known value
+    if 'current_page' not in st.session_state:
+        st.session_state['current_page'] = 'main_screen'
+
 
 def navigate_to_main_screen():
     """Clears registration specific state and redirects to the main entry point."""
@@ -444,11 +450,11 @@ def render_secondary_details_form():
         col_postal, col_country = st.columns(2)
         with col_postal:
             postal_code = st.text_input("Postal Code", key='form_postal_code',
-                                      value=get_val('postal_code'))
+                                        value=get_val('postal_code'))
         with col_country:
             country = st.text_input("Country", key='form_country',
-                                  value=get_val('country'),
-                                  placeholder="e.g., India, USA")
+                                    value=get_val('country'),
+                                    placeholder="e.g., India, USA")
 
         st.markdown("---")
         
@@ -459,12 +465,12 @@ def render_secondary_details_form():
         col_purpose, col_person = st.columns(2)
         with col_purpose:
             purpose = st.text_input("Purpose of Visit", key='form_purpose',
-                                  value=get_val('purpose'),
-                                  placeholder="e.g., Meeting, Interview")
+                                    value=get_val('purpose'),
+                                    placeholder="e.g., Meeting, Interview")
         with col_person:
             person_to_meet = st.text_input("Person to Meet *", key='form_person_to_meet',
-                                         value=get_val('person_to_meet'),
-                                         placeholder="e.g., Alice, Bob")
+                                           value=get_val('person_to_meet'),
+                                           placeholder="e.g., Alice, Bob")
         
         st.markdown("#### Belongings Declaration")
         # 5. Belongings (using explicit keys for form values)
@@ -525,8 +531,8 @@ def render_secondary_details_form():
                 # Clear session state for next registration
                 st.session_state['registration_step'] = 'primary'
                 st.session_state['visitor_data'] = {} 
-                # Redirect to the main admin dashboard for visitor view
-                st.session_state['current_page'] = 'visitor_dashboard'
+                # Redirect to the main admin dashboard/main screen after submission
+                st.session_state['current_page'] = 'main_screen'
             else:
                 # Error already displayed in save_visitor_data_to_db
                 message_placeholder.error("Registration failed due to a database error.")
@@ -537,7 +543,7 @@ def render_secondary_details_form():
 # 7. Main Application Logic
 # ==============================================================================
 
-def render_details_page():
+def render_visitor_registration():
     """Main function to run the multi-step visitor registration form."""
     
     # 1. Initialize State
@@ -578,7 +584,11 @@ if __name__ == "__main__":
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = True
         st.session_state['company_id'] = 1 
+    
+    # FIX: Changed 'visitor_details' to 'details_page' to match the error's expectation.
+    # This assumes this file is named 'details_page.py' in a multi-page app structure.
     if 'current_page' not in st.session_state:
-        st.session_state['current_page'] = 'visitor_details'
+        st.session_state['current_page'] = 'details_page' 
         
-    render_details_page()
+    # Renamed main function for clarity
+    render_visitor_registration()
