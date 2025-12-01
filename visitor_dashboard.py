@@ -173,7 +173,7 @@ def render_dashboard():
     col_new, col_refresh = st.columns([1, 4])
     with col_new:
         if st.button("➕ New Check-In", type="primary"):
-            st.session_state['current_page'] = 'details_page' # Assuming render_details_page is linked
+            st.session_state['current_page'] = 'details_page' # This page key is handled by the main app logic
             st.rerun()
     with col_refresh:
         # Refresh button to force data reload
@@ -254,26 +254,31 @@ def render_login_page():
         if username == "admin" and password == "123": # Dummy credentials
             st.session_state['admin_logged_in'] = True
             st.session_state['company_id'] = 1 # Set a dummy company ID
-            st.session_state['current_page'] = 'visitor_dashboard'
+            st.session_state['current_page'] = 'visitor_dashboard' # Correct key for dashboard
             st.rerun()
         else:
             st.error("Invalid credentials.")
 
 # --- Main App Logic ---
 if __name__ == "__main__":
+    # Ensure current_page is initialized and defaults to a known state
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
         st.session_state['current_page'] = 'visitor_login'
     if 'company_id' not in st.session_state:
         st.session_state['company_id'] = 1 # Default for testing
 
+    # Use a clear mapping for navigation
     if st.session_state['current_page'] == 'details_page':
-        # Assuming visitor_details.py's function is available via import or is defined elsewhere
-        # Since this is a self-contained example, we can't import, so we assume the main runner 
-        # handles the routing. For this file, we only define the dashboard.
-        st.warning("Please integrate this logic with the main app router to call render_details_page.")
+        # This page is handled by visitor_details.py, so we warn the user 
+        # but stick with the current view (dashboard) for self-containment.
+        st.warning("Action: Navigate to 'visitor_details.py' to render the check-in form.")
         render_dashboard() 
     elif st.session_state['current_page'] == 'visitor_login':
         render_login_page()
+    elif st.session_state['current_page'] == 'visitor_dashboard': # Use the correct key here
+        render_dashboard()
     else:
+        # Default fallback for any undefined key
+        st.session_state['current_page'] = 'visitor_dashboard'
         render_dashboard()
