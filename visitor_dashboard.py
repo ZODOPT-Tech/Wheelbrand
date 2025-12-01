@@ -7,13 +7,11 @@ import boto3
 from botocore.exceptions import ClientError
 from datetime import datetime, timedelta
 import traceback
-from time import sleep
 
 # ==============================================================================
-# 1. CONFIGURATION & CREDENTIALS (AWS Integration)
+# 1. CONFIGURATION & CREDENTIALS (AWS Integration) - COPIED FROM visitor_details.py
 # ==============================================================================
 
-# NOTE: Ensure these values exactly match your AWS Secrets Manager setup.
 AWS_REGION = "ap-south-1" 
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
 DEFAULT_DB_PORT = 3306
@@ -21,36 +19,27 @@ DEFAULT_DB_PORT = 3306
 @st.cache_resource(ttl=3600) 
 def get_db_credentials():
     """Retrieves database credentials ONLY from AWS Secrets Manager."""
-    
-    st.info("Attempting to retrieve DB credentials from AWS Secrets Manager...")
-    
     try:
-        # Boto3 automatically uses the EC2 Instance Profile credentials
         client = boto3.client('secretsmanager', region_name=AWS_REGION)
-        
         get_secret_value_response = client.get_secret_value(
             SecretId=AWS_SECRET_NAME
         )
-        
-        if 'SecretString' not in get_secret_value_response:
+        secret = get_secret_value_response.get('SecretString')
+        if not secret:
             raise ValueError("SecretString is missing in the AWS response.")
             
-        secret = get_secret_value_response['SecretString']
         secret_dict = json.loads(secret)
-        
-        # Verify and return the dictionary structure
         required_keys = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]
         if not all(key in secret_dict for key in required_keys):
             raise KeyError("Missing required DB keys (DB_HOST, DB_NAME, etc.) in the AWS secret.")
 
-        st.success("Successfully retrieved DB credentials from AWS.")
+        # st.success("Successfully retrieved DB credentials from AWS.")
         return {
             "DB_HOST": secret_dict["DB_HOST"],
             "DB_NAME": secret_dict["DB_NAME"],
             "DB_USER": secret_dict["DB_USER"],
             "DB_PASSWORD": secret_dict["DB_PASSWORD"],
         }
-        
     except ClientError as e:
         error_msg = f"AWS Secrets Manager API Error ({e.response['Error']['Code']}): Check IAM Role and ARN."
         st.error(error_msg)
@@ -62,13 +51,9 @@ def get_db_credentials():
 
 @st.cache_resource(ttl=None) 
 def get_fast_connection():
-    """
-    Returns a persistent MySQL connection object by fetching credentials from AWS.
-    This function will now halt the app if credential retrieval fails.
-    """
+    """Returns a persistent MySQL connection object."""
     try:
         credentials = get_db_credentials()
-        
         conn = mysql.connector.connect(
             host=credentials["DB_HOST"],
             user=credentials["DB_USER"],
@@ -80,214 +65,215 @@ def get_fast_connection():
         )
         return conn
     except EnvironmentError:
-        # st.stop() is handled inside get_db_credentials if it raises EnvironmentError
         return None
     except Error as err:
-        error_msg = f"FATAL: MySQL Connection Error: Cannot connect. Details: {err.msg}"
-        st.error(error_msg)
+        st.error(f"FATAL: MySQL Connection Error: Cannot connect. Details: {err.msg}")
         st.stop()
     except Exception as e:
-        error_msg = f"FATAL: Unexpected Connection Error: {e}"
-        st.error(error_msg)
+        st.error(f"FATAL: Unexpected Connection Error: {e}")
         st.stop()
 
 # ==============================================================================
-# 2. DB INTERACTION FUNCTIONS (UPDATED)
+# 2. DB INTERACTION FUNCTIONS: FETCH & CHECKOUT
 # ==============================================================================
 
-def update_checkout_time(conn, visitor_id):
-    """Updates the checkout_time for a specific visitor in the database."""
+def fetch_current_visitors(conn, company_id):
+    """
+    Fetches all visitor records for the given company_id who are currently checked in 
+    (i.e., checkout_time IS NULL). Also fetches checked out visitors in the last 48 hours.
+    """
+    cursor = None
+    try:
+        cursor = conn.cursor(dictionary=True)
+        # Fetch visitors checked in OR checked out within the last 48 hours
+        time_limit = datetime.now() - timedelta(hours=48)
+        
+        sql = """
+        SELECT 
+            visitor_id, registration_timestamp, full_name, phone_number, email, 
+            purpose, person_to_meet, from_company, has_laptop, checkout_time
+        FROM visitors 
+        WHERE company_id = %s AND (checkout_time IS NULL OR registration_timestamp >= %s)
+        ORDER BY registration_timestamp DESC;
+        """
+        cursor.execute(sql, (company_id, time_limit))
+        records = cursor.fetchall()
+        
+        if not records:
+            st.info("No visitor records found for this company in the last 48 hours.")
+            return pd.DataFrame() # Return empty DataFrame
+        
+        df = pd.DataFrame(records)
+        df['status'] = df['checkout_time'].apply(lambda x: 'Checked Out' if x is not None else 'Checked In')
+        return df
+
+    except Error as e:
+        st.error(f"DB Error fetching visitor data: {e}")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"An unexpected error occurred during fetch: {e}")
+        return pd.DataFrame()
+    finally:
+        if cursor:
+            cursor.close()
+
+def checkout_visitor(conn, visitor_id):
+    """
+    Updates the checkout_time for a specific visitor using their visitor_id.
+    """
     cursor = None
     try:
         cursor = conn.cursor()
-        sql = "UPDATE visitors SET checkout_time = %s WHERE id = %s"
-        checkout_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        cursor.execute(sql, (checkout_time, visitor_id))
+        sql = """
+        UPDATE visitors
+        SET checkout_time = %s
+        WHERE visitor_id = %s
+        """
+        cursor.execute(sql, (current_time, visitor_id))
         conn.commit()
-        st.success(f"Visitor ID {visitor_id} checked out successfully.")
+        st.success(f"Visitor ID {visitor_id} checked out successfully at {current_time}.")
         return True
-        
     except Error as e:
-        st.error(f"Database Error: Could not update checkout time for ID {visitor_id}. {e}")
+        st.error(f"DB Error during checkout: Could not update record for ID {visitor_id}. {e}")
         conn.rollback()
+        return False
+    except Exception as e:
+        st.error(f"An unexpected error occurred during checkout: {e}")
         return False
     finally:
         if cursor:
             cursor.close()
 
-def get_company_visitors(conn, company_id):
-    """
-    Fetches visitor details for a specific company ID, including records from the 
-    previous and present day (last 48 hours), ordered by recent check-in.
-    """
-    cursor = None
-    try:
-        # Filter for the last 48 hours to capture 'present day' and 'previous day'
-        two_days_ago = (datetime.now() - timedelta(hours=48)).strftime('%Y-%m-%d %H:%M:%S')
-
-        cursor = conn.cursor(dictionary=True)
-        query = f"""
-        SELECT 
-            id, registration_timestamp, full_name, email, phone_number,
-            person_to_meet, purpose, from_company, has_laptop, checkout_time
-        FROM visitors
-        WHERE company_id = %s AND registration_timestamp >= %s
-        ORDER BY registration_timestamp DESC;
-        """
-        
-        cursor.execute(query, (company_id, two_days_ago))
-        return cursor.fetchall()
-    except Exception as e:
-        st.error(f"DB Error fetching visitor data: {e}")
-        return []
-    finally:
-        if cursor:
-            cursor.close()
-
 # ==============================================================================
-# 3. STREAMLIT RENDERING (UPDATED)
+# 3. STREAMLIT RENDERING: DASHBOARD
 # ==============================================================================
 
-def render_dashboard():
-    """
-    Renders the main dashboard for a logged-in Admin, displaying company-specific visitor data 
-    with checkout functionality.
-    """
-    # 1. Enforce Admin Login State
-    if not st.session_state.get('admin_logged_in'):
-        st.warning("Please log in to view the dashboard.")
-        st.session_state['current_page'] = 'visitor_login'
-        st.rerun()
-        return
-
-    company_name = st.session_state.get('company_name', 'Company Dashboard')
-    admin_name = st.session_state.get('admin_name', 'Admin')
-    company_id = st.session_state.get('company_id')
+def render_visitor_dashboard():
+    """Renders the main dashboard interface for admins."""
     
-    if not company_id:
-        st.error("Admin session is missing Company ID. Please log in again.")
+    # 1. Authentication and Setup Check
+    if not st.session_state.get('admin_logged_in'):
+        st.warning("Please log in as Admin to view the dashboard.")
         st.session_state['current_page'] = 'visitor_login'
         st.rerun()
         return
 
-    # Attempt to get the database connection
     conn = get_fast_connection()
     if conn is None:
-        # Connection failure is handled inside get_fast_connection with st.stop() or st.error()
-        return
+        return # Error already displayed by get_fast_connection
 
-    st.header(f"📊 {company_name} - Visitor Dashboard")
-    st.markdown("---")
-
-    st.markdown(f"## 👋 Welcome Back, **{admin_name}**")
-    st.info(f"Displaying visitor records for Company ID: **{company_id}**")
-    st.markdown('<div style="margin-bottom: 30px;"></div>', unsafe_allow_html=True)
-
-    # --- Visitor Data Section ---
-    st.subheader("Recent Visitor Check-Ins")
+    company_id = st.session_state.get('company_id')
     
-    # Fetch data specific to the logged-in company (filtered by date)
-    visitor_records = get_company_visitors(conn, company_id)
+    st.title("🏛️ Visitor Management Dashboard")
+    st.markdown(f"**Company ID:** `{company_id}`") # Display for debugging/identification
 
-    if visitor_records:
-        df = pd.DataFrame(visitor_records)
-        
-        # 1. Calculate Status
-        df['Status'] = df['checkout_time'].apply(
-            lambda x: 'CHECKED OUT' if pd.notna(x) else 'CHECKED IN'
-        )
-        
-        # 2. Data formatting
-        # Ensure timestamp is formatted for display
-        df['Date/Time'] = pd.to_datetime(df['registration_timestamp']).dt.strftime('%Y-%m-%d %H:%M')
-        df['Laptop'] = df['has_laptop'].apply(lambda x: '✅' if x else '❌')
-        
-        # Keep 'id' for checkout logic, but rename others
-        df = df.rename(columns={
-            'full_name': 'Visitor Name',
-            'phone_number': 'Phone',
-            'person_to_meet': 'Meeting Staff',
-            'from_company': 'From Company',
-            'purpose': 'Purpose',
-            'email': 'Email'
-        })
-        
-        # Select final columns for display
-        display_cols = ['Date/Time', 'Visitor Name', 'Phone', 'Email', 'Meeting Staff', 'Purpose', 'From Company', 'Laptop', 'Status']
-        
-        # 3. Sequential Index (Starts from 1)
-        df_display = df[display_cols].copy()
-        df_display.reset_index(drop=True, inplace=True)
-        df_display.index = df_display.index + 1
-        
-        st.dataframe(df_display, use_container_width=True)
-
-        # 4. Checkout UI
-        st.markdown("---")
-        st.subheader("Visitor Checkout 🚪")
-        
-        checkout_visitors = df[df['Status'] == 'CHECKED IN']
-        
-        if not checkout_visitors.empty:
-            
-            # Create a dictionary for easy selection: Display Name (ID) -> Actual ID
-            checkout_options = {
-                f"{row['Visitor Name']} ({row['From Company']}) - In: {row['Date/Time']}": row['id']
-                for index, row in checkout_visitors.iterrows()
-            }
-            
-            with st.form("checkout_form"):
-                
-                visitor_key = st.selectbox(
-                    "Select Visitor to Check Out:",
-                    options=list(checkout_options.keys()),
-                    key="visitor_to_checkout_key"
-                )
-                
-                checkout_submitted = st.form_submit_button("👋 Check Out Visitor", type="secondary")
-                
-                if checkout_submitted and visitor_key:
-                    visitor_id = checkout_options[visitor_key]
-                    if update_checkout_time(conn, visitor_id):
-                        st.rerun() # Refresh dashboard on successful checkout
-        else:
-            st.info("All visitors currently displayed are checked out.")
-            
-    else:
-        st.warning("No visitor records found for this company in the last 48 hours.")
-        
-    st.markdown("---")
-    
-    # --- Navigation Controls ---
-    col_new, col_logout = st.columns([2, 1])
-
+    # --- Top Buttons ---
+    col_new, col_refresh = st.columns([1, 4])
     with col_new:
-        if st.button("➕ Register New Visitor", type="primary", use_container_width=True):
-            st.session_state['current_page'] = 'visitor_details'
-            st.session_state['registration_step'] = 'primary'
-            st.session_state['visitor_data'] = {}
+        if st.button("➕ New Check-In", type="primary"):
+            st.session_state['current_page'] = 'details_page' # Assuming render_details_page is linked
             st.rerun()
+    with col_refresh:
+        # Refresh button to force data reload
+        st.button("🔄 Refresh Data", on_click=lambda: None) 
 
-    with col_logout:
-        if st.button("← Admin Logout", key="admin_dashboard_logout_btn", use_container_width=True):
-            # Clear all Admin session state data
-            for key in ['admin_logged_in', 'admin_id', 'admin_email', 'admin_name', 'company_id', 'company_name']:
-                if key in st.session_state:
-                    del st.session_state[key]
+    st.markdown("---")
+    st.header("Active & Recent Visitors (Last 48 Hours)")
+
+    # 2. Fetch Data
+    visitor_data = fetch_current_visitors(conn, company_id)
+
+    if not visitor_data.empty:
+        # Separate data into active and recent
+        active_visitors = visitor_data[visitor_data['status'] == 'Checked In']
+        recent_visitors = visitor_data[visitor_data['status'] == 'Checked Out']
+
+        # --- Active Visitors Section ---
+        st.subheader(f"🟢 Currently Checked In ({len(active_visitors)})")
+        if active_visitors.empty:
+            st.info("No visitors are currently checked in.")
+        else:
             
-            st.session_state['current_page'] = 'visitor_login'
-            if 'visitor_auth_view' in st.session_state:
-                del st.session_state['visitor_auth_view']
-                
-            st.rerun()
+            # Use a container for the active list to handle button callbacks
+            active_container = st.container()
+            with active_container:
+                for index, row in active_visitors.iterrows():
+                    col_id, col_name, col_meet, col_time, col_button = st.columns([0.5, 2, 1.5, 2, 1.5])
+                    
+                    # Display basic info
+                    col_id.caption("ID")
+                    col_id.markdown(f"**{row['visitor_id']}**")
+                    
+                    col_name.caption("Visitor & Company")
+                    col_name.markdown(f"**{row['full_name']}** ({row['from_company']})")
 
-# If running this file directly (for testing)
+                    col_meet.caption("Meeting")
+                    col_meet.markdown(f"{row['person_to_meet']}")
+                    
+                    col_time.caption("Check-In Time")
+                    col_time.markdown(f"{row['registration_timestamp'].strftime('%b %d, %I:%M %p')}")
+                    
+                    # Check Out Button Logic
+                    with col_button:
+                        st.markdown("<div style='height:18px;'></div>", unsafe_allow_html=True) # Align button vertically
+                        if st.button("🚪 Check Out", key=f"checkout_{row['visitor_id']}"):
+                            if checkout_visitor(conn, row['visitor_id']):
+                                # Rerun to refresh the list and move the visitor to the 'Checked Out' section
+                                st.rerun()
+
+            st.markdown("---")
+
+        # --- Recent Visitors Section ---
+        st.subheader(f"🔵 Recently Checked Out ({len(recent_visitors)})")
+        if not recent_visitors.empty:
+            # Display recent visitors as a static table (no actions needed here)
+            display_columns = ['visitor_id', 'full_name', 'from_company', 'person_to_meet', 
+                               'registration_timestamp', 'checkout_time', 'purpose']
+            
+            # Format timestamps for display
+            recent_visitors_display = recent_visitors[display_columns].copy()
+            recent_visitors_display['registration_timestamp'] = recent_visitors_display['registration_timestamp'].dt.strftime('%b %d, %I:%M %p')
+            recent_visitors_display['checkout_time'] = recent_visitors_display['checkout_time'].dt.strftime('%b %d, %I:%M %p')
+            
+            # Rename columns for clarity
+            recent_visitors_display.columns = ['ID', 'Visitor Name', 'Company', 'Met Person', 
+                                               'Check-In', 'Check-Out', 'Purpose']
+
+            st.dataframe(recent_visitors_display, use_container_width=True, hide_index=True)
+
+
+    # --- Placeholder for Login/Routing (only for local testing) ---
+def render_login_page():
+    st.title("Admin Login Placeholder")
+    # Simple placeholder login for local testing
+    username = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+    if st.button("Log In"):
+        if username == "admin" and password == "123": # Dummy credentials
+            st.session_state['admin_logged_in'] = True
+            st.session_state['company_id'] = 1 # Set a dummy company ID
+            st.session_state['current_page'] = 'visitor_dashboard'
+            st.rerun()
+        else:
+            st.error("Invalid credentials.")
+
+# --- Main App Logic ---
 if __name__ == "__main__":
     if 'admin_logged_in' not in st.session_state:
-        st.session_state['admin_logged_in'] = True
-        st.session_state['admin_name'] = "Test Admin"
-        st.session_state['company_id'] = 1  # Use a valid test company ID
-        st.session_state['company_name'] = "Test Corp"
-    
-    render_dashboard()
+        st.session_state['admin_logged_in'] = False
+        st.session_state['current_page'] = 'visitor_login'
+    if 'company_id' not in st.session_state:
+        st.session_state['company_id'] = 1 # Default for testing
+
+    if st.session_state['current_page'] == 'details_page':
+        # Assuming visitor_details.py's function is available via import or is defined elsewhere
+        # Since this is a self-contained example, we can't import, so we assume the main runner 
+        # handles the routing. For this file, we only define the dashboard.
+        st.warning("Please integrate this logic with the main app router to call render_details_page.")
+        render_visitor_dashboard() 
+    elif st.session_state['current_page'] == 'visitor_login':
+        render_login_page()
+    else:
+        render_visitor_dashboard()
