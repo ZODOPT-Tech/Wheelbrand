@@ -150,7 +150,7 @@ def checkout_visitor(conn, visitor_id):
 # 3. STREAMLIT RENDERING: DASHBOARD
 # ==============================================================================
 
-def render_visitor_dashboard():
+def render_dashboard():
     """Renders the main dashboard interface for admins."""
     
     # 1. Authentication and Setup Check
@@ -272,8 +272,8 @@ if __name__ == "__main__":
         # Since this is a self-contained example, we can't import, so we assume the main runner 
         # handles the routing. For this file, we only define the dashboard.
         st.warning("Please integrate this logic with the main app router to call render_details_page.")
-        render_visitor_dashboard() 
+        render_dashboard() 
     elif st.session_state['current_page'] == 'visitor_login':
         render_login_page()
     else:
-        render_visitor_dashboard()
+        render_dashboard()
