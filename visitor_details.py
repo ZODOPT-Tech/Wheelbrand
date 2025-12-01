@@ -24,8 +24,6 @@ DEFAULT_DB_PORT = 3306
 def get_db_credentials():
     """Retrieves database credentials ONLY from AWS Secrets Manager."""
     
-    # NOTE: Debug messages removed to prevent cluttering the deployed UI.
-    
     try:
         client = boto3.client('secretsmanager', region_name=AWS_REGION)
         
@@ -79,7 +77,6 @@ def get_fast_connection():
         )
         return conn
     except EnvironmentError:
-        # Error already logged in get_db_credentials
         st.stop()
     except Error as err:
         error_msg = f"FATAL: MySQL Connection Error: Cannot connect. Details: {err.msg}"
@@ -283,10 +280,11 @@ def render_primary_details_form():
     
     with st.container(border=False):
         
-        # --- BUTTON LOGIC (Reset button MUST be outside st.form) ---
+        # --- RESET BUTTON LOGIC (Must be outside st.form) ---
         col_reset_check, col_spacer_check, col_next_check = st.columns([1, 2, 1])
         
         with col_reset_check:
+            # st.button() is outside the form to avoid StreamlitAPIException
             reset_clicked = st.button("Reset", use_container_width=True, key="reset_primary")
 
         if reset_clicked:
@@ -320,11 +318,10 @@ def render_primary_details_form():
             email = st.text_input("Email", key="email_input", placeholder="your.email@example.com", 
                                      value=st.session_state['visitor_data'].get('email', ''), label_visibility="collapsed")
 
-            # Submit/Next Button Container (Now inside the form)
+            # Submit/Next Button Container (This must be INSIDE the form)
             col_spacer, col_next = st.columns([3, 1])
             
             with col_next:
-                # ONLY st.form_submit_button is allowed inside st.form
                 submitted = st.form_submit_button("Next →", use_container_width=True)
 
             # --- Logic check for Submission (Next) ---
@@ -350,13 +347,7 @@ def render_secondary_details_form():
     with st.container(border=False):
         st.markdown("### Other Details")
 
-        col_prev, col_next_container = st.columns(2)
-        
-        with col_prev:
-            if st.button("Previous", key='prev_button_secondary', use_container_width=True):
-                st.session_state['registration_step'] = 'primary'
-                st.rerun()
-
+        # --- THE FORM START (Fields and Submit Button are inside) ---
         with st.form("secondary_details_form", clear_on_submit=False):
             
             # --- FORM FIELDS ---
@@ -432,12 +423,13 @@ def render_secondary_details_form():
 
             st.markdown("---")
             
-            # --- SUBMISSION BUTTON ---
-            with col_next_container:
+            # --- SUBMISSION BUTTON (INSIDE the form) ---
+            col_spacer_submit, col_submit = st.columns([3, 1])
+            with col_submit:
                 submitted = st.form_submit_button("Complete Registration →", use_container_width=True)
             
+            # --- Submission Logic ---
             if submitted:
-                # 1. Update session_state['visitor_data'] with all current form values
                 final_data = st.session_state['visitor_data']
                 final_data.update({
                     'visit_type': st.session_state['visit_type'],
@@ -460,7 +452,6 @@ def render_secondary_details_form():
                     'has_power_bank': st.session_state['has_power_bank']
                 })
                 
-                # 2. Save data to database
                 if save_visitor_data_to_db(final_data):
                     st.balloons()
                     st.success("🎉 Visitor Registration Complete! Redirecting to Dashboard...")
@@ -471,6 +462,13 @@ def render_secondary_details_form():
                     st.rerun() 
                 
                 st.rerun() 
+        
+        # --- PREVIOUS BUTTON (OUTSIDE the form) ---
+        st.markdown("---")
+        if st.button("← Previous Step", key='prev_button_secondary', use_container_width=False):
+            st.session_state['registration_step'] = 'primary'
+            st.rerun()
+
 
 # ==============================================================================
 # 7. Main Application Logic
@@ -510,7 +508,6 @@ def render_details_page():
     
 
 if __name__ == "__main__":
-    # Simulate a logged-in state for direct testing
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = True
         st.session_state['company_id'] = 1 
