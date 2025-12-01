@@ -7,7 +7,7 @@ import mysql.connector
 from mysql.connector import Error
 
 # ==============================================================================
-# 1. CONFIGURATION & CREDENTIALS (AWS Integration)
+# 1. CONFIGURATION & CREDENTIALS (AWS Integration - MUST BE COPIED)
 # ==============================================================================
 
 # Constants for AWS and DB
@@ -100,7 +100,8 @@ def initialize_session_state():
     
     # Global state (assumed to be set by a previous login screen)
     if 'company_id' not in st.session_state:
-        st.session_state['company_id'] = None
+        # Default to None or a secure default like 0 if not set, but the main logic checks this.
+        st.session_state['company_id'] = None 
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
 
@@ -124,10 +125,15 @@ def navigate_to_main_screen():
 # ==============================================================================
 
 def save_visitor_data_to_db(data):
-    """Saves the complete visitor registration data to the MySQL database."""
+    """Saves the complete visitor registration data, tied to the current company_id, to the MySQL database."""
     
     conn = get_fast_connection()
     if conn is None:
+        return False
+        
+    current_company_id = st.session_state.get('company_id')
+    if not current_company_id:
+        st.error("SECURITY ERROR: Cannot save visitor data. Company ID is missing.")
         return False
     
     cursor = None
@@ -143,7 +149,7 @@ def save_visitor_data_to_db(data):
     )
     
     values = (
-        st.session_state.get('company_id'),
+        current_company_id, # EXPLICITLY using the company ID
         datetime.now(),
         data.get('name'), 
         data.get('phone'), 
@@ -178,7 +184,7 @@ def save_visitor_data_to_db(data):
         conn.commit()
         success = True
     except Error as e:
-        st.error(f"Database Insertion Error: Failed to save registration data. Details: {e}")
+        st.error(f"Database Insertion Error (Company ID: {current_company_id}): Failed to save registration data. Details: {e}")
         conn.rollback()
     except Exception as e:
         st.error(f"An unexpected error occurred during database save: {e}")
@@ -285,10 +291,12 @@ def render_custom_styles():
 def render_header(current_step):
     """Renders the header with the logo and step navigation."""
     logo_svg = render_custom_styles()
+    company_id = st.session_state.get('company_id', 'N/A')
+    
     st.markdown(
         f"""
         <div class="header-banner">
-            VISITOR REGISTRATION
+            VISITOR REGISTRATION (Company ID: {company_id})
             <div class="zodopt-tag">
                 zodopt
                 {logo_svg}
@@ -547,18 +555,20 @@ def render_visitor_registration():
     # 1. Initialize State
     initialize_session_state()
     
-    # 2. ENFORCE LOGIN CHECK
+    # 2. ENFORCE LOGIN AND COMPANY ID CHECK
     if not st.session_state.get('admin_logged_in'):
         st.error("Access Denied: Please log in as an Admin to register visitors.")
-        # Do NOT set 'current_page' key here, rely on the main app structure to handle the missing login state
         st.rerun()
         return
         
-    if not st.session_state.get('company_id'):
+    # CRITICAL: Must have a company_id to associate the visitor with.
+    company_id = st.session_state.get('company_id')
+    if not company_id:
         st.error("Session missing Company ID. Please log in again.")
-        # Do NOT set 'current_page' key here
         st.rerun()
         return
+        
+    st.info(f"Logged in for Company ID: **{company_id}**") # Show current context
         
     # 3. Connection Test (Stops app if connection fails)
     conn = get_fast_connection()
@@ -578,9 +588,9 @@ def render_visitor_registration():
 
 if __name__ == "__main__":
     # --- Mock login state for testing ---
-    # We explicitly remove the setting of 'current_page' here.
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = True
+        # Set the mock company ID explicitly to 1 for testing the constraint
         st.session_state['company_id'] = 1 
         
     render_visitor_registration()
