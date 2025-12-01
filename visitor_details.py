@@ -7,8 +7,10 @@ from mysql.connector import Error
 
 # --- CONFIGURATION & STATE SETUP ---
 # Initialize session state keys for DB connection, assuming they are set in main.py
-# st.session_state['registration_step'] and st.session_state['visitor_data'] 
-# are assumed to be initialized in your main application file (main.py)
+if 'registration_step' not in st.session_state:
+    st.session_state['registration_step'] = 'primary'
+if 'visitor_data' not in st.session_state:
+    st.session_state['visitor_data'] = {}
 # ASSUMPTION: The company ID for the login session is available here.
 if 'company_id' not in st.session_state:
     # Use a dummy ID if not logged in; replace with actual logic in login flow
@@ -21,6 +23,7 @@ LOGO_PATH = "zodopt.png"  # Placeholder path
 def get_db_connection():
     """Establishes a connection to the MySQL database using Streamlit secrets."""
     try:
+        # NOTE: This relies on st.secrets being configured with mysql_db credentials
         conn = mysql.connector.connect(
             host=st.secrets["mysql_db"]["host"],
             database=st.secrets["mysql_db"]["database"],
@@ -29,7 +32,7 @@ def get_db_connection():
         )
         return conn
     except Error as e:
-        st.error(f"Database Connection Error: {e}")
+        st.error(f"Database Connection Error: Could not connect to MySQL. Details: {e}")
         return None
 
 def save_visitor_data_to_db(data):
@@ -40,7 +43,7 @@ def save_visitor_data_to_db(data):
     
     cursor = conn.cursor()
     
-    # List of fields to insert into the SQL table
+    # List of fields in the 'visitors' table (must match the order of 'values')
     fields = (
         "company_id", "registration_timestamp", "full_name", "phone_number", "email", 
         "visit_type", "from_company", "department", "designation", "address_line_1", 
@@ -49,7 +52,7 @@ def save_visitor_data_to_db(data):
         "has_laptop", "has_charger", "has_power_bank"
     )
     
-    # Collect values in the order of fields
+    # Collect values in the exact order of fields
     values = (
         st.session_state['company_id'],
         datetime.now(),
@@ -86,7 +89,7 @@ def save_visitor_data_to_db(data):
         conn.commit()
         return True
     except Error as e:
-        st.error(f"Database Insertion Error: {e}")
+        st.error(f"Database Insertion Error: Failed to save registration data. Details: {e}")
         conn.rollback()
         return False
     finally:
@@ -98,22 +101,19 @@ def save_visitor_data_to_db(data):
 
 def img_to_base64(img_path):
     """Converts an image file to a base64 string for CSS embedding."""
-    try:
-        # In a real app, you'd use st.session_state to store a placeholder or load from a known location
-        # Since the file might not exist in this environment, we'll return a generic icon data string
-        # for a simple placeholder.
-        return None 
-    except FileNotFoundError:
-        return None
+    # Since the file might not exist in this environment, we rely on the CSS SVG fallback.
+    return None 
 
 def render_custom_styles():
     """Applies custom CSS for the header banner and buttons."""
-    # We will use a simple inline SVG instead of loading an external image
-    logo_svg = """
+    # Using a simple inline SVG for the logo as a robust placeholder
+    logo_svg_data = """
+    <div class="zodopt-logo-container">
     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M12 2L2 22H22L12 2Z" fill="#FFFFFF"/>
         <path d="M12 7L16 15H8L12 7Z" fill="#5d28a5"/>
     </svg>
+    </div>
     """
 
     st.markdown(
@@ -176,18 +176,11 @@ def render_custom_styles():
         """, 
         unsafe_allow_html=True
     )
+    return logo_svg_data
 
 def render_header(current_step):
     """Renders the header with the logo and step navigation."""
-    render_custom_styles()
-    logo_svg = """
-    <div class="zodopt-logo-container">
-    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 2L2 22H22L12 2Z" fill="#FFFFFF"/>
-        <path d="M12 7L16 15H8L12 7Z" fill="#5d28a5"/>
-    </svg>
-    </div>
-    """
+    logo_svg = render_custom_styles()
     st.markdown(
         f"""
         <div class="header-banner">
@@ -250,6 +243,7 @@ def render_primary_details_form():
 
             with col_next:
                 if st.form_submit_button("Next →", use_container_width=True):
+                    # Basic validation
                     if not (full_name and phone_number and email):
                         st.error("⚠️ Please fill in all required fields (*).")
                     else:
@@ -269,7 +263,7 @@ def render_secondary_details_form():
     with st.container(border=False):
         st.markdown("### Other Details")
 
-        # Define the button columns OUTSIDE the form (to fix the StreamlitAPIException)
+        # Define the button columns OUTSIDE the form (to handle navigation before form submission)
         col_prev, col_next_container = st.columns(2)
         
         with col_prev:
@@ -361,7 +355,7 @@ def render_secondary_details_form():
                 if st.form_submit_button("Complete Registration →", use_container_width=True):
                     
                     # 1. Update session_state['visitor_data'] with all current form values
-                    # Note: Streamlit's key mechanism automatically updates session_state for inputs within the form
+                    # These values are automatically updated by Streamlit's key mechanism
                     final_data = st.session_state['visitor_data']
                     final_data.update({
                         'visit_type': st.session_state['visit_type'],
@@ -389,21 +383,16 @@ def render_secondary_details_form():
                         st.balloons()
                         st.success("🎉 Visitor Registration Complete! Details have been recorded in the database.")
                         st.session_state['registration_step'] = 'complete'
-                        st.rerun()
-                    else:
-                        # Error message already shown by save_visitor_data_to_db
-                        st.error("Registration failed due to a database error. Please try again.")
+                    
+                    # Rerunning even on failure to clear form submission state/update messages
+                    st.rerun() 
 
 # --- Main Application Logic ---
 
 def render_details_page():
     """Main function to run the multi-step visitor registration form."""
     
-    # Check if the required state is initialized (a safeguard)
-    if 'registration_step' not in st.session_state:
-        st.session_state['registration_step'] = 'primary'
-    if 'visitor_data' not in st.session_state:
-        st.session_state['visitor_data'] = {}
+    # Initialization safeguard is already at the top
     
     render_header(st.session_state['registration_step'])
 
@@ -415,6 +404,7 @@ def render_details_page():
 
     elif st.session_state['registration_step'] == 'complete':
         st.subheader("✅ Registration Summary")
+        st.info(f"Company ID: {st.session_state['company_id']}")
         st.json(st.session_state['visitor_data'])
         
         st.markdown("---")
