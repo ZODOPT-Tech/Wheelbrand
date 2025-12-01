@@ -435,13 +435,3 @@ def render_details_page():
         st.rerun()
         
     st.markdown('</div>', unsafe_allow_html=True)
-
-
-# --- Application Entry Point ---
-# Ensures the function can be called by the main app router
-if __name__ == '__main__':
-    # Initialize session state if running this file directly for testing
-    if 'current_page' not in st.session_state:
-        st.session_state['current_page'] = 'registration'
-        
-    render_details_page()
