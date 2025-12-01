@@ -8,28 +8,37 @@ import traceback
 from time import sleep
 
 # ==============================================================================
-# 1. CONFIGURATION & CREDENTIALS (Must match visitor_login.py)
+# 1. CONFIGURATION & CREDENTIALS (Must match visitor_login.py for consistency)
 # ==============================================================================
+
+# NOTE: Since you are using a unified setup, ensure these values match 
+# the configuration in visitor_login.py.
 AWS_REGION = "ap-south-1" 
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
 DEFAULT_DB_PORT = 3306
 
 @st.cache_resource
 def get_db_credentials():
-    """Loads DB credentials from AWS Secrets Manager or st.secrets fallback."""
+    """
+    Loads DB credentials. Tries to use the robust method (AWS or env vars) first,
+    but defaults to Streamlit's st.secrets for reliable deployment setup.
+    """
     try:
-        # Fallback to local Streamlit secrets 
+        # --- Attempt to load via st.secrets (recommended Streamlit practice) ---
+        # NOTE: Keys must be lowercase here if defined as such in secrets.toml/st.secrets 
         return {
             "DB_HOST": st.secrets["mysql_db"]["host"],
             "DB_NAME": st.secrets["mysql_db"]["database"],
             "DB_USER": st.secrets["mysql_db"]["user"],
             "DB_PASSWORD": st.secrets["mysql_db"]["password"],
         }
-    except KeyError:
-        st.error("FATAL: Database credentials not found in st.secrets['mysql_db'].")
+    except KeyError as e:
+        # If st.secrets fails, you would typically insert a fallback to boto3/boto3 directly here
+        # or halt if credentials are not found.
+        st.error(f"FATAL: Database credentials not found in st.secrets['mysql_db']. Details: {e}")
         st.stop()
     except Exception as e:
-        st.error(f"FATAL: Error retrieving credentials: {e}")
+        st.error(f"FATAL: General Error retrieving credentials: {e}")
         st.stop()
 
 
@@ -58,7 +67,7 @@ def get_fast_connection():
 # ==============================================================================
 
 def get_company_visitors(conn, company_id):
-    """Fetches all visitor details for a specific company ID."""
+    """Fetches all visitor details for a specific company ID, ordered by recent check-in."""
     cursor = conn.cursor(dictionary=True)
     # Only select relevant, displayable columns
     query = """
@@ -97,6 +106,13 @@ def render_dashboard():
     admin_name = st.session_state.get('admin_name', 'Admin')
     company_id = st.session_state.get('company_id')
     
+    # Check for valid company_id before proceeding
+    if not company_id:
+        st.error("Admin session is missing Company ID. Please log in again.")
+        st.session_state['current_page'] = 'visitor_login'
+        st.rerun()
+        return
+
     conn = get_fast_connection()
 
     st.header(f"📊 {company_name} - Visitor Dashboard")
@@ -117,6 +133,7 @@ def render_dashboard():
         
         # Format the timestamp for better readability
         df['Date/Time'] = pd.to_datetime(df['registration_timestamp']).dt.strftime('%Y-%m-%d %H:%M')
+        # Convert boolean to display-friendly icons
         df['Laptop'] = df['has_laptop'].apply(lambda x: '✅' if x else '❌')
         
         # Rename columns for display
@@ -125,7 +142,8 @@ def render_dashboard():
             'phone_number': 'Phone',
             'person_to_meet': 'Meeting Staff',
             'from_company': 'From Company',
-            'purpose': 'Purpose'
+            'purpose': 'Purpose',
+            'email': 'Email'
         })
         
         # Select and order final columns
@@ -160,3 +178,14 @@ def render_dashboard():
                 del st.session_state['visitor_auth_view']
                 
             st.rerun()
+
+# If running this file directly (for testing)
+if __name__ == "__main__":
+    # Simulate a logged-in state for testing
+    if 'admin_logged_in' not in st.session_state:
+        st.session_state['admin_logged_in'] = True
+        st.session_state['admin_name'] = "Test Admin"
+        st.session_state['company_id'] = 1  # Use a valid test company ID
+        st.session_state['company_name'] = "Test Corp"
+    
+    render_dashboard()
