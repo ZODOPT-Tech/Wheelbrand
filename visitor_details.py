@@ -94,12 +94,32 @@ def get_fast_connection():
 
 def initialize_session_state():
     """Initializes all necessary session state variables if they do not exist."""
+    # Note: 'current_page' is initialized in the main application script.
+    
     if 'registration_step' not in st.session_state:
         st.session_state['registration_step'] = 'primary'
     if 'visitor_data' not in st.session_state:
         st.session_state['visitor_data'] = {}
     if 'company_id' not in st.session_state:
         st.session_state['company_id'] = None 
+
+# --- NEW HELPER FUNCTION FOR NAVIGATION ---
+def navigate_to_main_screen():
+    """Clears registration specific state and redirects to the main entry point."""
+    
+    # 1. Clear ALL session state related to the current registration
+    keys_to_clear = [
+        'registration_step', 'visitor_data'
+    ]
+    for key in keys_to_clear:
+        if key in st.session_state:
+            del st.session_state[key]
+    
+    # 2. Set the main navigation key
+    # IMPORTANT: We must NOT clear global keys like 'admin_logged_in' or 'company_id'
+    # if we want the user to remain logged in.
+    st.session_state['current_page'] = 'main_screen'
+    st.rerun()
 
 # ==============================================================================
 # 3. DATABASE INTERACTION & SERVICE
@@ -280,17 +300,16 @@ def render_primary_details_form():
     
     with st.container(border=False):
         
-        # --- RESET BUTTON LOGIC (Must be outside st.form) ---
-        col_reset_check, col_spacer_check, col_next_check = st.columns([1, 2, 1])
+        # --- RESET/NAVIGATION BUTTON LOGIC (Must be outside st.form) ---
+        col_reset, col_spacer_check, col_next_placeholder = st.columns([1, 2, 1])
         
-        with col_reset_check:
-            # st.button() is outside the form to avoid StreamlitAPIException
-            reset_clicked = st.button("Reset", use_container_width=True, key="reset_primary")
+        with col_reset:
+            # We change this to trigger the hard reset helper function
+            reset_clicked = st.button("Reset / Main Menu", use_container_width=True, key="reset_primary")
 
         if reset_clicked:
-            for key in ['name', 'phone', 'email']:
-                st.session_state['visitor_data'].pop(key, None)
-            st.rerun()
+            navigate_to_main_screen() # Hard reset and navigate
+            # The st.rerun() is inside the helper, so no need for it here.
         # -------------------------------------------------------------
         
         with st.form("primary_details_form", clear_on_submit=False):
@@ -299,8 +318,8 @@ def render_primary_details_form():
             # 1. Full Name
             st.write("Name *")
             full_name = st.text_input("Name", key="name_input", placeholder="Full Name", 
-                                      value=st.session_state['visitor_data'].get('name', ''), 
-                                      label_visibility="collapsed")
+                                     value=st.session_state['visitor_data'].get('name', ''), 
+                                     label_visibility="collapsed")
 
             # 2. Phone Number
             col_code, col_number = st.columns([1, 4])
@@ -424,50 +443,58 @@ def render_secondary_details_form():
             st.markdown("---")
             
             # --- SUBMISSION BUTTON (INSIDE the form) ---
-            col_spacer_submit, col_submit = st.columns([3, 1])
+            col_prev_btn, col_spacer_submit, col_submit = st.columns([1, 2, 1])
+            
             with col_submit:
                 submitted = st.form_submit_button("Complete Registration →", use_container_width=True)
-            
+
             # --- Submission Logic ---
             if submitted:
+                # We update the final_data dictionary using the values captured by the form keys
                 final_data = st.session_state['visitor_data']
                 final_data.update({
-                    'visit_type': st.session_state['visit_type'],
-                    'from_company': st.session_state['from_company'],
-                    'department': st.session_state['department'],
-                    'designation': st.session_state['designation'],
-                    'address_line_1': st.session_state['address_line_1'],
-                    'city': st.session_state['city'],
-                    'state': st.session_state['state'],
-                    'postal_code': st.session_state['postal_code'],
-                    'country': st.session_state['country'],
-                    'gender': st.session_state['gender'],
-                    'purpose': st.session_state['purpose'],
-                    'person_to_meet': st.session_state['person_to_meet'],
-                    'has_bags': st.session_state['has_bags'],
-                    'has_documents': st.session_state['has_documents'],
-                    'has_electronic_items': st.session_state['has_electronic_items'],
-                    'has_laptop': st.session_state['has_laptop'],
-                    'has_charger': st.session_state['has_charger'],
-                    'has_power_bank': st.session_state['has_power_bank']
+                    'visit_type': st.session_state.get('visit_type'),
+                    'from_company': st.session_state.get('from_company'),
+                    'department': st.session_state.get('department'),
+                    'designation': st.session_state.get('designation'),
+                    'address_line_1': st.session_state.get('address_line_1'),
+                    'city': st.session_state.get('city'),
+                    'state': st.session_state.get('state'),
+                    'postal_code': st.session_state.get('postal_code'),
+                    'country': st.session_state.get('country'),
+                    'gender': st.session_state.get('gender'),
+                    'purpose': st.session_state.get('purpose'),
+                    'person_to_meet': st.session_state.get('person_to_meet'),
+                    'has_bags': st.session_state.get('has_bags', False),
+                    'has_documents': st.session_state.get('has_documents', False),
+                    'has_electronic_items': st.session_state.get('has_electronic_items', False),
+                    'has_laptop': st.session_state.get('has_laptop', False),
+                    'has_charger': st.session_state.get('has_charger', False),
+                    'has_power_bank': st.session_state.get('has_power_bank', False)
                 })
                 
                 if save_visitor_data_to_db(final_data):
                     st.balloons()
                     st.success("🎉 Visitor Registration Complete! Redirecting to Dashboard...")
                     
+                    # Clear session state for next registration
                     st.session_state['registration_step'] = 'primary'
                     st.session_state['visitor_data'] = {} 
-                    st.session_state['current_page'] = 'visitor_dashboard' 
-                    st.rerun() 
+                    st.session_state['current_page'] = 'visitor_dashboard' # Redirect to dashboard
                 
                 st.rerun() 
         
-        # --- PREVIOUS BUTTON (OUTSIDE the form) ---
-        st.markdown("---")
-        if st.button("← Previous Step", key='prev_button_secondary', use_container_width=False):
-            st.session_state['registration_step'] = 'primary'
-            st.rerun()
+        # --- PREVIOUS / MAIN MENU BUTTONS (OUTSIDE the form) ---
+        col_prev, col_main_menu, col_end_spacer = st.columns([1, 1, 2])
+
+        with col_prev:
+            if st.button("← Previous Step", key='prev_button_secondary', use_container_width=True):
+                st.session_state['registration_step'] = 'primary'
+                st.rerun()
+
+        with col_main_menu:
+            if st.button("Back to Main Menu", key='main_menu_button_secondary', use_container_width=True):
+                navigate_to_main_screen()
 
 
 # ==============================================================================
@@ -508,8 +535,11 @@ def render_details_page():
     
 
 if __name__ == "__main__":
+    # --- Mock login state for direct file testing ---
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = True
         st.session_state['company_id'] = 1 
+    if 'current_page' not in st.session_state:
+        st.session_state['current_page'] = 'visitor_details'
         
     render_details_page()
