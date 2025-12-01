@@ -2,14 +2,12 @@ import streamlit as st
 import base64
 from pathlib import Path
 
-# --- Configuration & State Initialization ---
+# --- Configuration & State Setup (Assuming initialization moved to main.py) ---
 st.set_page_config(layout="wide")
 LOGO_PATH = "zodopt.png" 
 
-if 'registration_step' not in st.session_state:
-    st.session_state['registration_step'] = 'primary'
-if 'visitor_data' not in st.session_state:
-    st.session_state['visitor_data'] = {}
+# Note: st.session_state['registration_step'] and st.session_state['visitor_data'] 
+# are assumed to be initialized in your main application file (main.py)
 
 # --- Helper Functions (CSS and Header) ---
 
@@ -124,6 +122,7 @@ def render_primary_details_form():
     with st.container(border=False):
         
         with st.form("primary_details_form", clear_on_submit=False):
+            st.markdown("### Primary Details")
             # 1. Full Name
             st.write("Name *")
             full_name = st.text_input("Name", key="name_input", placeholder="Full Name", 
@@ -166,7 +165,7 @@ def render_primary_details_form():
                         st.session_state['registration_step'] = 'secondary'
                         st.rerun()
 
-# --- Step 2: Secondary Details Form (Dropdowns removed) ---
+# --- Step 2: Secondary Details Form ---
 
 def render_secondary_details_form():
     """Renders the Other Details form fields with all dropdowns replaced by text inputs."""
@@ -174,7 +173,7 @@ def render_secondary_details_form():
     with st.container(border=False):
         st.markdown("### Other Details")
 
-        # Define the button columns outside the form
+        # Define the button columns OUTSIDE the form (to fix the StreamlitAPIException)
         col_prev, col_next_container = st.columns(2)
         
         with col_prev:
@@ -186,7 +185,7 @@ def render_secondary_details_form():
         with st.form("secondary_details_form", clear_on_submit=False):
             
             # --- FORM FIELDS ---
-            # 1. Company/Visit Details (Replaced SelectBoxes with Text Input)
+            # 1. Company/Visit Details (Text Inputs)
             col_vt, col_fc = st.columns(2)
             with col_vt:
                 st.text_input("Visit Type", key='visit_type', 
@@ -262,6 +261,8 @@ def render_secondary_details_form():
             st.markdown("---")
             
             # --- SUBMISSION BUTTON ---
+            # This is only here to maintain form structure; the actual button is placed outside
+            # in the column 'col_next_container'. We need to ensure the action is handled there.
             with col_next_container:
                 if st.form_submit_button("Next", use_container_width=True):
                     
@@ -296,6 +297,10 @@ def render_secondary_details_form():
 
 def render_details_page():
     """Main function to run the multi-step visitor registration form."""
+    
+    # Check if the required state is initialized (a safeguard)
+    if 'registration_step' not in st.session_state:
+        st.session_state['registration_step'] = 'primary'
     
     render_header(st.session_state['registration_step'])
 
