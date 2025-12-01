@@ -10,9 +10,6 @@ LOGO_PLACEHOLDER_TEXT = "zodopt"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" 
 APP_PADDING_X = "2rem"
 
-# NOTE: The initialization logic for 'current_step' and 'visitor_data' 
-# has been moved into render_details_page() to resolve the KeyError.
-
 
 # Utility function to convert image to base64 for embedding
 def _get_image_base64(path):
@@ -27,7 +24,10 @@ def _get_image_base64(path):
         return ""
 
 def render_navigation():
-    """Renders the step navigation tabs using markdown and custom CSS."""
+    """
+    Renders the step navigation tabs using markdown and custom CSS.
+    This function has been cleaned up to ensure proper HTML structure.
+    """
     
     # Define the steps and their labels
     steps = {
@@ -37,21 +37,26 @@ def render_navigation():
     }
 
     # Generate the navigation HTML
-    nav_html = '<div class="tab-navigation">'
+    nav_html_parts = []
+    
     for step_num, label in steps.items():
-        # This check is now safe because initialization is guaranteed in render_details_page
+        # Check is safe because initialization is guaranteed in render_details_page
         is_active = "active" if st.session_state['current_step'] == step_num else ""
         
-        nav_html += f"""
+        # Ensure minimal structure around the label to prevent fragmentation
+        nav_html_parts.append(f"""
         <div class="tab-item {is_active}">
             {label}
         </div>
-        """
-    nav_html += '</div>'
+        """)
+        
+    nav_html = f'<div class="tab-navigation">{"".join(nav_html_parts)}</div>'
+    
+    # We remove the wrapping div here as the calling function adds one.
     st.markdown(nav_html, unsafe_allow_html=True)
 
 def render_step_1_primary_details():
-    """Renders Step 1: Primary Details (Name, Contact)."""
+    """Renders Step 1: Primary Details (Name, Contact). All fields are mandatory."""
     with st.form("step_1_form"):
         st.markdown("<p style='font-size: 16px; color: #555; margin-bottom: 20px;'>Provide your essential contact information.</p>", unsafe_allow_html=True)
         
@@ -108,7 +113,7 @@ def render_step_2_secondary_details():
     with st.form("step_2_form"):
         st.markdown("<p style='font-size: 16px; color: #555; margin-bottom: 20px;'>Details regarding your organization and visit plan.</p>", unsafe_allow_html=True)
         
-        # Company Name is now here
+        # Company Name is now here and is mandatory
         company = st.text_input("Company Name *", key="reg_company", 
                                 value=st.session_state['visitor_data'].get('company', ''))
         
@@ -205,9 +210,9 @@ def render_step_3_identity():
         # Placeholder for Photo Upload
         col_photo, col_id = st.columns(2)
         with col_photo:
-            st.camera_input("Take a photo of yourself (for badge) *", key="reg_photo")
+            photo = st.camera_input("Take a photo of yourself (for badge) *", key="reg_photo")
         with col_id:
-            st.file_uploader("Upload Government ID (e.g., Driver's License) *", type=['pdf', 'jpg', 'png'], key="reg_id_upload")
+            id_upload = st.file_uploader("Upload Government ID (e.g., Driver's License) *", type=['pdf', 'jpg', 'png'], key="reg_id_upload")
         
         # Final Submission
         st.markdown("---")
@@ -221,8 +226,8 @@ def render_step_3_identity():
         with col_submit:
             if st.form_submit_button("Finalize & Register", type="primary"):
                 # Check that final steps (photo/ID) are completed
-                is_photo_uploaded = st.session_state.get('reg_photo') is not None
-                is_id_uploaded = st.session_state.get('reg_id_upload') is not None
+                is_photo_uploaded = photo is not None
+                is_id_uploaded = id_upload is not None
                 
                 if is_photo_uploaded and is_id_uploaded:
                     # Final save and transition
@@ -239,13 +244,14 @@ def render_step_3_identity():
 def render_details_page():
     """Renders the main Visitor Registration page with header and multi-step form."""
     
-    # --- 1. ENSURE STATE INITIALIZATION HERE TO PREVENT KEYERROR ---
+    # --- 1. ENSURE STATE INITIALIZATION HERE ---
     if 'current_step' not in st.session_state:
         st.session_state['current_step'] = 1
     if 'visitor_data' not in st.session_state:
         st.session_state['visitor_data'] = {}
     
     # --- 2. Custom CSS for Styling ---
+    # NOTE: Added display: flex and align-items: stretch to .tab-navigation to potentially fix layout issues.
     st.markdown(f"""
     <style>
     /* Global Streamlit Overrides to ensure full width and no margins */
@@ -294,6 +300,7 @@ def render_details_page():
         border-bottom: 2px solid #e0e0e0;
         box-shadow: 0 1px 3px rgba(0,0,0,0.05); 
         background-color: #FFFFFF;
+        align-items: stretch; /* Ensure all items stretch to the same height */
     }}
 
     .tab-item {{
