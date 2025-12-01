@@ -1,437 +1,250 @@
 import streamlit as st
-import os
-import base64
-import datetime
 
-# --- Configuration ---
-LOGO_PATH = "zodopt.png" 
-LOGO_PLACEHOLDER_TEXT = "zodopt"
-# Primary Color: Purple/Indigo gradient
-HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" 
-APP_PADDING_X = "2rem"
+# --- Session State Management ---
+# Initialize session state for multi-page/multi-step navigation
+if 'current_step' not in st.session_state:
+    st.session_state['current_step'] = 'primary'
 
+# --- Logo Path (Assuming 'zodopt.png' is in the same directory) ---
+LOGO_PATH = "zodopt.png"
 
-# Utility function to convert image to base64 for embedding
-def _get_image_base64(path):
-    """Converts a local image file to a base64 string for embedding in HTML/CSS."""
-    try:
-        if os.path.exists(path):
-            with open(path, "rb") as image_file:
-                return base64.b64encode(image_file.read()).decode()
-        # Fallback placeholder data (a small purple square)
-        return "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDTAgAQJUYAKYfBpZZXFw5AAAAAElFTkSuQmCC"
-    except Exception:
-        return ""
+# --- Utility Function for Header with Logo ---
+def render_header():
+    """Renders the custom header with a logo on the right."""
+    # Use columns to align the title and the logo
+    col1, col2 = st.columns([3, 1])
 
-def render_navigation():
-    """
-    Renders the step navigation tabs using markdown and custom CSS.
-    This function has been cleaned up to ensure proper HTML structure.
-    """
+    with col1:
+        st.markdown(
+            """
+            <div style='padding-top: 10px; padding-bottom: 5px;'>
+                <h1 style='color: #4A148C; font-size: 32px;'>Visitor Registration</h1>
+                <p style='color: #90A4AE; font-size: 16px;'>Please fill in your details</p>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+    with col2:
+        try:
+            # Display the logo if it exists
+            st.image(LOGO_PATH, width=100)
+        except FileNotFoundError:
+            # Fallback if the logo file isn't found
+            st.warning("Logo file 'zodopt.png' not found.")
+
+    st.markdown("---") # Separator after the header
+
+# --- Step Functions ---
+
+def render_primary_details():
+    """Renders the Primary Details form (Name, Phone, Email)."""
+    render_header()
     
-    # Define the steps and their labels
-    steps = {
-        1: "PRIMARY DETAILS",
-        2: "SECONDARY DETAILS",
-        3: "IDENTITY"
-    }
-
-    # Generate the navigation HTML
-    nav_html_parts = []
-    
-    for step_num, label in steps.items():
-        # Check is safe because initialization is guaranteed in render_details_page
-        is_active = "active" if st.session_state['current_step'] == step_num else ""
-        
-        # Ensure minimal structure around the label to prevent fragmentation
-        nav_html_parts.append(f"""
-        <div class="tab-item {is_active}">
-            {label}
-        </div>
-        """)
-        
-    nav_html = f'<div class="tab-navigation">{"".join(nav_html_parts)}</div>'
-    
-    # We remove the wrapping div here as the calling function adds one.
-    st.markdown(nav_html, unsafe_allow_html=True)
-
-def render_step_1_primary_details():
-    """Renders Step 1: Primary Details (Name, Contact). All fields are mandatory."""
-    with st.form("step_1_form"):
-        st.markdown("<p style='font-size: 16px; color: #555; margin-bottom: 20px;'>Provide your essential contact information.</p>", unsafe_allow_html=True)
-        
-        # Primary Fields (Full Name, Phone, Email - All Mandatory)
-        col_name, col_phone = st.columns(2)
-        
-        with col_name:
-            full_name = st.text_input("Full Name *", key="reg_full_name", 
-                                      value=st.session_state['visitor_data'].get('full_name', ''), 
-                                      placeholder="Enter your full name")
-            
-        with col_phone:
-            # Simplified phone input, country code logic is simulated
-            st.markdown("<label style='font-size: 14px; font-weight: 600;'>Phone Number *</label>", unsafe_allow_html=True)
-            col_code, col_num = st.columns([1, 3])
-            
-            phone_codes = ["+91", "+1", "+44"]
-            default_phone_code = st.session_state['visitor_data'].get('phone_code', '+91')
-            default_code_index = phone_codes.index(default_phone_code) if default_phone_code in phone_codes else 0
-            
-            with col_code:
-                st.selectbox("Code", options=phone_codes, label_visibility="collapsed", key="reg_phone_code",
-                             index=default_code_index)
-            with col_num:
-                phone_number = st.text_input("Number", key="reg_phone_number", label_visibility="collapsed", 
-                                             value=st.session_state['visitor_data'].get('phone_number', ''), 
-                                             placeholder="81234 56789")
-            
-        email = st.text_input("Email *", key="reg_email", 
-                              value=st.session_state['visitor_data'].get('email', ''), 
-                              placeholder="your.email@example.com")
-        
-        st.markdown('<div style="margin-top: 30px; text-align: right;">', unsafe_allow_html=True)
-        if st.form_submit_button("Next →", type="primary"):
-            # Required fields validation (All are mandatory now)
-            phone_code = st.session_state.get('reg_phone_code', '+91')
-            required_fields = [full_name, phone_number, email]
-            if all(required_fields):
-                # Save data to session state
-                st.session_state['visitor_data'].update({
-                    'full_name': full_name,
-                    'phone_code': phone_code,
-                    'phone_number': phone_number,
-                    'email': email,
-                })
-                st.session_state['current_step'] = 2
-                st.rerun()
-            else:
-                st.error("Please fill in all primary details marked with *.")
-        st.markdown('</div>', unsafe_allow_html=True)
-
-def render_step_2_secondary_details():
-    """Renders Step 2: Secondary Details (Company, Visit Info, Host, Belongings)."""
-    with st.form("step_2_form"):
-        st.markdown("<p style='font-size: 16px; color: #555; margin-bottom: 20px;'>Details regarding your organization and visit plan.</p>", unsafe_allow_html=True)
-        
-        # Company Name is now here and is mandatory
-        company = st.text_input("Company Name *", key="reg_company", 
-                                value=st.session_state['visitor_data'].get('company', ''))
-        
-        st.markdown("---")
-        st.markdown("##### Visit Details")
-        
-        # Visit Type and Purpose
-        col_type, col_purpose = st.columns(2)
-
-        visit_type_options = ["Business", "Interview", "Delivery", "Personal"]
-        default_visit_type = st.session_state['visitor_data'].get('visit_type', 'Business')
-        default_visit_type_index = visit_type_options.index(default_visit_type) if default_visit_type in visit_type_options else 0
-        
-        purpose_options = ["Project Review", "Meeting", "Inspection", "Other"]
-        default_purpose = st.session_state['visitor_data'].get('purpose', 'Project Review')
-        default_purpose_index = purpose_options.index(default_purpose) if default_purpose in purpose_options else 0
-        
-        with col_type:
-             visit_type = st.selectbox("Visit Type *", options=visit_type_options, 
-                                      key="reg_visit_type", 
-                                      index=default_visit_type_index)
-        with col_purpose:
-            purpose = st.selectbox("Purpose *", options=purpose_options,
-                                  key="reg_purpose_visit", 
-                                  index=default_purpose_index)
-            
-        # Dates
-        col_arrival, col_departure = st.columns(2)
-        today = datetime.date.today()
-        tomorrow = today + datetime.timedelta(days=1)
-        
-        with col_arrival:
-            arrival_date = st.date_input("Planned Arrival Date *", key="reg_arrival_date", 
-                                         value=st.session_state['visitor_data'].get('arrival_date', today))
-        with col_departure:
-            departure_date = st.date_input("Planned Departure Date *", key="reg_departure_date", 
-                                           value=st.session_state['visitor_data'].get('departure_date', tomorrow))
-
-        st.markdown("---")
-        st.markdown("##### Host Details")
-        
-        # Host Details
-        col_host_name, col_host_email = st.columns(2)
-        with col_host_name:
-            host_name = st.text_input("Host/Contact Person Name *", key="reg_host_name", 
-                                      value=st.session_state['visitor_data'].get('host_name', ''))
-        with col_host_email:
-            host_email = st.text_input("Host/Contact Person Email *", key="reg_host_email", 
-                                       value=st.session_state['visitor_data'].get('host_email', ''))
-
-        # Belongings
-        st.markdown("---")
-        st.markdown("##### Belongings")
-        belongings = st.multiselect("Items you are bringing inside:", 
-                                    options=['Laptop', 'Electronic Items', 'Documents', 'Bags', 'Power Bank'],
-                                    default=st.session_state['visitor_data'].get('belongings', []))
-
-        col_prev, col_next = st.columns(2)
-        with col_prev:
-            if st.form_submit_button("← Previous", type="secondary"):
-                st.session_state['current_step'] = 1
-                st.rerun()
-        
-        with col_next:
-            if st.form_submit_button("Next →", type="primary"):
-                # Required fields validation (All marked with * are mandatory)
-                required_fields = [company, visit_type, purpose, arrival_date, departure_date, host_name, host_email]
-                if all(required_fields):
-                    # Save data to session state
-                    st.session_state['visitor_data'].update({
-                        'company': company,
-                        'visit_type': visit_type,
-                        'purpose': purpose,
-                        'arrival_date': arrival_date,
-                        'departure_date': departure_date,
-                        'host_name': host_name,
-                        'host_email': host_email,
-                        'belongings': belongings,
-                    })
-                    st.session_state['current_step'] = 3
-                    st.rerun()
-                else:
-                    st.error("Please fill in all secondary details marked with *.")
-
-
-def render_step_3_identity():
-    """Renders Step 3: Identity (Photo and ID upload placeholder)."""
-    with st.form("step_3_form"):
-        st.markdown("<p style='font-size: 16px; color: #555; margin-bottom: 20px;'>Complete the verification process by providing your photo identification.</p>", unsafe_allow_html=True)
-        
-        # Identity Fields
-        st.info("Identity verification is required for access. Please upload or capture your details.")
-        
-        # Placeholder for Photo Upload
-        col_photo, col_id = st.columns(2)
-        with col_photo:
-            photo = st.camera_input("Take a photo of yourself (for badge) *", key="reg_photo")
-        with col_id:
-            id_upload = st.file_uploader("Upload Government ID (e.g., Driver's License) *", type=['pdf', 'jpg', 'png'], key="reg_id_upload")
-        
-        # Final Submission
-        st.markdown("---")
-        
-        col_prev, col_submit = st.columns(2)
-        with col_prev:
-            if st.form_submit_button("← Previous", type="secondary"):
-                st.session_state['current_step'] = 2
-                st.rerun()
-
-        with col_submit:
-            if st.form_submit_button("Finalize & Register", type="primary"):
-                # Check that final steps (photo/ID) are completed
-                is_photo_uploaded = photo is not None
-                is_id_uploaded = id_upload is not None
-                
-                if is_photo_uploaded and is_id_uploaded:
-                    # Final save and transition
-                    st.toast("Registration Complete! Welcome.")
-                    
-                    # You would usually save the final data (including photo/ID) to Firestore here
-                    
-                    st.session_state['current_page'] = 'visitor_dashboard' 
-                    st.rerun()
-                else:
-                    st.error("Please provide a photo and upload an ID to finalize registration.")
-
-
-def render_details_page():
-    """Renders the main Visitor Registration page with header and multi-step form."""
-    
-    # --- 1. ENSURE STATE INITIALIZATION HERE ---
-    if 'current_step' not in st.session_state:
-        st.session_state['current_step'] = 1
-    if 'visitor_data' not in st.session_state:
-        st.session_state['visitor_data'] = {}
-    
-    # --- 2. Custom CSS for Styling ---
-    # NOTE: Added display: flex and align-items: stretch to .tab-navigation to potentially fix layout issues.
-    st.markdown(f"""
+    # Custom CSS for the tab-like navigation (Primary is active)
+    st.markdown("""
     <style>
-    /* Global Streamlit Overrides to ensure full width and no margins */
-    html, body {{
-        font-family: 'Inter', sans-serif; 
-    }}
-    .stApp .main .block-container,
-    .css-18e3th9, 
-    .css-1rq2lgs {{ 
-        padding: 0 !important;
-        max-width: 100% !important; 
-        margin: 0 !important;
-    }}
-    .stApp > header {{ visibility: hidden; }}
-
-    /* Header Box (Matching the style of the main app) */
-    .header-box {{
-        background: {HEADER_GRADIENT};
-        padding: 20px {APP_PADDING_X};
-        margin-top: 0px; 
-        margin-bottom: 0px; 
-        border-radius: 0; 
-        box-shadow: 0 4px 15px rgba(0,0,0,0.25);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        width: 100%; 
-        margin: 0; 
-    }}
-    
-    .header-title-inner {{
-        font-family: 'Inter', sans-serif; 
-        font-size: 34px;
-        font-weight: 800;
-        color: #FFFFFF; 
-        letter-spacing: 1.5px;
-        margin: 0;
-    }}
-
-    /* Navigation Tab Styling */
-    .tab-navigation {{
-        display: flex;
-        justify-content: space-between;
-        width: 100%;
-        margin-bottom: 25px;
-        border-bottom: 2px solid #e0e0e0;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05); 
-        background-color: #FFFFFF;
-        align-items: stretch; /* Ensure all items stretch to the same height */
-    }}
-
-    .tab-item {{
-        flex-grow: 1;
-        text-align: center;
-        padding: 18px 0;
-        font-weight: 600;
-        color: #999;
-        cursor: default; 
-        transition: all 0.2s ease;
-        border-bottom: 3px solid transparent;
-        font-size: 16px;
-        letter-spacing: 0.5px;
-    }}
-
-    .tab-item.active {{
-        color: #50309D; /* Primary color */
-        border-bottom: 3px solid #50309D; 
-        background-color: #f0f0f4;
-    }}
-
-
-    /* Form Container Styling */
-    .details-form-container {{
-        background: #f7f7f9;
-        padding: 30px;
-        border-radius: 12px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        max-width: 700px;
-        margin: 30px auto 30px auto; /* Center the form */
-    }}
-
-    /* Primary Button Style (Using the gradient) */
-    .stForm button[kind="primary"] {{
-        background: {HEADER_GRADIENT} !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 8px !important;
-        padding: 12px 20px !important;
-        font-size: 18px !important;
-        font-weight: 600 !important;
-        box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4) !important;
-        width: 100% !important;
-        transition: all 0.2s ease;
-    }}
-    .stForm button[kind="primary"]:hover {{
-        opacity: 0.95;
-        transform: translateY(-2px);
-    }}
-    
-    .stForm button[kind="secondary"] {{
-        background: #e0e0e0 !important;
-        color: #555 !important;
-        border: none !important;
-        border-radius: 8px !important;
-        padding: 12px 20px !important;
-        font-size: 18px !important;
-        font-weight: 600 !important;
-        width: 100% !important;
-        transition: all 0.2s ease;
-    }}
-    
-
-    /* Back Button Style */
-    .stButton > button[key="back_to_dashboard"] {{
-        background: #FFFFFF !important; 
-        color: #555555 !important;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
-        border: 1px solid #E0E0E0 !important;
-        font-weight: 500 !important;
-        padding: 8px 15px !important;
-        margin-top: 10px !important;
-        font-size: 16px !important;
-    }}
-
-    /* Input Styling */
-    .stTextInput input, .stTextArea textarea, .stDateInput input, .stSelectbox [data-testid="stSelectbox"] {{
-        background-color: #ffffff;
-        border: 1px solid #cccccc;
-        border-radius: 8px;
-        padding: 10px 15px;
-        font-size: 16px;
-    }}
-    
+        .step-container {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .step {
+            padding: 10px 20px;
+            text-align: center;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            font-weight: bold;
+            color: #616161;
+        }
+        .active-step {
+            color: #4A148C; /* Purple for active tab text */
+            border-bottom: 3px solid #4A148C !important; /* Purple line for active tab */
+        }
     </style>
+    <div class="step-container">
+        <div class="step active-step">PRIMARY DETAILS</div>
+        <div class="step" style="border-bottom: 3px solid #E0E0E0; color: #9E9E9E;">SECONDARY DETAILS</div>
+    </div>
     """, unsafe_allow_html=True)
 
-    # --- 3. Header ---
-    header_title = "VISITOR REGISTRATION"
-    logo_base64 = _get_image_base64(LOGO_PATH)
-    if logo_base64:
-        logo_html = f'<img src="data:image/png;base64,{logo_base64}" class="header-logo-img" style="height: 50px; border-radius: 8px;">'
-    else:
-        logo_html = f'<div class="header-logo-container">**{LOGO_PLACEHOLDER_TEXT}**</div>'
-
-    st.markdown(
-        f"""
-        <div class="header-box">
-            <div class="header-title-inner">{header_title}</div> 
-            {logo_html}
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
-    
-    # --- 4. Navigation Tabs ---
-    st.markdown(f'<div style="padding: 0;">', unsafe_allow_html=True)
-    render_navigation()
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    # --- 5. Content Area & Form Rendering ---
-    
-    # Wrap form in the styled container and apply padding here
-    st.markdown('<div class="details-form-container">', unsafe_allow_html=True)
-
-    if st.session_state['current_step'] == 1:
-        render_step_1_primary_details()
-    elif st.session_state['current_step'] == 2:
-        render_step_2_secondary_details()
-    elif st.session_state['current_step'] == 3:
-        render_step_3_identity()
-    
-    # Close the form container
-    st.markdown('</div>', unsafe_allow_html=True)
-    
-    st.markdown('<div style="text-align: center; margin-top: 30px; padding-bottom: 20px;">', unsafe_allow_html=True)
-    
-    # Back button logic (outside the form flow)
-    if st.button("← Back to Dashboard", key="back_to_dashboard"):
-        if 'current_page' in st.session_state:
-            st.session_state['current_page'] = 'main' # Assuming 'main' is the selection screen
-        st.rerun()
+    with st.form("primary_form"):
+        # Based on image_4e6d9f.png
+        st.text_input("Name *", key="name", placeholder="Full Name")
         
-    st.markdown('</div>', unsafe_allow_html=True)
+        # Phone input simulation (Streamlit doesn't natively support splitting the country code)
+        col_code, col_number = st.columns([1, 4])
+        with col_code:
+            st.text_input("Phone * (Code)", value="+91", label_visibility="collapsed")
+        with col_number:
+            st.text_input("Phone * (Number)", key="phone", placeholder="81234 56789", label_visibility="collapsed")
+        
+        st.text_input("Email *", key="email", placeholder="your.email@example.com")
+
+        st.markdown("---")
+        
+        # Button to proceed
+        if st.form_submit_button("Next →", use_container_width=True, type="primary"):
+            # Basic validation
+            if st.session_state.name and st.session_state.phone and st.session_state.email:
+                st.session_state['current_step'] = 'secondary'
+                st.rerun()
+            else:
+                st.error("Please fill in all mandatory fields (*).")
+                
+        # Reset button
+        if st.button("Reset", key="reset_primary"):
+            # Clear inputs (will refresh the form)
+            st.session_state.name = ""
+            st.session_state.phone = ""
+            st.session_state.email = ""
+            st.rerun()
+
+
+def render_secondary_details():
+    """Renders the Secondary Details form (Company info, Gender, Purpose, Belongings)."""
+    render_header()
+
+    # Custom CSS for the tab-like navigation (Secondary is active)
+    st.markdown("""
+    <style>
+        .step-container {
+            display: flex;
+            margin-bottom: 20px;
+        }
+        .step {
+            padding: 10px 20px;
+            text-align: center;
+            cursor: pointer;
+            border-bottom: 3px solid transparent;
+            font-weight: bold;
+            color: #616161;
+        }
+        .active-step {
+            color: #4A148C; /* Purple for active tab text */
+            border-bottom: 3px solid #4A148C !important; /* Purple line for active tab */
+        }
+    </style>
+    <div class="step-container">
+        <div class="step" style="border-bottom: 3px solid #E0E0E0; color: #9E9E9E;">PRIMARY DETAILS</div>
+        <div class="step active-step">SECONDARY DETAILS</div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Based on image_4e6ddb.png
+    with st.form("secondary_form"):
+        st.subheader("🏢 Organizational Details")
+        st.text_input("Visit Type", key="visit_type", placeholder="e.g., Business, Personal")
+        st.text_input("From Company", key="from_company", placeholder="e.g., Tech Solutions Inc.")
+        st.text_input("Department", key="department", placeholder="e.g., Sales, HR, Engineering")
+        st.text_input("Designation", key="designation", placeholder="e.g., Manager, Developer")
+
+        st.markdown("---")
+
+        st.subheader("📍 Organization Address")
+        st.text_input("Address Line 1", key="addr1")
+        
+        col_city, col_state = st.columns(2)
+        with col_city:
+            st.text_input("City / District", key="city")
+        with col_state:
+            st.text_input("State / Province", key="state")
+            
+        col_postal, col_country = st.columns(2)
+        with col_postal:
+            st.text_input("Postal Code", key="postal_code")
+        with col_country:
+            st.text_input("Country", key="country")
+
+        st.markdown("---")
+
+        st.subheader("🧑‍🤝‍👩 Other Details")
+        
+        # Gender (Radio button simulation)
+        st.radio("Gender", options=["Male", "Female", "Others"], horizontal=True, key="gender")
+
+        # Purpose (Input field instead of dropdown)
+        st.text_input("Purpose", key="purpose", placeholder="e.g., Meeting, Delivery, Interview")
+        
+        st.text_input("Person to Meet", key="person_to_meet", placeholder="Full Name of Contact Person")
+
+        st.markdown("---")
+        
+        st.subheader("💼 Belongings Check")
+        # Belongings (Checkbox simulation)
+        col_bags, col_docs, col_elect, col_laptop, col_charge, col_power = st.columns(6)
+        with col_bags:
+            st.checkbox("Bags", key="bags")
+        with col_docs:
+            st.checkbox("Documents", key="documents")
+        with col_elect:
+            st.checkbox("Electronic Items", key="electronic")
+        with col_laptop:
+            st.checkbox("Laptop", key="laptop")
+        with col_charge:
+            st.checkbox("Charger", key="charger")
+        with col_power:
+            st.checkbox("Power Bank", key="power_bank")
+
+
+        st.markdown("---")
+        
+        # Navigation Buttons
+        col_prev, col_next = st.columns(2)
+        
+        with col_prev:
+            if st.form_submit_button("Previous", use_container_width=True, type="secondary"):
+                st.session_state['current_step'] = 'primary'
+                st.rerun()
+
+        with col_next:
+            # Final submission button
+            if st.form_submit_button("Submit", use_container_width=True, type="primary"):
+                # Here you would typically process and save the data
+                
+                # Retrieve all collected data
+                visitor_data = {
+                    "Name": st.session_state.get('name'),
+                    "Phone": st.session_state.get('phone'),
+                    "Email": st.session_state.get('email'),
+                    "Visit Type": st.session_state.get('visit_type'),
+                    "Company": st.session_state.get('from_company'),
+                    "Gender": st.session_state.get('gender'),
+                    # ... add all other fields
+                }
+                
+                # Display success and confirmation
+                st.success("Visitor Registration Complete! Thank you.")
+                st.balloons()
+                # Optionally show the data collected
+                st.session_state['current_step'] = 'complete'
+                st.session_state['visitor_data'] = visitor_data
+                st.rerun()
+
+
+def render_complete_page():
+    """Renders the completion page."""
+    render_header()
+    st.subheader("🎉 Registration Successful!")
+    st.write("Your details have been submitted. Please wait for confirmation.")
+
+    # Show a summary of the collected data
+    st.subheader("Summary of Details")
+    st.json(st.session_state.get('visitor_data', {}))
+    
+    if st.button("Start New Registration"):
+        st.session_state['current_step'] = 'primary'
+        # Clear specific session state keys to reset form data
+        keys_to_clear = ['name', 'phone', 'email', 'visit_type', 'from_company', 'gender', 'visitor_data']
+        for key in keys_to_clear:
+            if key in st.session_state:
+                del st.session_state[key]
+        st.rerun()
+
+
+# --- Main Application Logic ---
+if st.session_state['current_step'] == 'primary':
+    render_primary_details()
+elif st.session_state['current_step'] == 'secondary':
+    render_secondary_details()
+elif st.session_state['current_step'] == 'complete':
+    render_complete_page()
