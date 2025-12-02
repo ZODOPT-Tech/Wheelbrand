@@ -3,7 +3,6 @@ import mysql.connector
 from datetime import datetime
 import json
 import boto3
-from botocore.exceptions import ClientError
 
 # ======================================================
 # AWS + DB CONFIG
@@ -11,8 +10,8 @@ from botocore.exceptions import ClientError
 
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
-
 HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
+
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 
 
@@ -44,7 +43,6 @@ def get_conn():
 def load_css():
     st.markdown(f"""
     <style>
-
     .stApp > header {{visibility: hidden;}}
 
     .header-box {{
@@ -54,6 +52,7 @@ def load_css():
         max-width: 1600px;
         width: 100%;
         margin: 0 auto 35px auto;
+
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -73,51 +72,59 @@ def load_css():
 
     .summary-card {{
         background: white;
-        padding: 18px;
+        padding: 18px 20px;
         border-radius: 12px;
-        box-shadow: 0px 4px 15px rgba(0,0,0,0.08);
         margin-bottom: 18px;
         text-align: left;
+        box-shadow: 0px 4px 12px rgba(0,0,0,0.08);
     }}
 
     .summary-title {{
         font-size: 15px;
         color: #666;
         font-weight: 600;
+        margin-bottom: 4px;
     }}
 
     .summary-value {{
-        font-size: 28px;
+        font-size: 26px;
         font-weight: 800;
         color: #4B2ECF;
-        margin-top: -4px;
     }}
 
-    .main-card {{
-        background: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0px 4px 15px rgba(0,0,0,0.08);
+    .visitor-row {{
+        padding: 12px 0;
+        border-bottom: 1px solid #EEE;
     }}
 
-    .completed-box {{
-        background: #d9f8e3;
-        padding: 6px 10px;
+    .completed {{
+        background: #28a745;
+        padding: 6px 12px;
         border-radius: 6px;
-        color: #1e7d35;
-        font-weight: 600;
+        color: white;
         font-size: 13px;
-        text-align: center;
+        font-weight: 600;
+        display: inline-block;
     }}
 
-    .stButton > button {{
+    .checkout-btn button {{
+        background: {HEADER_GRADIENT} !important;
+        color: white !important;
+        border-radius: 8px !important;
+        padding: 8px 14px !important;
+        font-size: 14px !important;
+        font-weight: 600 !important;
+        border: none !important;
+    }}
+
+    .new-btn button {{
         background: {HEADER_GRADIENT} !important;
         color: white !important;
         border-radius: 10px !important;
-        padding: 12px 0 !important;
-        border: none !important;
-        font-size: 17px !important;
-        font-weight: 600 !important;
+        padding: 18px !important;
+        font-size: 20px !important;
+        font-weight: 700 !important;
+        width: 100% !important;
     }}
 
     </style>
@@ -125,26 +132,27 @@ def load_css():
 
 
 # ======================================================
-# Header Section
+# HEADER
 # ======================================================
 
 def render_header():
+    company_name = st.session_state.get("company_name", "Your Company")
+
     st.markdown(f"""
         <div class="header-box">
-            <div class="header-title">VISITOR MANAGEMENT DASHBOARD</div>
+            <div class="header-title">Welcome, {company_name}</div>
             <img src="{LOGO_URL}" class="header-logo">
         </div>
     """, unsafe_allow_html=True)
 
 
 # ======================================================
-# Fetch Visitors for Company
+# FETCH VISITORS
 # ======================================================
 
 def get_visitors(company_id):
     conn = get_conn()
     cursor = conn.cursor(dictionary=True)
-
     cursor.execute("""
         SELECT visitor_id, full_name, phone_number, person_to_meet,
                registration_timestamp, checkout_time
@@ -152,60 +160,61 @@ def get_visitors(company_id):
         WHERE company_id = %s
         ORDER BY registration_timestamp DESC
     """, (company_id,))
-
     return cursor.fetchall()
 
 
 # ======================================================
-# Dashboard Stats
+# DASHBOARD SUMMARY
 # ======================================================
 
 def dashboard_stats(company_id):
     conn = get_conn()
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
 
+    # Visitors today
     cursor.execute("""
-        SELECT COUNT(*) FROM visitors
+        SELECT COUNT(*) AS c FROM visitors 
         WHERE company_id=%s AND DATE(registration_timestamp)=CURDATE()
     """, (company_id,))
-    visitors_today = cursor.fetchone()[0]
+    visitors_today = cursor.fetchone()['c']
 
+    # Inside now
     cursor.execute("""
-        SELECT COUNT(*) FROM visitors
+        SELECT COUNT(*) AS c FROM visitors
         WHERE company_id=%s AND checkout_time IS NULL
     """, (company_id,))
-    inside_now = cursor.fetchone()[0]
+    inside_now = cursor.fetchone()['c']
 
+    # Checked out today
     cursor.execute("""
-        SELECT COUNT(*) FROM visitors
+        SELECT COUNT(*) AS c FROM visitors
         WHERE company_id=%s AND DATE(checkout_time)=CURDATE()
     """, (company_id,))
-    checked_out_today = cursor.fetchone()[0]
+    checked_out_today = cursor.fetchone()['c']
 
+    # Total visitors
     cursor.execute("""
-        SELECT COUNT(*) FROM visitors WHERE company_id=%s
+        SELECT COUNT(*) AS c FROM visitors
+        WHERE company_id=%s
     """, (company_id,))
-    total_visitors = cursor.fetchone()[0]
+    total_visitors = cursor.fetchone()['c']
 
     return visitors_today, inside_now, checked_out_today, total_visitors
 
 
 # ======================================================
-# Update Checkout
+# MARK CHECKOUT
 # ======================================================
 
 def mark_checkout(visitor_id):
     conn = get_conn()
     cursor = conn.cursor()
-
-    cursor.execute(
-        "UPDATE visitors SET checkout_time=%s WHERE visitor_id=%s",
-        (datetime.now(), visitor_id)
-    )
+    cursor.execute("UPDATE visitors SET checkout_time=%s WHERE visitor_id=%s",
+                   (datetime.now(), visitor_id))
 
 
 # ======================================================
-# Visitor Dashboard
+# MAIN DASHBOARD
 # ======================================================
 
 def render_visitor_dashboard():
@@ -217,16 +226,14 @@ def render_visitor_dashboard():
     load_css()
     render_header()
 
-    company_name = st.session_state.get("company_name", "Company")
-    company_id = st.session_state.get("company_id")
+    company_id = st.session_state["company_id"]
 
-    # ===================== ANALYTICS =====================
+    # Get summary
     visitors_today, inside_now, checked_out_today, total_visitors = dashboard_stats(company_id)
 
-    # MAIN LAYOUT: LEFT CONTENT + RIGHT SUMMARY COLUMN
-    left, right = st.columns([4, 1.3])
+    left, right = st.columns([4, 1.4])
 
-    # ===================== RIGHT SIDE SUMMARY =====================
+    # ===================== RIGHT SUMMARY =====================
     with right:
         st.markdown("### 📊 Summary")
 
@@ -258,18 +265,14 @@ def render_visitor_dashboard():
             </div>
         """, unsafe_allow_html=True)
 
-    # ===================== LEFT SIDE MAIN CONTENT =====================
+    # ===================== LEFT MAIN LIST =====================
     with left:
 
-        st.markdown(f"""
-        <div class="main-card">
-            <h2 style='margin-bottom:5px;'>Welcome, {company_name}</h2>
-        </div>
-        """, unsafe_allow_html=True)
-
+        st.markdown("<div class='new-btn'>", unsafe_allow_html=True)
         if st.button("➕ NEW VISITOR REGISTRATION"):
             st.session_state["current_page"] = "visitor_details"
             st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
 
         st.markdown("## 🧾 Visitor List")
 
@@ -279,7 +282,7 @@ def render_visitor_dashboard():
             st.info("No visitors found.")
             return
 
-        # Table Header
+        # Table header
         header = st.columns([3, 2, 2, 3, 2, 2])
         header[0].markdown("### Name")
         header[1].markdown("### Phone")
@@ -293,8 +296,7 @@ def render_visitor_dashboard():
         # Table rows
         for v in visitors:
             vid = v["visitor_id"]
-
-            checkout_time = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
+            checkout_val = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
 
             row = st.columns([3, 2, 2, 3, 2, 2])
 
@@ -302,17 +304,25 @@ def render_visitor_dashboard():
             row[1].write(v["phone_number"])
             row[2].write(v["person_to_meet"])
             row[3].write(v["registration_timestamp"].strftime("%d-%m-%Y %H:%M"))
-            row[4].write(checkout_time)
+            row[4].write(checkout_val)
 
             with row[5]:
                 if not v["checkout_time"]:
-                    if st.button("Checkout", key=f"checkout_{vid}"):
-                        mark_checkout(vid)
-                        st.rerun()
+                    with st.container():
+                        if st.button("Checkout", key=f"checkout_{vid}", help="Mark visitor as checked out"):
+                            mark_checkout(vid)
+                            st.rerun()
                 else:
-                    st.markdown("<div class='completed-box'>Completed</div>", unsafe_allow_html=True)
+                    st.markdown("<div class='completed'>Completed</div>", unsafe_allow_html=True)
 
 
 # EXPORT FOR ROUTER
 def render_dashboard():
     return render_visitor_dashboard()
+
+
+if __name__ == "__main__":
+    st.session_state["admin_logged_in"] = True
+    st.session_state["company_id"] = 1
+    st.session_state["company_name"] = "Test Company"
+    render_visitor_dashboard()
