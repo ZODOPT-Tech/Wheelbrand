@@ -50,10 +50,8 @@ def load_css():
         background: {HEADER_GRADIENT};
         padding: 26px 45px;
         border-radius: 12px;
-        max-width: 1600px;
         width: 100%;
         margin: 0 auto 35px auto;
-
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -64,7 +62,6 @@ def load_css():
         font-size: 38px;
         font-weight: 800;
         color: white;
-        margin: 0;
     }}
 
     .header-logo {{
@@ -80,7 +77,7 @@ def load_css():
     }}
 
     .visitor-table table {{
-        width: 100% !important;
+        width: 100%;
         border-collapse: collapse;
         margin-top: 15px;
     }}
@@ -134,7 +131,7 @@ def render_header():
 
 
 # ======================================================
-# Fetch Visitors for Company
+# Fetch Visitors for Company (FIXED visitor_id)
 # ======================================================
 
 def get_visitors(company_id):
@@ -142,7 +139,7 @@ def get_visitors(company_id):
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
-        SELECT id, full_name, phone_number, visit_type, person_to_meet,
+        SELECT visitor_id, full_name, phone_number, visit_type, person_to_meet,
                registration_timestamp, checkout_time
         FROM visitors
         WHERE company_id = %s
@@ -153,35 +150,34 @@ def get_visitors(company_id):
 
 
 # ======================================================
-# Update Checkout Time
+# Update Checkout Time  (FIXED visitor_id)
 # ======================================================
 
 def mark_checkout(visitor_id):
     conn = get_conn()
     cursor = conn.cursor()
     cursor.execute(
-        "UPDATE visitors SET checkout_time=%s WHERE id=%s",
+        "UPDATE visitors SET checkout_time=%s WHERE visitor_id=%s",
         (datetime.now(), visitor_id)
     )
 
 
 # ======================================================
-# Reset Visitor Entry
+# Reset Visitor Entry (FIXED visitor_id)
 # ======================================================
 
 def reset_visitor(visitor_id):
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM visitors WHERE id=%s", (visitor_id,))
+    cursor.execute("DELETE FROM visitors WHERE visitor_id=%s", (visitor_id,))
 
 
 # ======================================================
-# Visitor Dashboard Main Section
+# Visitor Dashboard Main
 # ======================================================
 
 def render_visitor_dashboard():
 
-    # Redirect if not logged in
     if "admin_logged_in" not in st.session_state or not st.session_state["admin_logged_in"]:
         st.error("Access Denied")
         st.stop()
@@ -192,7 +188,7 @@ def render_visitor_dashboard():
     admin = st.session_state.get("admin_name", "Admin")
     company_id = st.session_state.get("company_id")
 
-    # ================= WELCOME CARD =================
+    # ------------------ Welcome Card ------------------
     st.markdown(f"""
     <div class="dash-card">
         <h2 style='margin-bottom:5px;'>Welcome, {admin}</h2>
@@ -200,14 +196,13 @@ def render_visitor_dashboard():
     </div>
     """, unsafe_allow_html=True)
 
-    # ================= NEW VISITOR BUTTON =================
+    # ------------------ New Registration Button ------------------
     if st.button("➕ NEW VISITOR REGISTRATION"):
         st.session_state["current_page"] = "visitor_details"
         st.rerun()
 
-    # ================= VISITOR LIST =================
+    # ------------------ Visitor Table ------------------
     st.markdown("### 🧾 Visitor List")
-
     visitors = get_visitors(company_id)
 
     if not visitors:
@@ -216,7 +211,6 @@ def render_visitor_dashboard():
 
     st.markdown("<div class='visitor-table'>", unsafe_allow_html=True)
 
-    # Table Headers
     st.markdown("""
     <table>
         <tr>
@@ -229,8 +223,9 @@ def render_visitor_dashboard():
         </tr>
     """, unsafe_allow_html=True)
 
-    # Table rows
     for v in visitors:
+        vid = v["visitor_id"]
+
         checkout = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
 
         st.markdown(f"""
@@ -240,22 +235,24 @@ def render_visitor_dashboard():
             <td>{v['person_to_meet']}</td>
             <td>{v['registration_timestamp'].strftime("%d-%m-%Y %H:%M")}</td>
             <td>{checkout}</td>
+
             <td>
                 <form action="" method="get">
-                    <button class="action-btn checkout-btn" name="checkout_{v['id']}">Checkout</button>
-                    <button class="action-btn reset-btn" name="reset_{v['id']}">Reset</button>
+                    <button class="action-btn checkout-btn" name="checkout_{vid}">Checkout</button>
+                    <button class="action-btn reset-btn" name="reset_{vid}">Reset</button>
                 </form>
             </td>
         </tr>
         """, unsafe_allow_html=True)
 
-        # Action handlers
-        if f"checkout_{v['id']}" in st.query_params:
-            mark_checkout(v["id"])
+        # ----- Handle checkout -----
+        if f"checkout_{vid}" in st.query_params:
+            mark_checkout(vid)
             st.rerun()
 
-        if f"reset_{v['id']}" in st.query_params:
-            reset_visitor(v["id"])
+        # ----- Handle reset -----
+        if f"reset_{vid}" in st.query_params:
+            reset_visitor(vid)
             st.rerun()
 
     st.markdown("</table></div>", unsafe_allow_html=True)
@@ -264,11 +261,3 @@ def render_visitor_dashboard():
 # EXPORT FOR ROUTER
 def render_dashboard():
     return render_visitor_dashboard()
-
-
-# Manual Test
-if __name__ == "__main__":
-    st.session_state["admin_logged_in"] = True
-    st.session_state["admin_name"] = "Test Admin"
-    st.session_state["company_id"] = 1
-    render_visitor_dashboard()
