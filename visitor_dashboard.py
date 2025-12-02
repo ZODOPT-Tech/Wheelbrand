@@ -1,19 +1,35 @@
 import streamlit as st
 import os
 
-# Path for your logo (GitHub RAW URL recommended)
+# ===========================
+# REFRESH REDIRECT PROTECTION
+# ===========================
+# 🚨 If user refreshes this page directly, redirect to main_screen.py
+if "current_page" not in st.session_state:
+    st.session_state["current_page"] = "main_screen"
+    st.rerun()
+
+# ===========================
+# CONFIGURATION
+# ===========================
+
+# ⭐ UPDATE THIS: Replace with your actual GitHub RAW link
 LOGO_PATH = "zodopt.png"
 
 HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
 
-# ---------------------- CUSTOM CSS ----------------------
+
+# ===========================
+# CUSTOM CSS
+# ===========================
+
 def load_dashboard_css():
     st.markdown(f"""
     <style>
 
     .stApp > header {{visibility: hidden;}}
 
-    /* Header */
+    /* HEADER */
     .header-box {{
         background: {HEADER_GRADIENT};
         padding: 26px 45px;
@@ -41,71 +57,80 @@ def load_dashboard_css():
         object-fit: contain;
     }}
 
-    /* Dashboard Button Styling */
+    /* MAIN BUTTON */
     .stButton > button {{
         background: {HEADER_GRADIENT} !important;
         color: white !important;
         border-radius: 12px !important;
         width: 100% !important;
-        padding: 16px 0 !important;
+        padding: 18px 0 !important;
         font-size: 20px !important;
         font-weight: 700 !important;
         border: none !important;
+        margin-top: 10px !important;
     }}
     .stButton > button:hover {{
         opacity: 0.92 !important;
     }}
 
-    /* Card Styling */
+    /* DASHBOARD CARD */
     .dashboard-card {{
         background: white;
-        padding: 25px;
-        border-radius: 12px;
-        box-shadow: 0px 4px 18px rgba(0,0,0,0.09);
+        padding: 28px;
+        border-radius: 14px;
+        box-shadow: 0px 4px 18px rgba(0,0,0,0.10);
         margin-bottom: 25px;
-        font-size: 18px;
-        line-height: 1.6;
     }}
 
-    .label-text {{
+    .welcome-title {{
+        font-size: 28px;
+        font-weight: 800;
+        color: #222;
+    }}
+
+    .company-label {{
         font-size: 16px;
         font-weight: 600;
-        color: #555;
-        margin-bottom: 6px;
+        color: #666;
+        margin-top: 15px;
     }}
 
-    .value-text {{
-        font-size: 18px;
+    .company-value {{
+        font-size: 20px;
         font-weight: 700;
         color: #333;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
     }}
 
     </style>
     """, unsafe_allow_html=True)
 
 
-# ---------------------- HEADER ----------------------
+# ===========================
+# HEADER
+# ===========================
+
 def render_header():
-    if os.path.exists(LOGO_PATH):
+    if LOGO_PATH.startswith("http"):
         logo_html = f'<img src="{LOGO_PATH}" class="header-logo">'
     else:
-        logo_html = '<div style="font-size:24px;color:white;font-weight:900">zodopt</div>'
+        logo_html = '<div style="color:white;font-size:24px;font-weight:900">zodopt</div>'
 
-    st.markdown(
-        f"""
+    st.markdown(f"""
         <div class="header-box">
             <div class="header-title">VISITOR MANAGEMENT DASHBOARD</div>
             {logo_html}
         </div>
-        """,
-        unsafe_allow_html=True,
-    )
+    """, unsafe_allow_html=True)
 
 
-# ---------------------- MAIN DASHBOARD ----------------------
+# ===========================
+# DASHBOARD CONTENT
+# ===========================
+
 def render_dashboard():
 
+    # Access check
     if "admin_logged_in" not in st.session_state or not st.session_state["admin_logged_in"]:
         st.error("Access Denied: Please login.")
         st.stop()
@@ -114,40 +139,55 @@ def render_dashboard():
     load_dashboard_css()
     render_header()
 
-    company_id = st.session_state.get("company_id", "N/A")
+    # Values from session
     admin_name = st.session_state.get("admin_name", "Admin")
+    company_id = st.session_state.get("company_id", "N/A")
 
-    # Dashboard Welcome Card
-    st.markdown(
-        f"""
+    # ---------------------------
+    # DASHBOARD CARD
+    # ---------------------------
+    st.markdown(f"""
         <div class="dashboard-card">
-            <div class="label-text">Welcome</div>
-            <div class="value-text">{admin_name}</div>
 
-            <div class="label-text">Company ID</div>
-            <div class="value-text">{company_id}</div>
+            <div class="welcome-title">
+                Welcome, {admin_name}
+            </div>
 
-            <hr>
+            <div class="company-label">Company ID</div>
+            <div class="company-value">{company_id}</div>
 
-            <div style="font-size:17px;color:#555;">
+            <hr style="margin:20px 0;">
+
+            <div style="font-size:17px; color:#555;">
                 Use the button below to begin a new visitor registration.
             </div>
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
 
-    # New Registration Button
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ---------------------------
+    # NEW REGISTRATION BUTTON
+    # ---------------------------
     if st.button("➕ NEW VISITOR REGISTRATION"):
-        st.session_state["current_page"] = "visitor_registration"  # loads visitor_details.py
+        st.session_state["current_page"] = "visitor_registration"   # will load visitor_details.py
         st.rerun()
 
-    st.markdown("<br><br>", unsafe_allow_html=True)
 
-    # OPTIONAL: You can add more cards showing counts, history, etc.
+# ===========================
+# EXPORT FOR ROUTER
+# ===========================
 
-
-# ---------------------- ENTRY POINT ----------------------
-if __name__ == "__main__":
+def render_dashboard():
     render_visitor_dashboard()
 
+
+# ===========================
+# DEBUG RUN (Standalone)
+# ===========================
+
+if __name__ == "__main__":
+    st.session_state["admin_logged_in"] = True
+    st.session_state["admin_name"] = "Test Admin"
+    st.session_state["company_id"] = 1
+
+    render_visitor_dashboard()
