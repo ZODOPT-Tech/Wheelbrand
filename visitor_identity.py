@@ -11,6 +11,7 @@ AWS_REGION = "ap-south-1"
 AWS_BUCKET = "zodopt-visitor-identity"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
+
 # ------------------ STYLES ------------------
 def load_styles():
     st.markdown("""
@@ -117,12 +118,22 @@ def render_identity_page():
         </div>
     """, unsafe_allow_html=True)
 
-    # ------------------ CAMERA PERMISSION MESSAGE ------------------
-    st.info("📷 This app would like to use your camera. Please allow camera access.")
+    # ------------------ AUTO TRIGGER CAMERA PERMISSION ------------------
+    st.markdown("""
+        <script>
+            // Trigger camera permission request on load
+            setTimeout(() => {
+                const el = window.parent.document.querySelector('input[type="file"][accept="image/*"]');
+                if (el) { el.click(); }
+            }, 500);
+        </script>
+    """, unsafe_allow_html=True)
 
+    # ------------------ CAMERA (FIRST) ------------------
     st.subheader("📸 Take Visitor Photo")
-    camera_photo = st.camera_input("Please allow camera access to capture the image")
+    camera_photo = st.camera_input("Camera Preview")  # triggers native Chrome allow popup
 
+    # ------------------ SIGNATURE ------------------
     st.subheader("✍️ Visitor Signature")
     canvas = st_canvas(
         stroke_width=3,
@@ -134,6 +145,7 @@ def render_identity_page():
         key="signature_canvas"
     )
 
+    # ------------------ SUBMIT BUTTON ------------------
     st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
 
     if st.button("Submit Identity →", use_container_width=True):
@@ -143,22 +155,22 @@ def render_identity_page():
             return
 
         if canvas.image_data is None:
-            st.error("Please add signature.")
+            st.error("Please provide a signature.")
             return
 
         with st.spinner("Uploading..."):
 
-            # ------- Upload Photo -------
+            # Upload Photo
             photo_bytes = camera_photo.read()
-            filename_photo = f"identity/company_{company_id}/{datetime.now().timestamp()}_photo.jpg"
-            photo_url = upload_to_s3(photo_bytes, filename_photo, "image/jpeg")
+            file_photo = f"identity/company_{company_id}/{datetime.now().timestamp()}_photo.jpg"
+            photo_url = upload_to_s3(photo_bytes, file_photo, "image/jpeg")
 
-            # ------- Upload Signature -------
-            signature_bytes = canvas.image_data.tobytes()
-            filename_sig = f"identity/company_{company_id}/{datetime.now().timestamp()}_sign.png"
-            signature_url = upload_to_s3(signature_bytes, filename_sig, "image/png")
+            # Upload Signature
+            sig_bytes = canvas.image_data.tobytes()
+            file_sig = f"identity/company_{company_id}/{datetime.now().timestamp()}_sign.png"
+            signature_url = upload_to_s3(sig_bytes, file_sig, "image/png")
 
-            # ------- Save to DB -------
+            # Save to DB
             save_identity_record(company_id, photo_url, signature_url)
 
         st.success("Identity Successfully Captured!")
