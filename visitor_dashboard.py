@@ -38,61 +38,87 @@ def get_conn():
 
 
 # ======================================================
-# CSS
+# CSS → Premium UI
 # ======================================================
 
 def load_css():
     st.markdown(f"""
     <style>
+
     .stApp > header {{visibility: hidden;}}
 
+    /* HEADER */
     .header-box {{
         background: {HEADER_GRADIENT};
-        padding: 26px 45px;
-        border-radius: 12px;
-        max-width: 1600px;
-        width: 100%;
-        margin: 0 auto 35px auto;
-
+        padding: 34px 45px;
+        border-radius: 14px;
+        margin: 0 auto 40px auto;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        box-shadow: 0px 4px 22px rgba(0,0,0,0.25);
+        box-shadow: 0 6px 25px rgba(0,0,0,0.18);
     }}
 
     .header-title {{
-        font-size: 38px;
-        font-weight: 800;
+        font-size: 42px;
+        font-weight: 900;
         color: white;
+        letter-spacing: -0.5px;
     }}
 
     .header-logo {{
-        height: 55px;
+        height: 60px;
     }}
 
-    .dash-card {{
-        background: white;
-        padding: 25px;
-        border-radius: 12px;
-        box-shadow: 0px 4px 15px rgba(0,0,0,0.08);
-        margin-bottom: 25px;
-    }}
-
-    .visitor-header-row {{
-        font-weight: 700;
-        color: #333;
-        margin-top: 15px;
-    }}
-
-    .action-btn {{
-        background: #4B2ECF !important;
+    /* BUTTON (Matches Header Gradient) */
+    .stButton > button {{
+        background: {HEADER_GRADIENT} !important;
         color: white !important;
-        padding: 8px 15px !important;
+        border-radius: 12px !important;
+        font-size: 20px !important;
+        padding: 16px !important;
+        font-weight: 700 !important;
+        border: none !important;
+        width: 100%;
+        box-shadow: 0 4px 14px rgba(79,73,255,0.35);
+    }}
+
+    .stButton > button:hover {{
+        opacity: 0.92 !important;
+        transform: scale(1.01);
+    }}
+
+    /* Visitor Table */
+    .table-header {{
+        font-weight: 800;
+        font-size: 18px;
+        margin-top: 20px;
+        color: #333;
+        padding-bottom: 10px;
+    }}
+
+    .data-row {{
+        padding: 12px 0;
+        border-bottom: 1px solid #EEE;
+    }}
+
+    .checkout-btn {{
+        background: #29B573 !important;
+        color: white !important;
         border-radius: 8px !important;
-        font-size: 14px !important;
+        padding: 6px 14px !important;
         font-weight: 600 !important;
         border: none !important;
         width: 100%;
+    }}
+
+    .completed-box {{
+        background: #E4FFEE;
+        padding: 6px 14px;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: 600;
+        color: #1A8A4A;
     }}
 
     </style>
@@ -100,20 +126,20 @@ def load_css():
 
 
 # ======================================================
-# Header Section
+# Header
 # ======================================================
 
 def render_header():
     st.markdown(f"""
         <div class="header-box">
-            <div class="header-title">VISITOR MANAGEMENT DASHBOARD</div>
+            <div class="header-title">Welcome, {st.session_state.get("company_name","Company")}</div>
             <img src="{LOGO_URL}" class="header-logo">
         </div>
     """, unsafe_allow_html=True)
 
 
 # ======================================================
-# Fetch Visitors for Company
+# Fetch Visitors
 # ======================================================
 
 def get_visitors(company_id):
@@ -132,7 +158,7 @@ def get_visitors(company_id):
 
 
 # ======================================================
-# Checkout Visitor
+# Checkout
 # ======================================================
 
 def mark_checkout(visitor_id):
@@ -145,7 +171,7 @@ def mark_checkout(visitor_id):
 
 
 # ======================================================
-# Visitor Dashboard Main Section
+# Main Dashboard
 # ======================================================
 
 def render_visitor_dashboard():
@@ -157,50 +183,36 @@ def render_visitor_dashboard():
     load_css()
     render_header()
 
-    company_name = st.session_state.get("company_name", "Your Company")
     company_id = st.session_state.get("company_id")
 
-    # ================= WELCOME CARD =================
-    st.markdown(f"""
-    <div class="dash-card">
-        <h2 style='margin-bottom:5px;'>Welcome, {company_name}</h2>
-        <div style='font-size:17px;color:#555;'>
-            Your visitor management system is active.
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    # NEW VISITOR BUTTON
+    st.button("➕ NEW VISITOR REGISTRATION")
 
-    # ================= NEW VISITOR BUTTON =================
-    if st.button("➕ NEW VISITOR REGISTRATION"):
-        st.session_state["current_page"] = "visitor_details"
-        st.rerun()
+    st.markdown("## 🧾 Visitor List")
 
-    # ================= VISITOR LIST =================
-    st.markdown("### 🧾 Visitor List")
-
+    # Fetch all visitors
     visitors = get_visitors(company_id)
 
     if not visitors:
-        st.info("No visitors found yet.")
+        st.info("No visitors yet.")
         return
 
-    # ---- Header row ----
-    header_cols = st.columns([3, 2, 2, 3, 2, 2])
-    header_cols[0].markdown("**Name**")
-    header_cols[1].markdown("**Phone**")
-    header_cols[2].markdown("**Meeting**")
-    header_cols[3].markdown("**Visited**")
-    header_cols[4].markdown("**Checkout**")
-    header_cols[5].markdown("**Action**")
+    # Header Row
+    table_header = st.columns([3, 2, 2, 3, 2, 2])
+    table_header[0].markdown("### Name")
+    table_header[1].markdown("### Phone")
+    table_header[2].markdown("### Meeting")
+    table_header[3].markdown("### Visited")
+    table_header[4].markdown("### Checkout")
+    table_header[5].markdown("### Action")
 
     st.markdown("---")
 
-    # ---- Visitor Rows ----
+    # Visitor Rows
     for v in visitors:
 
         vid = v["visitor_id"]
-
-        checkout_display = (
+        checkout_time = (
             v["checkout_time"].strftime("%d-%m-%Y %H:%M")
             if v["checkout_time"] else "—"
         )
@@ -211,19 +223,19 @@ def render_visitor_dashboard():
         row[1].write(v["phone_number"])
         row[2].write(v["person_to_meet"])
         row[3].write(v["registration_timestamp"].strftime("%d-%m-%Y %H:%M"))
-        row[4].write(checkout_display)
+        row[4].write(checkout_time)
 
-        # ---- Checkout Button ONLY ----
+        # Only checkout button if not completed
         with row[5]:
             if not v["checkout_time"]:
-                if st.button("Checkout", key=f"checkout_{vid}"):
+                if st.button("Checkout", key=f"checkout_{vid}", help="Mark visitor checkout"):
                     mark_checkout(vid)
                     st.rerun()
             else:
-                st.success("Completed")
+                st.markdown(f"<div class='completed-box'>Completed</div>", unsafe_allow_html=True)
 
 
-# EXPORT FOR ROUTER
+# EXPORT
 def render_dashboard():
     return render_visitor_dashboard()
 
@@ -231,7 +243,6 @@ def render_dashboard():
 # Manual Test
 if __name__ == "__main__":
     st.session_state["admin_logged_in"] = True
-    st.session_state["company_name"] = "Zodopt Tech Pvt Ltd"
+    st.session_state["company_name"] = "Zodopt"
     st.session_state["company_id"] = 1
-
     render_visitor_dashboard()
