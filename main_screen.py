@@ -14,7 +14,7 @@ def custom_css():
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 25px;
+            margin-bottom: 40px; /* Increased margin for better separation */
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
         }
         .main-header h1 {
@@ -28,17 +28,25 @@ def custom_css():
         .logo-placeholder {
             font-size: 24px;
             font-weight: bold;
-            color: #ee55aa; /* Bright color for "zodopt" */
+            /* Styling for "zodopt" text colors */
+            color: white;
         }
+        .logo-placeholder span.z { color: #cc0000; } 
+        .logo-placeholder span.o { color: #ff9900; }
+        .logo-placeholder span.d { color: #66cc33; }
+        .logo-placeholder span.p { color: #0099cc; }
+        .logo-placeholder span.t { color: #ff6699; }
 
         /* Card Styling */
         .stContainer {
-            border: 1px solid #e0e0e0;
+            /* Make the card boundary match the image's clean, borderless look */
+            border: 1px solid #f0f0f0; 
+            background-color: white;
             border-radius: 15px;
-            padding: 30px;
+            padding: 20px;
             text-align: center;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-            height: 100%; /* Important for equal height columns */
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); /* Stronger shadow */
+            height: 380px; /* Fixed height for visual consistency */
             display: flex;
             flex-direction: column;
             justify-content: space-between;
@@ -46,28 +54,28 @@ def custom_css():
         
         /* Icon Placeholder Styling (Simulated Icons) */
         .icon-box-calendar {
-            width: 100px;
-            height: 100px;
+            width: 150px;
+            height: 150px;
             border-radius: 50%;
             background: linear-gradient(45deg, #7c4dff, #b388ff); /* Purple/Calendar Icon Color */
-            margin: 0 auto 20px auto;
+            margin: 40px auto; /* Centered, larger margin for vertical spacing */
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 40px;
+            font-size: 60px;
             color: white;
         }
 
         .icon-box-book {
-            width: 100px;
-            height: 100px;
+            width: 150px;
+            height: 150px;
             border-radius: 50%;
-            background: #2ecc71; /* Green/Book Icon Color */
-            margin: 0 auto 20px auto;
+            background: #00a884; /* Deep Emerald Green/Book Icon Color */
+            margin: 40px auto;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 40px;
+            font-size: 60px;
             color: white;
         }
         
@@ -77,14 +85,25 @@ def custom_css():
             background-color: #2196F3; /* Bright Blue */
             color: white;
             border: none;
-            padding: 10px;
-            border-radius: 8px;
+            padding: 15px; /* Bigger button */
+            border-radius: 0 0 15px 15px; /* Rounded only at the bottom to fuse with card */
             font-weight: bold;
-            margin-top: auto; /* Push button to the bottom */
+            font-size: 18px;
+            margin: 0; /* Remove default margin */
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            cursor: pointer;
         }
         .stButton>button:hover {
              background-color: #1976D2;
         }
+        
+        /* Ensure the container is ready for absolute positioning */
+        [data-testid="stVerticalBlock"] > div > div > [data-testid="stVerticalBlock"] {
+             position: relative;
+        }
+
         </style>
     """)
 
@@ -93,14 +112,14 @@ def custom_css():
 def render_main_screen():
     # 1. Apply Custom CSS
     custom_css()
-
+    
     # 2. Render Custom Header (Matches the banner in the image)
     with st.container():
         st.markdown(
             f"""
             <div class="main-header">
                 <h1>ZODOPT MEETEASE</h1>
-                <span class="logo-placeholder">zodopt</span>
+                <span class="logo-placeholder">z<span class="o">o</span>d<span class="o">o</span>p<span class="t">t</span></span>
             </div>
             """, 
             unsafe_allow_html=True
@@ -112,37 +131,27 @@ def render_main_screen():
     # --- VISITOR CARD (Left) ---
     with col1:
         # Use a container to simulate the card look
-        with st.container(border=True):
-            # ICON Placeholder
-            st.markdown('<div class="icon-box-calendar">🗓️</div>', unsafe_allow_html=True)
+        with st.container(border=False):
+            # ICON Placeholder (Calendar Icon)
+            st.markdown('<div class="icon-box-calendar">📅</div>', unsafe_allow_html=True)
             
-            # Text based on the image (Visit Plan) but triggering Visitor flow
-            st.subheader("Visit Plan")
-            st.caption("Plan your visit, check adoption status, and manage identity documents.")
-
-            if st.button("Visitor Login / Sign Up", key="main_visitor"):
+            # Button labeled "Visit Plan"
+            if st.button("Visit Plan", key="main_visitor"):
                 st.session_state['current_page'] = 'visitor_login'
                 st.rerun()
 
     # --- CONFERENCE CARD (Right) ---
     with col2:
         # Use a container to simulate the card look
-        with st.container(border=True):
-            # ICON Placeholder
-            st.markdown('<div class="icon-box-book">📘</div>', unsafe_allow_html=True)
+        with st.container(border=False):
+            # ICON Placeholder (Book Icon)
+            st.markdown('<div class="icon-box-book">📚</div>', unsafe_allow_html=True)
             
-            # Text based on the image (Conference Booking)
-            st.subheader("Conference Booking")
-            st.caption("Access management tools for authorized personnel bookings.")
-
-            if st.button("Conference Login", key="main_conference"):
+            # Button labeled "Conference Booking"
+            if st.button("Conference Booking", key="main_conference"):
                 st.session_state['current_page'] = 'conference_login'
                 st.rerun()
 
-    st.markdown("---")
-    st.caption("A ZODOPT Visitor and Conference Management System.")
-
-# Note: You should place the 'zodopt.png' logo file in the same directory as your main app.
-# The current code uses a CSS text placeholder for the logo, as Streamlit's image function 
-# doesn't fit neatly into the HTML-styled header bar without more complex positioning. 
-# You can replace the 'zodopt' text span with an actual image tag if needed.
+    # Remove the bottom line and caption for a cleaner look, closer to the image
+    # st.markdown("---")
+     st.caption("A ZODOPT Visitor and Conference Management System.")
