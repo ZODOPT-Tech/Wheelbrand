@@ -6,9 +6,7 @@ import boto3
 import json
 import traceback
 from time import sleep
-from datetime import datetime, timedelta
-import secrets
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Callable
 
 # ==============================================================================
 # 1. CONFIGURATION & CREDENTIALS
@@ -102,6 +100,7 @@ def get_fast_connection() -> mysql.connector.connection.MySQLConnection:
 
 def hash_password(password: str) -> str:
     """Hashes a plaintext password using bcrypt."""
+    # Use a fixed salt round (12 is secure and common)
     return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
 
 def check_password(password: str, hashed_password: str) -> bool:
@@ -109,12 +108,20 @@ def check_password(password: str, hashed_password: str) -> bool:
     try:
         return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
     except Exception:
+        # Catch value errors if hash format is wrong
         return False
 
 def _get_image_base64(path: str) -> str:
     """Converts a local image file to a base64 string for embedding (Placeholder)."""
     # Placeholder implementation returns a small purple square image data URI
-    return "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDTAgAQJUYAKYfBpZZXFw5AAAAAElFTkSuQmCC"
+    try:
+        if os.path.exists(path):
+            with open(path, "rb") as image_file:
+                return base64.b64encode(image_file.read()).decode()
+    except Exception:
+        pass
+    # Fallback placeholder data
+    return "iVBORw0KGgoAAAANSUhEUgAAAAUAAAAFCAYAAACNbyblAAAAHElEQVQI12P4//8/w38GIAXDTAgAQJUYAKYfBpZZXFw5AAAAAElFTSuQmCC"
 
 def set_auth_view(view: str):
     """Changes the current view and forces a Streamlit re-render."""
@@ -122,7 +129,7 @@ def set_auth_view(view: str):
     # Clear reset state when changing views
     if 'reset_user_id' in st.session_state:
         del st.session_state['reset_user_id']
-    sleep(0.1) 
+    sleep(0.01) # Small delay to ensure state update before rerun
     st.rerun()
 
 # ==============================================================================
@@ -131,6 +138,8 @@ def set_auth_view(view: str):
 
 def get_admin_by_email(conn, email: str) -> Optional[Dict[str, Any]]:
     """Fetches user ID, hash, name, and company details for login/lookup."""
+    # Ensure email is lowercased for case-insensitive lookup if DB collation is case-sensitive
+    email = email.lower()
     query = """
     SELECT au.id, au.password_hash, au.name, c.id AS company_id, c.company_name
     FROM admin_users au
@@ -140,10 +149,11 @@ def get_admin_by_email(conn, email: str) -> Optional[Dict[str, Any]]:
     try:
         # Using context manager for cursor ensures it's closed
         with conn.cursor(dictionary=True) as cursor:
-            cursor.execute(query, (email.lower(),))
+            cursor.execute(query, (email,))
             return cursor.fetchone()
     except Exception as e:
-        st.error(f"DB Error fetching admin: {e}")
+        # Log the error, but do not display full trace to end-user unless debugging
+        print(f"DB Error fetching admin: {e}")
         return None
 
 def create_company_and_admin(conn, company_name: str, admin_name: str, email: str, password_hash: str) -> bool:
@@ -171,7 +181,7 @@ def create_company_and_admin(conn, company_name: str, admin_name: str, email: st
             st.error("Registration failed: An account with this email or company name already exists.")
         else:
             st.error(f"Registration failed (DB error): {err.msg}")
-            st.error(f"Full Error Trace: {traceback.format_exc()}")
+            # print(f"Full Error Trace: {traceback.format_exc()}") # Optional: For deeper debugging
         return False
     except Exception as e:
         conn.rollback()
@@ -186,7 +196,7 @@ def update_admin_password_directly(conn, user_id: int, new_password_hash: str) -
         with conn.cursor() as cursor:
             cursor.execute(update_admin_query, (new_password_hash, user_id))
             conn.commit()
-            return True
+            return cursor.rowcount > 0
     except Exception as e:
         st.error(f"DB Error during direct password update: {e}")
         conn.rollback()
@@ -201,36 +211,47 @@ def render_admin_register_view():
     """Renders the form for registering a new Company and its initial Admin user."""
     conn = get_fast_connection() 
     
-    with st.form("admin_register_form"):
-        st.markdown("### New Admin Registration")
+    st.subheader("New Admin Registration")
+    with st.form("admin_register_form", clear_on_submit=False):
         
-        company_name = st.text_input("Company Name", key="reg_company_name")
-        admin_name = st.text_input("Admin Full Name", key="reg_admin_name")
-        admin_email = st.text_input("Email ID (Used for Login)", key="reg_admin_email").lower()
+        company_name = st.text_input("Company Name", key="reg_company_name_input")
+        admin_name = st.text_input("Admin Full Name", key="reg_admin_name_input")
+        admin_email = st.text_input("Email ID (Used for Login)", key="reg_admin_email_input").lower()
         
         st.markdown("---")
         
-        password = st.text_input(f"Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reg_password")
-        confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password")
+        password = st.text_input(f"Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reg_password_input")
+        confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password_input")
         
         submitted = st.form_submit_button("Create Company & Admin Account", type="primary")
         
         if submitted:
+            # Basic validation
             if not all([company_name, admin_name, admin_email, password, confirm_password]):
                 st.error("Please fill in all required fields.")
                 return
-            elif password != confirm_password:
+            if password != confirm_password:
                 st.error("Passwords do not match.")
                 return
-            elif len(password) < MIN_PASSWORD_LENGTH:
+            if len(password) < MIN_PASSWORD_LENGTH:
                 st.error(f"Password must be at least {MIN_PASSWORD_LENGTH} characters long.")
                 return
-
+            
+            # Database action
             hashed_pass = hash_password(password)
             
             if create_company_and_admin(conn, company_name, admin_name, admin_email, hashed_pass):
                 st.success(f"Company '{company_name}' and Admin '{admin_name}' successfully registered!")
-                st.info("You can now sign in using your Email ID.")
+                # Reset form state manually if needed, or rely on clear_on_submit=True/False
+                # For this flow, we want to clear fields if successful
+                st.session_state["reg_company_name_input"] = ""
+                st.session_state["reg_admin_name_input"] = ""
+                st.session_state["reg_admin_email_input"] = ""
+                st.session_state["reg_password_input"] = ""
+                st.session_state["reg_confirm_password_input"] = ""
+                
+                # Navigate back to login
+                sleep(0.5)
                 set_auth_view('admin_login') 
             return
     
@@ -249,11 +270,12 @@ def render_existing_admin_login_view():
     Renders the Admin login form for existing users and handles DB authentication.
     """
     conn = get_fast_connection() 
-
-    with st.form("admin_login_form"):
-        st.markdown("### Admin Sign In")
-        email = st.text_input("Admin Email ID", key="admin_login_email").lower()
-        password = st.text_input("Password", type="password", key="admin_login_password")
+    
+    st.subheader("Admin Sign In")
+    with st.form("admin_login_form", clear_on_submit=False):
+        
+        email = st.text_input("Admin Email ID", key="admin_login_email_input").lower()
+        password = st.text_input("Password", type="password", key="admin_login_password_input")
         
         submitted = st.form_submit_button("Admin Sign In →", type="primary")
         
@@ -276,9 +298,11 @@ def render_existing_admin_login_view():
                     st.session_state['admin_name'] = user_data['name']
                     st.session_state['company_id'] = user_data['company_id']
                     st.session_state['company_name'] = user_data['company_name']
+                    
                     st.success(f"Welcome, {st.session_state['admin_name']}! Redirecting to dashboard...")
                     
-                    # Redirect to the admin dashboard entry point
+                    # Redirect to the admin dashboard entry point in the main app
+                    sleep(0.5)
                     set_auth_view('admin_dashboard_home') 
                     return
                 else:
@@ -298,7 +322,7 @@ def render_existing_admin_login_view():
 def render_admin_dashboard_home_view():
     """
     The main hub for the logged-in administrator.
-    This function immediately routes the Admin to the 'visitor_dashboard' page 
+    This function redirects the Admin to the 'visitor_dashboard' page 
     of the main application state.
     """
     # Enforce login
@@ -332,7 +356,7 @@ def render_forgot_password_view():
     # --- STAGE 1: EMAIL VERIFICATION ---
     if 'reset_user_id' not in st.session_state or st.session_state['reset_user_id'] is None:
         st.subheader("1. Verify Admin Email ID")
-        with st.form("forgot_pass_verify_form"):
+        with st.form("forgot_pass_verify_form", clear_on_submit=False):
             email_to_check = st.text_input("Enter your Admin Email ID", key="forgot_email_input").lower()
             submitted = st.form_submit_button("Check Email Existence", type="primary")
 
@@ -355,9 +379,9 @@ def render_forgot_password_view():
         st.subheader("2. Set New Password")
         user_id_to_reset = st.session_state['reset_user_id']
 
-        with st.form("forgot_pass_reset_form"):
-            new_password = st.text_input(f"New Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reset_new_password")
-            confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
+        with st.form("forgot_pass_reset_form", clear_on_submit=True):
+            new_password = st.text_input(f"New Password (min {MIN_PASSWORD_LENGTH} chars)", type="password", key="reset_new_password_input")
+            confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password_input")
             
             submitted = st.form_submit_button("Finalize Password Reset", type="primary")
             
@@ -375,16 +399,21 @@ def render_forgot_password_view():
                     st.success("Password successfully changed! Redirecting to login...")
                     # Clear state and redirect
                     del st.session_state['reset_user_id']
+                    sleep(0.5)
                     set_auth_view('admin_login')
                 else:
                     st.error("Password reset failed due to a database error. Please check logs.")
             
     st.markdown('<div style="margin-top: 25px;"></div>', unsafe_allow_html=True)
+    # The back button needs to clear the reset state if we are in step 2
     if st.button("← Back to Admin Login", key="forgot_back_login_btn", use_container_width=True):
+        if 'reset_user_id' in st.session_state:
+            del st.session_state['reset_user_id']
         set_auth_view('admin_login')
 
+
 # ==============================================================================
-# 5. MAIN APPLICATION ENTRY POINT (CSS/HTML is correctly applied)
+# 5. MAIN APPLICATION ENTRY POINT
 # ==============================================================================
 
 def render_visitor_login_page():
@@ -416,16 +445,26 @@ def render_visitor_login_page():
         --header-gradient: {HEADER_GRADIENT};
         --secondary-color: #7A42FF;
         --header-box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4);
+        --app-bg-color: #f7f9fc;
+        --main-content-padding: 2.5rem; /* Padding for the main content area */
     }}
 
-    /* Streamlit layout reset */
-    html, body, .stApp .main {{ padding-top: 0px !important; margin-top: 0px !important; }}
+    /* GLOBAL STREAMLIT OVERRIDES */
+    .stApp {{ background-color: var(--app-bg-color); }}
     .stApp > header {{ visibility: hidden; }}
+    /* Important: Remove Streamlit's default container padding for the whole app */
+    .stApp .main .block-container, 
+    .css-18e3th9 {{ 
+        padding: 0 !important; 
+        max-width: 100% !important; 
+        margin: 0 !important;
+    }}
+    .stApp .main {{ padding-top: 0 !important; margin-top: 0 !important; }}
     
-    /* Header Box - Full Width Design */
+    /* Header Box - Designed to look seamless with full-width top */
     .header-box {{
         background: var(--header-gradient);
-        padding: 20px 40px;
+        padding: 20px var(--main-content-padding);
         margin-top: 0px; 
         margin-bottom: 40px;
         border-radius: 0 0 15px 15px;
@@ -433,9 +472,8 @@ def render_visitor_login_page():
         display: flex;
         justify-content: space-between;
         align-items: center;
-        /* Force full width by overriding Streamlit's container margins */
-        width: 100vw;
-        margin-left: calc(50% - 50vw);
+        width: 100%;
+        color: #FFFFFF;
     }}
     .header-title {{
         font-family: 'Inter', sans-serif; 
@@ -448,17 +486,25 @@ def render_visitor_login_page():
     .header-logo-container {{
         font-size: 20px;
         font-weight: bold;
-        color: #FFFFFF;
+    }}
+    
+    /* MAIN CONTENT WRAPPER for consistent padding on all views */
+    .main-content-wrapper {{
+        padding: 0 var(--main-content-padding);
     }}
     
     /* Form and Input Styling */
     .stTextInput input, .stTextArea textarea, .stSelectbox > div:first-child {{
         font-family: 'Inter', sans-serif;
-        background-color: #f0f2f6;
+        background-color: #ffffff; /* Brighter background */
         border: 1px solid #e0e0e0;
         border-radius: 8px;
         padding: 12px 15px;
         font-size: 16px;
+    }}
+    .stTextInput label, .stTextArea label, .stSelectbox label {{
+        font-weight: 600; /* Bolder labels */
+        color: #333;
     }}
     .stTextInput input:focus, .stTextArea textarea:focus, .stSelectbox > div:first-child:focus {{
         border-color: var(--secondary-color);
@@ -468,6 +514,7 @@ def render_visitor_login_page():
     
     /* Primary Button Style (Gradient) */
     .stForm button[kind="primary"],
+    /* Targeted primary style for non-form buttons like 'Check Email Existence' */
     .stButton > button:not([key*="back_login_btn"]):not([key*="logout_btn"]):not([key*="existing_admin_login_btn"]):not([key*="checkin_back_dash_btn"]):not([key*="admin_new_reg_btn"]) {{
         background: var(--header-gradient) !important;
         color: white !important;
@@ -502,6 +549,7 @@ def render_visitor_login_page():
         margin-top: 10px !important;
         font-size: 14px !important;
         width: 100%;
+        border-radius: 8px !important;
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -523,8 +571,10 @@ def render_visitor_login_page():
         """,
         unsafe_allow_html=True
     )
+    
+    # 3. Dynamic View Rendering inside a controlled container
+    st.markdown('<div class="main-content-wrapper">', unsafe_allow_html=True)
 
-    # 3. Dynamic View Rendering
     if view == 'admin_register':
         render_admin_register_view()
     elif view == 'admin_login':
@@ -536,6 +586,8 @@ def render_visitor_login_page():
         pass 
     elif view == 'forgot_password':
         render_forgot_password_view()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
         
 if __name__ == '__main__':
     render_visitor_login_page()
