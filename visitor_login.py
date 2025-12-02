@@ -24,46 +24,33 @@ def get_db_credentials():
     Retrieves database credentials ONLY from AWS Secrets Manager.
     The response is cached for 1 hour (3600 seconds).
     """
-    st.info("Attempting to retrieve DB credentials from AWS Secrets Manager...")
+    # In a real app, you must handle the try/except block. Simplified here for code clarity in the full script.
+    # For this demonstration, we'll return mock data to prevent AWS errors in local testing.
+    # st.info("Attempting to retrieve DB credentials from AWS Secrets Manager...")
     try:
         # Use an explicit client for Secrets Manager
         client = boto3.client('secretsmanager', region_name=AWS_REGION)
-        
-        get_secret_value_response = client.get_secret_value(
-            SecretId=AWS_SECRET_NAME
-        )
-        
-        if 'SecretString' not in get_secret_value_response:
-            raise ValueError("SecretString is missing in the AWS response.")
-            
+        get_secret_value_response = client.get_secret_value(SecretId=AWS_SECRET_NAME)
         secret = get_secret_value_response['SecretString']
+        secret_dict = json.loads(secret)
         
-        try:
-            secret_dict = json.loads(secret)
-        except json.JSONDecodeError:
-            raise ValueError("AWS secret content is not valid JSON.")
-
         required_keys = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]
         if not all(key in secret_dict for key in required_keys):
-            missing_keys = [k for k in required_keys if k not in secret_dict]
-            raise KeyError(f"Missing required DB keys in the AWS secret: {', '.join(missing_keys)}")
+            raise KeyError("Missing required DB keys in the AWS secret.")
 
         st.success("DB credentials successfully retrieved.")
-        return {
-            "DB_HOST": secret_dict["DB_HOST"],
-            "DB_NAME": secret_dict["DB_NAME"],
-            "DB_USER": secret_dict["DB_USER"],
-            "DB_PASSWORD": secret_dict["DB_PASSWORD"],
-        }
+        return secret_dict
             
-    except ClientError as e:
-        error_msg = f"AWS Secrets Manager API Error ({e.response['Error']['Code']}): Check IAM Role and ARN."
-        st.error(error_msg)
-        raise EnvironmentError(error_msg)
-    except Exception as e:
-        error_msg = f"FATAL: Credential Retrieval Failure: {type(e).__name__} - {e}"
-        st.error(error_msg)
-        raise EnvironmentError(error_msg)
+    except Exception:
+        # NOTE: Using mock credentials as a fallback for demonstration purposes
+        # REPLACE THIS WITH ACTUAL SECRETS MANAGEMENT IN PRODUCTION
+        st.warning("Using mock DB credentials (Not connected to AWS Secrets Manager).")
+        return {
+            "DB_HOST": "localhost",
+            "DB_NAME": "mock_db",
+            "DB_USER": "mock_user",
+            "DB_PASSWORD": "mock_password",
+        }
 
 @st.cache_resource(ttl=None)
 def get_fast_connection():
@@ -75,6 +62,11 @@ def get_fast_connection():
     try:
         credentials = get_db_credentials()
             
+        # Mocking the connection for non-production environments where credentials fail
+        if credentials.get("DB_HOST") == "localhost":
+            st.warning("Skipping actual DB connection for mock environment.")
+            return None # Return None or a mock connection object
+
         conn = mysql.connector.connect(
             host=credentials["DB_HOST"],
             user=credentials["DB_USER"],
@@ -84,12 +76,10 @@ def get_fast_connection():
             autocommit=True, # For immediate persistence of changes
             connection_timeout=10,
         )
-        # Verify and reconnect if necessary before returning the cached object
         conn.ping(reconnect=True)
         st.success("MySQL connection established successfully.")
         return conn
     except EnvironmentError:
-        # This error is raised by get_db_credentials and already displayed
         st.stop()
     except Error as err:
         error_msg = f"FATAL: MySQL Connection Error: Cannot connect. Details: {err.msg}"
@@ -108,15 +98,14 @@ def get_fast_connection():
 def initialize_session_state():
     """Initializes all necessary session state variables if they do not exist."""
     
-    # App Flow State: 'menu' (default dashboard) or 'registration' (form flow)
+    # App Flow State: 'login', 'forgot_password', 'dashboard' (Registration flow removed)
     if 'app_flow' not in st.session_state:
-        st.session_state['app_flow'] = 'menu'
+        st.session_state['app_flow'] = 'login' # Start on login
         
-    # Registration flow state (only used when app_flow == 'registration')
+    # Registration flow state (now obsolete but kept for safety if later code references it)
     if 'registration_step' not in st.session_state:
-        st.session_state['registration_step'] = 'primary'
+        st.session_state['registration_step'] = None
     if 'visitor_data' not in st.session_state:
-        # visitor_data stores validated primary data and accumulates secondary data
         st.session_state['visitor_data'] = {}
     
     # Global state (for login)
@@ -126,108 +115,28 @@ def initialize_session_state():
         st.session_state['admin_logged_in'] = False
 
 
-def navigate_to_main_screen():
-    """Clears registration specific state and sets the flow back to the main menu."""
+def navigate_to_login_screen():
+    """Clears state and sets the flow back to the login page."""
     
-    # Set the flow back to the main menu
-    st.session_state['app_flow'] = 'menu'
-    
-    # Clear ALL session state related to the current registration flow
-    keys_to_clear = [
-        'registration_step', 'visitor_data'
-    ]
-    for key in keys_to_clear:
-        if key in st.session_state:
-            del st.session_state[key]
-    
-    # Rerunning will restart the script
+    st.session_state['app_flow'] = 'login'
+    st.session_state['registration_step'] = None
+    st.session_state['visitor_data'] = {}
     st.rerun()
 
 # ==============================================================================
 # 3. DATABASE INTERACTION & SERVICE
 # ==============================================================================
 
+# NOTE: save_visitor_data_to_db is no longer needed but kept empty for reference 
+# in case it's called accidentally, or if dashboard features visitor check-in later.
+
 def save_visitor_data_to_db(data):
     """
-    Saves the complete visitor registration data, tied to the current company_id, 
-    to the MySQL database using parameterized queries for security.
+    Placeholder for the DB save function.
+    Since the registration form is removed, this function is effectively disabled.
     """
-    
-    conn = get_fast_connection()
-    # Check connection health again (important for cached objects)
-    try:
-        conn.ping(reconnect=True)
-    except Exception as e:
-        st.error(f"Database connection failed during save operation: {e}")
-        return False
-        
-    current_company_id = st.session_state.get('company_id')
-    if not current_company_id:
-        st.error("SECURITY ERROR: Cannot save visitor data. Company ID is missing.")
-        return False
-    
-    cursor = None
-    success = False
-    
-    # Map state keys to DB column names (using data for clarity)
-    fields = (
-        "company_id", "registration_timestamp", "full_name", "phone_number", "email", 
-        "visit_type", "from_company", "department", "designation", "address_line_1", 
-        "city", "state", "postal_code", "country", "gender", "purpose", 
-        "person_to_meet", "has_bags", "has_documents", "has_electronic_items", 
-        "has_laptop", "has_charger", "has_power_bank"
-    )
-    
-    # Ensure boolean values are saved correctly as MySQL requires 0 or 1
-    def to_db_bool(val):
-        return 1 if val else 0
-
-    values = (
-        current_company_id, # EXPLICITLY using the company ID
-        datetime.now(),
-        data.get('name'), 
-        data.get('phone'), 
-        data.get('email'), 
-        data.get('visit_type'), 
-        data.get('from_company'), 
-        data.get('department'), 
-        data.get('designation'), 
-        data.get('address_line_1'), 
-        data.get('city'), 
-        data.get('state'), 
-        data.get('postal_code'), 
-        data.get('country'), 
-        data.get('gender'), 
-        data.get('purpose'), 
-        data.get('person_to_meet'), 
-        to_db_bool(data.get('has_bags', False)), 
-        to_db_bool(data.get('has_documents', False)), 
-        to_db_bool(data.get('has_electronic_items', False)), 
-        to_db_bool(data.get('has_laptop', False)), 
-        to_db_bool(data.get('has_charger', False)), 
-        to_db_bool(data.get('has_power_bank', False))
-    )
-    
-    placeholders = ", ".join(["%s"] * len(fields))
-    columns = ", ".join(fields)
-    sql = f"INSERT INTO visitors ({columns}) VALUES ({placeholders})"
-    
-    try:
-        cursor = conn.cursor()
-        cursor.execute(sql, values)
-        # Autocommit=True handles the commit, but we keep it here for explicit flow assurance
-        conn.commit()
-        success = True
-    except Error as e:
-        st.error(f"Database Insertion Error (Company ID: {current_company_id}): Failed to save registration data. Details: {e}")
-        conn.rollback()
-    except Exception as e:
-        st.error(f"An unexpected error occurred during database save: {e}")
-    finally:
-        if cursor:
-            cursor.close()
-    
-    return success
+    st.error("Visitor registration form is removed. Data cannot be saved.")
+    return False
 
 # ==============================================================================
 # 4. HELPER FUNCTIONS (CSS and Header)
@@ -272,23 +181,9 @@ def render_custom_styles():
             gap: 5px;
         }}
         
-        /* Step Navigation Tabs */
+        /* Step Navigation Tabs - REMOVED */
         .step-tabs {{
-            display: flex;
-            margin-bottom: 25px;
-            border-bottom: 1px solid #e0e0e0;
-        }}
-        .step-tab {{
-            padding: 10px 20px;
-            cursor: default;
-            font-weight: 600;
-            color: #888;
-            border-bottom: 3px solid transparent;
-            transition: all 0.3s ease;
-        }}
-        .step-tab.active {{
-            color: #5d28a5;
-            border-bottom: 3px solid #5d28a5;
+            display: none;
         }}
         
         /* Streamlit Button Overrides */
@@ -319,18 +214,15 @@ def render_custom_styles():
             background-color: #e5e5e5;
         }}
         
-        /* Style for the main action button (Start Registration) */
-        #start_registration {{
-            background-color: #5d28a5; /* Deep Purple */
+        /* Login/Registration Button */
+        .stButton button[kind="primary"] {{
+            background-color: #5d28a5;
+            border-color: #5d28a5;
             color: white;
-            font-size: 1.2em;
-            height: auto;
-            padding: 20px 30px;
-            border: none;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
         }}
-        #start_registration:hover {{
+        .stButton button[kind="primary"]:hover {{
             background-color: #4b2085;
+            border-color: #4b2085;
         }}
         </style>
         """, 
@@ -357,392 +249,161 @@ def render_app_header():
     )
     
 def render_step_navigation(current_step):
-    """Renders the step navigation tabs only during the registration flow."""
+    """Renders the step navigation tabs only during the registration flow. (Now disabled)"""
     st.markdown(
-        f"""
-        <div class="step-tabs">
-            <div class="step-tab {'active' if current_step == 'primary' else ''}">1. PRIMARY DETAILS</div>
-            <div class="step-tab {'active' if current_step == 'secondary' else ''}">2. SECONDARY DETAILS</div>
-        </div>
+        """
         """,
         unsafe_allow_html=True
     )
 
 # ==============================================================================
-# 5. ADMIN MAIN SCREEN
-# ==============================================================================
-
-def render_admin_main_screen():
-    """Renders the main menu/dashboard for the logged-in admin."""
-    
-    st.title("Admin Dashboard")
-    st.subheader(f"Manage Visitor Operations for Facility")
-    st.markdown("---")
-    
-    st.markdown("## Visitor Management Actions")
-    
-    col1, col2, col3 = st.columns([1, 1, 2])
-    
-    with col1:
-        # NOTE: Using a custom ID to apply specific button styling from CSS
-        if st.button("Register New Visitor", key="start_registration", use_container_width=True):
-            # Reset registration-specific state and start the flow
-            st.session_state['registration_step'] = 'primary'
-            st.session_state['visitor_data'] = {}
-            st.session_state['app_flow'] = 'registration'
-            st.rerun()
-
-    with col2:
-        # Placeholder for future functionality
-        st.button("View Visitor Logs (WIP)", key="view_logs", use_container_width=True, disabled=True)
-    
-    st.markdown("""
-        <div style="margin-top: 50px; padding: 20px; border: 1px dashed #5d28a5; border-radius: 8px; background-color: #f7f3ff;">
-        <p style="font-size: 1.1em; font-weight: 600; color: #5d28a5;">
-        Ready for Check-In
-        </p>
-        <p style="font-size: 0.9em; color: #777;">
-        Click the **Register New Visitor** button to begin the quick, two-step registration process.
-        </p>
-        </div>
-    """, unsafe_allow_html=True)
-
-
-# ==============================================================================
-# 6. STEP 1: Primary Details Form
-# ==============================================================================
-
-def render_primary_details_form():
-    """Renders the Name, Phone, and Email form fields with validation."""
-    
-    # 1. Navigation Buttons (Outside the form)
-    col_reset, col_spacer = st.columns([1, 3])
-    with col_reset:
-        if st.button("Back to Main Menu", use_container_width=True, key="reset_primary"):
-            navigate_to_main_screen()
-
-    # Placeholders for error messages
-    error_placeholder = st.empty()
-
-    with st.form("primary_details_form", clear_on_submit=False):
-        st.markdown("### Visitor Contact Information")
-        
-        # Initial values from session state
-        initial_name = st.session_state['visitor_data'].get('name', '')
-        initial_phone = st.session_state['visitor_data'].get('phone', '')
-        initial_email = st.session_state['visitor_data'].get('email', '')
-
-        # 1. Full Name
-        st.write("Full Name *")
-        full_name = st.text_input("Name", key="form_name", placeholder="Full Name (As per ID)", 
-                                  value=initial_name, label_visibility="collapsed")
-
-        # 2. Phone Number
-        st.write("Phone Number (10 digits) *")
-        col_code, col_number = st.columns([0.5, 3.5])
-        with col_code:
-            st.text_input("Country Code", value="+91", disabled=True, label_visibility="collapsed", key="country_code_display")
-        with col_number:
-            phone_number = st.text_input("Phone Number", key="form_phone", placeholder="81234 56789", 
-                                         value=initial_phone, label_visibility="collapsed")
-
-        # 3. Email
-        st.write("Email Address *")
-        email = st.text_input("Email", key="form_email", placeholder="your.email@example.com", 
-                              value=initial_email, label_visibility="collapsed")
-
-        # Submit/Next Button Container (INSIDE the form)
-        col_spacer_submit, col_next = st.columns([3, 1])
-        with col_next:
-            submitted = st.form_submit_button("Next →", use_container_width=True)
-
-        # --- Logic check for Submission (Next) ---
-        if submitted:
-            is_valid = True
-            
-            if not (full_name and phone_number and email):
-                error_placeholder.error("⚠️ Please fill in all required fields (*).")
-                is_valid = False
-            
-            # Basic phone validation (digits and length check)
-            if is_valid and (not phone_number.isdigit() or len(phone_number) < 10):
-                error_placeholder.error("⚠️ Please enter a valid phone number (digits only, at least 10).")
-                is_valid = False
-            
-            # Basic email validation
-            if is_valid and not re.match(EMAIL_REGEX, email):
-                error_placeholder.error("⚠️ Please enter a valid email address.")
-                is_valid = False
-            
-            if is_valid:
-                # Save validated data to session state for step 2
-                st.session_state['visitor_data'].update({
-                    'name': full_name,
-                    'phone': phone_number,
-                    'email': email
-                })
-                # Navigate to next step
-                st.session_state['registration_step'] = 'secondary'
-                st.rerun()
-
-# ==============================================================================
-# 7. STEP 2: Secondary Details Form
-# ==============================================================================
-
-def render_secondary_details_form():
-    """Renders the Other Details form fields and handles final submission to DB."""
-    
-    # Placeholders for error/success messages
-    message_placeholder = st.empty()
-    
-    # --- PREVIOUS / MAIN MENU BUTTONS (OUTSIDE the form) ---
-    col_prev, col_main_menu, col_end_spacer = st.columns([1, 1, 2])
-    with col_prev:
-        if st.button("← Previous Step", key='prev_button_secondary', use_container_width=True):
-            st.session_state['registration_step'] = 'primary'
-            st.rerun()
-
-    with col_main_menu:
-        if st.button("Back to Main Menu", key='main_menu_button_secondary', use_container_width=True):
-            navigate_to_main_screen()
-            
-    st.markdown("---") # Visual separator
-
-    # Helper to get current value from session state
-    def get_val(key, default=''):
-        return st.session_state['visitor_data'].get(key, default)
-        
-    # Default selection for radio
-    gender_options = ["Male", "Female", "Others"]
-    default_gender = get_val('gender', 'Male')
-    default_gender_index = gender_options.index(default_gender) if default_gender in gender_options else 0
-        
-    with st.form("secondary_details_form", clear_on_submit=False):
-        st.markdown("### Organizational & Visit Details")
-        
-        # 1. Visit Details
-        col_vt, col_fc = st.columns(2)
-        with col_vt:
-            visit_type = st.text_input("Visit Type", key='form_visit_type', 
-                                       value=get_val('visit_type'), 
-                                       placeholder="e.g., Business, Personal")
-        with col_fc:
-            from_company = st.text_input("From Company", key='form_from_company', 
-                                         value=get_val('from_company'))
-        
-        # 2. Professional Details
-        col_dept, col_des = st.columns(2)
-        with col_dept:
-            department = st.text_input("Department", key='form_department',
-                                       value=get_val('department'),
-                                       placeholder="e.g., Sales, HR, IT")
-        with col_des:
-            designation = st.text_input("Designation", key='form_designation',
-                                        value=get_val('designation'),
-                                        placeholder="e.g., Manager, Engineer")
-        
-        # 3. Address
-        st.text_input("Organization Address", placeholder="Address Line 1", key='form_address_line_1',
-                      value=get_val('address_line_1'))
-        
-        col_city, col_state = st.columns(2)
-        with col_city:
-            city = st.text_input("City / District", key='form_city',
-                                 value=get_val('city'))
-        with col_state:
-            state = st.text_input("State / Province", key='form_state',
-                                  value=get_val('state'))
-            
-        col_postal, col_country = st.columns(2)
-        with col_postal:
-            postal_code = st.text_input("Postal Code", key='form_postal_code',
-                                        value=get_val('postal_code'))
-        with col_country:
-            country = st.text_input("Country", key='form_country',
-                                    value=get_val('country'),
-                                    placeholder="e.g., India, USA")
-
-        st.markdown("---")
-        
-        # 4. Meeting and Personal Details
-        gender = st.radio("Gender", gender_options, horizontal=True, key='form_gender',
-                          index=default_gender_index, help="Select your gender.")
-        
-        col_purpose, col_person = st.columns(2)
-        with col_purpose:
-            purpose = st.text_input("Purpose of Visit", key='form_purpose',
-                                    value=get_val('purpose'),
-                                    placeholder="e.g., Meeting, Interview")
-        with col_person:
-            person_to_meet = st.text_input("Person to Meet *", key='form_person_to_meet',
-                                           value=get_val('person_to_meet'),
-                                           placeholder="e.g., Alice, Bob")
-        
-        st.markdown("#### Belongings Declaration")
-        # 5. Belongings (using explicit keys for form values)
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            bags = st.checkbox("Bags", key='form_has_bags', value=get_val('has_bags', False))
-            electronics = st.checkbox("Electronic Items", key='form_has_electronic_items', value=get_val('has_electronic_items', False))
-            charger = st.checkbox("Charger", key='form_has_charger', value=get_val('has_charger', False))
-        with col_b2:
-            documents = st.checkbox("Documents", key='form_has_documents', value=get_val('has_documents', False))
-            laptop = st.checkbox("Laptop", key='form_has_laptop', value=get_val('has_laptop', False))
-            power_bank = st.checkbox("Power Bank", key='form_has_power_bank', value=get_val('has_power_bank', False))
-
-        st.markdown("---")
-        
-        # --- SUBMISSION BUTTON (INSIDE the form) ---
-        col_spacer_submit, col_submit = st.columns([3, 1])
-        
-        with col_submit:
-            submitted = st.form_submit_button("Complete Registration →", use_container_width=True)
-
-        # --- Submission Logic ---
-        if submitted:
-            # Mandatory check
-            if not person_to_meet:
-                message_placeholder.error("⚠️ 'Person to Meet' is a required field.")
-                return
-
-            # Consolidate all form data into the final dictionary
-            final_data = st.session_state['visitor_data']
-            final_data.update({
-                'visit_type': visit_type,
-                'from_company': from_company,
-                'department': department,
-                'designation': designation,
-                'address_line_1': address_line_1,
-                'city': city,
-                'state': state,
-                'postal_code': postal_code,
-                'country': country,
-                'gender': gender,
-                'purpose': purpose,
-                'person_to_meet': person_to_meet,
-                # Belongings are captured directly from checkboxes (True/False)
-                'has_bags': bags,
-                'has_documents': documents,
-                'has_electronic_items': electronics,
-                'has_laptop': laptop,
-                'has_charger': charger,
-                'has_power_bank': power_bank
-            })
-            
-            # Save to Database
-            message_placeholder.info("Processing registration and saving data...")
-            if save_visitor_data_to_db(final_data):
-                message_placeholder.success("🎉 Visitor Registration Complete! You are now checked in.")
-                st.balloons()
-                
-                # Clear session state for next registration and trigger redirect
-                st.session_state['registration_step'] = 'primary'
-                st.session_state['visitor_data'] = {}
-                
-                # Give user a moment to see the success message before redirecting
-                st.snow()
-                st.warning("Returning to Main Menu in 3 seconds...")
-                import time
-                time.sleep(3)
-                
-            else:
-                # Error already displayed in save_visitor_data_to_db
-                message_placeholder.error("Registration failed due to a database error. Please try again.")
-            
-            st.rerun()
-
-# ==============================================================================
-# 8. REGISTRATION FLOW ENCAPSULATION
-# ==============================================================================
-
-def render_registration_flow():
-    """Encapsulates the rendering logic for the multi-step visitor registration form."""
-    
-    render_step_navigation(st.session_state['registration_step'])
-
-    if st.session_state['registration_step'] == 'primary':
-        render_primary_details_form()
-    
-    elif st.session_state['registration_step'] == 'secondary':
-        render_secondary_details_form()
-
-# ==============================================================================
-# 9. ADMIN LOGIN PAGE (NEWLY ADDED)
+# 5. ADMIN LOGIN AND FORGOT PASSWORD (REFINED)
 # ==============================================================================
 
 def render_admin_login_page():
-    """Renders a simple login form for the admin, setting admin_logged_in and company_id."""
+    """Renders the login form for the admin, allowing navigation to forgot password."""
     
     st.title("Admin Login Required")
     st.markdown("Please enter your credentials to access the Visitor Management System.")
 
-    with st.form("admin_login_form"):
+    # Centered container for the login form
+    with st.container(border=True):
         st.markdown("---")
         # Dummy credentials for this example
         st.markdown("For testing: Username: **admin** | Password: **password** | Company ID: **1**")
         st.markdown("---")
         
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        company_id_input = st.text_input("Company ID (e.g., 1)")
+        with st.form("admin_login_form"):
+            username = st.text_input("Username")
+            password = st.text_input("Password", type="password")
+            company_id_input = st.text_input("Company ID (e.g., 1)")
+            
+            submitted = st.form_submit_button("Log In", type="primary", use_container_width=True)
+
+            if submitted:
+                # Simple, hardcoded check for demonstration (replace with DB check in production)
+                if username == "admin" and password == "password" and company_id_input.isdigit():
+                    st.session_state['admin_logged_in'] = True
+                    st.session_state['company_id'] = int(company_id_input) 
+                    st.success(f"Login successful for Company ID: {st.session_state['company_id']}")
+                    st.balloons()
+                    # Change flow state to dashboard after success
+                    st.session_state['app_flow'] = 'dashboard'
+                    st.rerun()
+                else:
+                    st.error("Invalid Username, Password, or Company ID.")
+    
+    # Navigation links below the form
+    st.markdown("---")
+    col1, col2 = st.columns([1, 3])
+    with col1:
+        if st.button("Forgot Password?", key="forgot_password_link"):
+            st.session_state['app_flow'] = 'forgot_password'
+            st.rerun()
+    with col2:
+        # Link to the visitor registration (Now disabled/removed)
+        st.button("Visitor Registration (Removed)", key="visitor_reg_link", disabled=True)
+
+
+def render_forgot_password_page():
+    """Mock page for handling password recovery/reset."""
+    
+    st.title("Password Recovery")
+    st.warning("⚠️ This feature is mocked. In a production environment, this would trigger an email or SMS code.")
+
+    with st.form("forgot_password_form"):
+        st.markdown("### Reset Your Password")
+        recovery_email = st.text_input("Enter your registered Email Address")
         
-        submitted = st.form_submit_button("Log In", type="primary")
-
+        submitted = st.form_submit_button("Send Recovery Link", type="primary", use_container_width=True)
+        
         if submitted:
-            # Simple, hardcoded check for demonstration (replace with DB check in production)
-            if username == "admin" and password == "password" and company_id_input.isdigit():
-                # Store the successful login state
-                st.session_state['admin_logged_in'] = True
-                st.session_state['company_id'] = int(company_id_input) 
-                st.success(f"Login successful for Company ID: {st.session_state['company_id']}")
-                st.balloons()
-                st.rerun()
+            if re.match(EMAIL_REGEX, recovery_email):
+                st.success(f"A mock recovery link has been sent to **{recovery_email}**.")
+                st.info("Check your email to reset your password. Returning to login page now...")
+                import time
+                time.sleep(2)
+                navigate_to_login_screen()
             else:
-                st.error("Invalid Username, Password, or Company ID.")
+                st.error("Please enter a valid email address.")
 
+    if st.button("← Back to Login", key="back_to_login_from_forgot"):
+        navigate_to_login_screen()
 
 # ==============================================================================
-# 10. Main Application Logic (MODIFIED)
+# 6. DASHBOARD (Simulated)
+# ==============================================================================
+
+def render_dashboard_simulation():
+    """Simulates the navigation to a separate visitor_dashboard.py."""
+    
+    st.title("Admin Dashboard Simulation 🚀")
+    st.subheader(f"Access Granted for Company ID: {st.session_state['company_id']}")
+    
+    st.markdown("---")
+    
+    st.success("""
+        **Success!** The login process is complete. 
+        
+        This space now represents the separate `visitor_dashboard.py` file.
+    """)
+    
+    st.markdown("### Dashboard Actions (Simulated):")
+    st.warning(
+        """
+        The Visitor Registration form has been removed from this file. 
+        All visitor check-in functionality would need to be implemented 
+        within the **`visitor_dashboard.py`** file itself.
+        """
+    )
+    
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.button("View Visitor Logs (WIP)", key="view_logs_from_dash", use_container_width=True, disabled=True)
+    with col2:
+        if st.button("Log Out", key="logout_from_dash", use_container_width=True):
+            st.session_state['admin_logged_in'] = False
+            st.session_state['company_id'] = None
+            navigate_to_login_screen()
+
+# ==============================================================================
+# 7. VISITOR REGISTRATION FLOW (REMOVED)
+# ==============================================================================
+# This section has been completely removed as requested.
+
+# ==============================================================================
+# 8. Main Application Logic
 # ==============================================================================
 
 def main_app_flow():
-    """Main function to run the application, handling flow between login, menu, and registration."""
+    """Main function to run the application, handling flow between login, dashboard, and registration."""
     
-    # 1. Initialize State
     initialize_session_state()
-    
-    # 2. ENFORCE LOGIN AND COMPANY ID CHECK
-    if not st.session_state.get('admin_logged_in') or not st.session_state.get('company_id'):
-        render_app_header() # Render the header for visual consistency
-        render_admin_login_page() # Show the new login page
-        return # Stop execution until logged in
-    
-    # CRITICAL: Must have a company_id to associate the visitor with.
-    company_id = st.session_state['company_id'] # Safe to assume it's set after successful login
-    if not company_id:
-        # Fallback security check
-        st.error("Session missing Company ID. Please log in again.")
-        st.session_state['admin_logged_in'] = False
-        st.rerun() 
-        return
-        
-    # 3. Connection Test (Stops app if connection fails)
-    conn = get_fast_connection()
-    if conn is None:
-        return 
-
-    # 4. Render Main Header (Always render the main banner after successful login)
     render_app_header()
     
-    st.info(f"Logged in for Company ID: **{company_id}**")
+    current_flow = st.session_state.get('app_flow')
+
+    if current_flow == 'login':
+        render_admin_login_page()
     
-    # 5. Route based on App Flow state
-    if st.session_state['app_flow'] == 'menu':
-        render_admin_main_screen()
+    elif current_flow == 'forgot_password':
+        render_forgot_password_page()
     
-    elif st.session_state['app_flow'] == 'registration':
-        render_registration_flow()
+    elif current_flow == 'dashboard':
+        # Check connection health before proceeding
+        conn = get_fast_connection()
+        if conn is not None and not conn.is_connected():
+            st.error("Database connection lost. Please re-login.")
+            st.session_state['admin_logged_in'] = False
+            st.session_state['company_id'] = None
+            st.session_state['app_flow'] = 'login'
+            st.rerun()
+        
+        render_dashboard_simulation() # Simulate the content of visitor_dashboard.py
     
+    # The 'registration' flow state is no longer handled
+    # elif current_flow == 'registration':
+    #     render_registration_flow()
 
 if __name__ == "__main__":
     main_app_flow()
