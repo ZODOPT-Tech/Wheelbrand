@@ -48,7 +48,7 @@ def load_styles():
         """
         <style>
 
-        /* Gradient Header */
+        /* Header */
         .header-box {
             background: linear-gradient(90deg, #5036FF, #9C2CFF);
             padding: 26px 26px 18px 26px;
@@ -69,8 +69,8 @@ def load_styles():
         .tab-row {
             display: flex;
             gap: 40px;
-            padding: 10px 5px 0px 5px;
-            margin-top: 8px;
+            padding-left: 5px;
+            margin-top: 10px;
         }
         .tab-item {
             font-size: 17px;
@@ -84,20 +84,6 @@ def load_styles():
             border-bottom: 3px solid #4F49FF;
         }
 
-        /* White form container */
-        .form-container {
-            background: white;
-            padding: 30px 30px 22px 30px;
-            border-radius: 14px;
-            margin-top: 18px;
-            box-shadow: 0px 4px 18px rgba(0,0,0,0.06);
-        }
-
-        label {
-            font-weight: 600 !important;
-            margin-top: 10px !important;
-        }
-
         /* Input styling */
         .stTextInput > div > div > input {
             background: #F3F5FB !important;
@@ -106,7 +92,7 @@ def load_styles():
             padding: 10px 14px !important;
         }
 
-        /* Gradient Button */
+        /* Gradient Button – SAME COLOR AS HEADER */
         .primary-btn button {
             background: linear-gradient(90deg, #5036FF, #9C2CFF) !important;
             border: none !important;
@@ -125,7 +111,6 @@ def load_styles():
 
 # ============================== HEADER ==============================
 def render_header():
-
     load_styles()
 
     st.markdown(
@@ -153,11 +138,9 @@ def render_header():
 
 # ============================== PRIMARY FORM ==============================
 def render_primary_form():
-
     d = st.session_state["visitor_data"]
 
-    st.markdown('<div class="form-container">', unsafe_allow_html=True)
-
+    # Removed container – inputs directly on background
     name = st.text_input("Name *", d.get("name", ""), placeholder="Enter your full name")
     phone = st.text_input("Phone *", d.get("phone", ""), placeholder="81234 56789")
     email = st.text_input("Email *", d.get("email", ""), placeholder="mail@example.com")
@@ -174,18 +157,14 @@ def render_primary_form():
 
         st.session_state["registration_step"] = "secondary"
         st.rerun()
-
-    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ============================== SECONDARY FORM ==============================
 def render_secondary_form():
-
     d = st.session_state["visitor_data"]
 
-    st.markdown('<div class="form-container">', unsafe_allow_html=True)
-
+    # NO container, plain background
     visit_type = st.text_input("Visit Type", d.get("visit_type", ""))
     from_company = st.text_input("From Company", d.get("from_company", ""))
     department = st.text_input("Department", d.get("department", ""))
@@ -250,7 +229,6 @@ def render_secondary_form():
         st.session_state["current_page"] = "visitor_identity"
         st.rerun()
 
-    st.markdown("</div>", unsafe_allow_html=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
 
