@@ -104,7 +104,7 @@ def render_header():
 
 
 # ---------------------- MAIN DASHBOARD ----------------------
-def render_visitor_dashboard():
+def render_dashboard():
 
     if "admin_logged_in" not in st.session_state or not st.session_state["admin_logged_in"]:
         st.error("Access Denied: Please login.")
