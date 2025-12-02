@@ -13,7 +13,7 @@ from typing import Dict, Any, Optional
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
-LOGO_PATH = "zodopt.png"
+LOGO_PATH = r"zodopt.png"
 LOGO_PLACEHOLDER_TEXT = "zodopt"
 
 HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
