@@ -6,7 +6,6 @@ import boto3
 import json
 import traceback
 from time import sleep
-from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
 # ==============================================================================
@@ -31,7 +30,7 @@ def get_db_credentials() -> Dict[str, str]:
         client = boto3.client("secretsmanager", region_name=AWS_REGION)
         resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
         return json.loads(resp["SecretString"])
-    except Exception as e:
+    except Exception:
         st.error("Could not load DB credentials.")
         st.stop()
 
@@ -45,32 +44,36 @@ def get_fast_connection():
             password=creds["DB_PASSWORD"],
             database=creds["DB_NAME"],
             port=DEFAULT_DB_PORT,
-            autocommit=True
+            autocommit=True,
         )
     except:
         st.error("Database connection failed.")
         st.stop()
 
 # ==============================================================================
-# SECURITY HELPERS
+# SECURITY FUNCTIONS
 # ==============================================================================
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode(), bcrypt.gensalt(12)).decode()
 
-def check_password(password: str, hashed: str) -> bool:
-    return bcrypt.checkpw(password.encode(), hashed.encode())
+def check_password(password: str, hash_val: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode(), hash_val.encode())
+    except:
+        return False
 
 def set_auth_view(view: str):
-    st.session_state['visitor_auth_view'] = view
+    st.session_state["visitor_auth_view"] = view
     sleep(0.05)
     st.rerun()
 
 # ==============================================================================
-# DB FUNCTIONS
+# DB QUERIES
 # ==============================================================================
 def get_admin_by_email(conn, email: str):
     q = """
-    SELECT au.id, au.password_hash, au.name, c.id AS company_id, c.company_name
+    SELECT au.id, au.password_hash, au.name,
+           c.id AS company_id, c.company_name
     FROM admin_users au
     JOIN companies c ON au.company_id = c.id
     WHERE au.email=%s AND au.is_active=1
@@ -84,20 +87,22 @@ def create_company_and_admin(conn, cname, aname, email, hashed):
         cursor = conn.cursor()
         cursor.execute("INSERT INTO companies (company_name) VALUES (%s)", (cname,))
         cid = cursor.lastrowid
+
         cursor.execute("""
-            INSERT INTO admin_users (company_id,name,email,password_hash,is_active)
+            INSERT INTO admin_users (company_id, name, email, password_hash, is_active)
             VALUES (%s,%s,%s,%s,1)
         """, (cid, aname, email, hashed))
+
         conn.commit()
         return True
     except:
         conn.rollback()
         return False
 
-def update_admin_password_directly(conn, uid, newhash):
+def update_admin_password_directly(conn, uid, new_hash):
     try:
         cursor = conn.cursor()
-        cursor.execute("UPDATE admin_users SET password_hash=%s WHERE id=%s", (newhash, uid))
+        cursor.execute("UPDATE admin_users SET password_hash=%s WHERE id=%s", (new_hash, uid))
         conn.commit()
         return True
     except:
@@ -105,18 +110,20 @@ def update_admin_password_directly(conn, uid, newhash):
         return False
 
 # ==============================================================================
-# UI COMPONENTS
+# UI FUNCTIONS
 # ==============================================================================
-
 def render_admin_register_view():
     conn = get_fast_connection()
+
     with st.form("reg_form"):
         st.markdown("### New Admin Registration")
+
         cname = st.text_input("Company Name")
         aname = st.text_input("Admin Name")
         email = st.text_input("Email").lower()
         p1 = st.text_input("Password", type="password")
         p2 = st.text_input("Confirm Password", type="password")
+
         sub = st.form_submit_button("Register")
 
         if sub:
@@ -127,18 +134,20 @@ def render_admin_register_view():
             else:
                 st.error("Invalid password")
 
-    c1, c2 = st.columns(2)
-    if c1.button("Back to Login", use_container_width=True):
+    # ONLY Back to Login (no forgot password)
+    if st.button("Back to Login", use_container_width=True):
         set_auth_view("admin_login")
-    if c2.button("Forgot Password?", use_container_width=True):
-        set_auth_view("forgot_password")
+
 
 def render_existing_admin_login_view():
     conn = get_fast_connection()
+
     with st.form("login_form"):
         st.markdown("### Admin Login")
+
         email = st.text_input("Email").lower()
         pw = st.text_input("Password", type="password")
+
         sub = st.form_submit_button("Sign In →")
 
         if sub:
@@ -159,9 +168,11 @@ def render_existing_admin_login_view():
     if c2.button("Forgot Password?", use_container_width=True):
         set_auth_view("forgot_password")
 
+
 def render_admin_dashboard_home_view():
-    st.session_state['current_page'] = 'visitor_dashboard'
+    st.session_state["current_page"] = "visitor_dashboard"
     st.rerun()
+
 
 def render_forgot_password_view():
     conn = get_fast_connection()
@@ -170,6 +181,7 @@ def render_forgot_password_view():
         with st.form("fp_form"):
             email = st.text_input("Enter Email").lower()
             sub = st.form_submit_button("Verify Email")
+
             if sub:
                 user = get_admin_by_email(conn, email)
                 if user:
@@ -182,7 +194,8 @@ def render_forgot_password_view():
         with st.form("rp_form"):
             p1 = st.text_input("New Password", type="password")
             p2 = st.text_input("Confirm Password", type="password")
-            sub = st.form_submit_button("Reset")
+            sub = st.form_submit_button("Reset Password")
+
             if sub and p1 == p2:
                 update_admin_password_directly(conn, st.session_state["reset_uid"], hash_password(p1))
                 del st.session_state["reset_uid"]
@@ -192,9 +205,8 @@ def render_forgot_password_view():
         set_auth_view("admin_login")
 
 # ==============================================================================
-# HEADER + PAGE ROUTING
+# MAIN PAGE WITH HEADER
 # ==============================================================================
-
 def render_visitor_login_page():
 
     if "visitor_auth_view" not in st.session_state:
@@ -202,7 +214,17 @@ def render_visitor_login_page():
 
     view = st.session_state["visitor_auth_view"]
 
-    # ------- HEADER CSS -------
+    # ---------------- Dynamic Header Title ----------------
+    if view == "admin_register":
+        title = "NEW ADMIN REGISTRATION"
+    elif view == "admin_login":
+        title = "ADMIN LOGIN"
+    elif view == "forgot_password":
+        title = "RESET PASSWORD"
+    else:
+        title = "ZODOPT MEETEASE"
+
+    # ---------------- Header CSS ----------------
     st.markdown(f"""
     <style>
 
@@ -213,11 +235,9 @@ def render_visitor_login_page():
         padding: 26px 45px;
         border-radius: 12px;
         box-shadow: 0px 4px 22px rgba(0,0,0,0.25);
-
         max-width: 1600px;
         width: 100%;
         margin: 0 auto 35px auto;
-
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -227,39 +247,37 @@ def render_visitor_login_page():
         font-size: 38px;
         font-weight: 800;
         color: white;
-        letter-spacing: 1px;
         margin: 0;
     }}
 
     .header-logo {{
         height: 55px;
-        object-fit: contain;
     }}
 
-    /* Gradient Buttons */
+    /* Wide gradient action buttons */
     .stButton > button {{
         background: {HEADER_GRADIENT} !important;
         color: white !important;
         border-radius: 12px !important;
-        font-size: 17px !important;
-        padding: 14px 0 !important;
-        font-weight: 600 !important;
         width: 100% !important;
+        padding: 14px 0 !important;
+        font-size: 17px !important;
+        font-weight: 600 !important;
         border: none !important;
     }}
+
     .stButton > button:hover {{
-        opacity: 0.92 !important;
+        opacity: 0.92;
     }}
     </style>
     """, unsafe_allow_html=True)
 
-    # ------- HEADER RENDER -------
-    title = "ZODOPT MEETEASE"
-
-    if os.path.exists(LOGO_PATH):
-        logo_html = f'<img src="{LOGO_PATH}" class="header-logo">'
-    else:
-        logo_html = f'<div style="color:white;font-weight:900;font-size:24px;">{LOGO_PLACEHOLDER_TEXT}</div>'
+    # ---------------- Render Header ----------------
+    logo_html = (
+        f'<img src="{LOGO_PATH}" class="header-logo">'
+        if os.path.exists(LOGO_PATH)
+        else f'<div style="color:white;font-weight:900;font-size:24px;">{LOGO_PLACEHOLDER_TEXT}</div>'
+    )
 
     st.markdown(
         f"""
@@ -268,10 +286,10 @@ def render_visitor_login_page():
             {logo_html}
         </div>
         """,
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
-    # ------- ROUTER -------
+    # ---------------- Router ----------------
     if view == "admin_login":
         render_existing_admin_login_view()
     elif view == "admin_register":
@@ -280,7 +298,6 @@ def render_visitor_login_page():
         render_forgot_password_view()
     elif view == "admin_dashboard_home":
         render_admin_dashboard_home_view()
-
 
 # ==============================================================================
 # START APP
