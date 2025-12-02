@@ -2,7 +2,8 @@ import streamlit as st
 import importlib
 
 # --- Import Page Modules ---
-# NOTE: These modules must exist as separate .py files in the same directory.
+# NOTE: All these modules (e.g., main_screen.py, visitor_login.py) 
+# must exist as separate files in the same directory.
 import main_screen
 import visitor_login
 import visitor_dashboard
@@ -38,40 +39,40 @@ PAGE_MODULES = {
 
 # --- Core Navigation Function ---
 def navigate_to(page_key: str):
-    """Updates the session state to change the currently rendered page and reruns."""
+    """
+    Updates the session state to change the currently rendered page and reruns.
+    Handles authentication redirects.
+    """
     if page_key in PAGE_MODULES:
         # Check if the page is restricted and the user is not logged in
         if PAGE_MODULES[page_key].get('auth_required', False) and not st.session_state.get('is_logged_in', False):
              # Redirect to login page for the appropriate role if known, otherwise main
-             st.session_state['current_page'] = PAGE_V_LOGIN if page_key.startswith('visitor') else (PAGE_C_LOGIN if page_key.startswith('conference') else PAGE_MAIN)
+             if page_key.startswith('visitor'):
+                 redirect_page = PAGE_V_LOGIN
+             elif page_key.startswith('conference'):
+                 redirect_page = PAGE_C_LOGIN
+             else:
+                 redirect_page = PAGE_MAIN
+                 
+             st.session_state['current_page'] = redirect_page
         else:
             st.session_state['current_page'] = page_key
         st.rerun()
     else:
         st.error(f"⚠️ **Developer Error**: Invalid navigation target: `{page_key}`. Page key not found in `PAGE_MODULES`.")
 
----
-
-# --- Session State Initialization (CRUCIAL CHANGE) ---
+# --- Session State Initialization (Ensures state persists across runs) ---
 def initialize_session_state():
     """
     Initializes session state variables *only if* they don't exist yet (first load).
-    This allows the application to maintain state and navigate pages without
-    resetting to the main screen on every single rerun.
+    This ensures the app starts at PAGE_MAIN but preserves state during navigation.
     """
     if 'current_page' not in st.session_state:
         # This only runs on the very first load or explicit browser refresh (F5).
-        # Ensures the application always starts at the main_screen.
         st.session_state['current_page'] = PAGE_MAIN
         st.session_state['is_logged_in'] = False 
         st.session_state['user_role'] = None     
         st.session_state['user_data'] = {}       
-    
-    # Optional: If you want to force a state clear on a browser refresh,
-    # you can keep the previous logic, but that defeats SPA navigation.
-    # The current logic is better for a multi-page app feel.
-
----
 
 # --- Main Application Logic (Router) ---
 def main():
@@ -91,8 +92,9 @@ def main():
 
     # 4. Authentication Guard
     if page_info and page_info.get('auth_required', False) and not st.session_state['is_logged_in']:
-        # If the current page requires auth but the user is logged out,
-        # redirect to the appropriate login page.
+        # This handles cases where a logged-in user is redirected back to a page
+        # that requires auth, but the session has expired (though initialize_session_state
+        # prevents most re-entry issues).
         st.warning("🔒 Session expired or unauthorized access. Redirecting to login.")
         st.session_state['current_page'] = PAGE_V_LOGIN if page_key.startswith('visitor') else (PAGE_C_LOGIN if page_key.startswith('conference') else PAGE_MAIN)
         st.rerun()
