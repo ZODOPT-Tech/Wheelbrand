@@ -180,9 +180,6 @@ def render_main_screen():
                         <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-calendar"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                     </div>
                     <div class="card-title">Plan Your Visit</div>
-                    <div class="card-description">
-                        Check-in for your pre-booked visit, verify your identity, and view your schedule.
-                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True
@@ -201,9 +198,6 @@ def render_main_screen():
                         <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="feather feather-briefcase"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path></svg>
                     </div>
                     <div class="card-title">Manage Conferences</div>
-                    <div class="card-description">
-                        Login as an administrator to manage room bookings and view staff schedules.
-                    </div>
                 </div>
                 """,
                 unsafe_allow_html=True
