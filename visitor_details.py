@@ -7,12 +7,12 @@ import mysql.connector
 from mysql.connector import Error
 
 # ==============================================================================
-# 1. CONFIGURATION & CREDENTIALS (AWS Integration - MUST BE COPIED)
+# 1. CONFIGURATION & CREDENTIALS (AWS Integration)
 # ==============================================================================
 
 # Constants for AWS and DB
 AWS_REGION = "ap-south-1"
-# NOTE: The ARN below is a mock value and must be replaced with the actual ARN in a real deployment.
+# NOTE: Replace with the actual ARN in a real deployment.
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
 DEFAULT_DB_PORT = 3306
 
@@ -58,6 +58,7 @@ def get_db_credentials():
 @st.cache_resource(ttl=None)
 def get_fast_connection():
     """Returns a persistent MySQL connection object, halting the app on failure."""
+    conn = None
     try:
         credentials = get_db_credentials()
         
@@ -73,23 +74,32 @@ def get_fast_connection():
         st.success("MySQL connection established successfully.")
         return conn
     except EnvironmentError:
+        # Stop if credentials failed
         st.stop()
     except Error as err:
         error_msg = f"FATAL: MySQL Connection Error: Cannot connect. Details: {err.msg}"
         st.error(error_msg)
+        # Attempt to close connection if it exists and is open
+        if conn and conn.is_connected():
+            conn.close()
         st.stop()
     except Exception as e:
         error_msg = f"FATAL: Unexpected Connection Error: {e}"
         st.error(error_msg)
+        if conn and conn.is_connected():
+            conn.close()
         st.stop()
+        
+    # Should be unreachable, but ensures function signature integrity
+    return None 
 
 
 # ==============================================================================
 # 2. CONFIGURATION & STATE SETUP
 # ==============================================================================
 
-def initialize_session_state():
-    """Initializes all necessary session state variables if they do not exist."""
+def initialize_registration_state():
+    """Initializes all necessary session state variables for the registration flow."""
     
     # Registration flow state
     if 'registration_step' not in st.session_state:
@@ -100,14 +110,14 @@ def initialize_session_state():
     
     # Global state (assumed to be set by a previous login screen)
     if 'company_id' not in st.session_state:
-        # Default to None or a secure default like 0 if not set, but the main logic checks this.
-        st.session_state['company_id'] = None 
+        # Default to None if not set
+        st.session_state['company_id'] = None
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
 
 
-def navigate_to_main_screen():
-    """Clears registration specific state and triggers a rerun."""
+def reset_registration_flow(navigate_to):
+    """Clears registration specific state and navigates back to the main screen."""
     
     # Clear ALL session state related to the current registration flow
     keys_to_clear = [
@@ -116,16 +126,16 @@ def navigate_to_main_screen():
     for key in keys_to_clear:
         if key in st.session_state:
             del st.session_state[key]
-    
-    # Rerunning will restart the script, allowing the external app to manage navigation
-    st.rerun()
+            
+    # Navigate using the function provided by the router
+    navigate_to('main_screen')
 
 # ==============================================================================
 # 3. DATABASE INTERACTION & SERVICE
 # ==============================================================================
 
 def save_visitor_data_to_db(data):
-    """Saves the complete visitor registration data, tied to the current company_id, to the MySQL database."""
+    """Saves the complete visitor registration data to the MySQL database."""
     
     conn = get_fast_connection()
     if conn is None:
@@ -134,8 +144,9 @@ def save_visitor_data_to_db(data):
     current_company_id = st.session_state.get('company_id')
     if not current_company_id:
         st.error("SECURITY ERROR: Cannot save visitor data. Company ID is missing.")
+        # We don't close the connection here because it's managed by st.cache_resource
         return False
-    
+        
     cursor = None
     success = False
     
@@ -181,7 +192,8 @@ def save_visitor_data_to_db(data):
     try:
         cursor = conn.cursor()
         cursor.execute(sql, values)
-        conn.commit()
+        # Since autocommit=True, commit is redundant but harmless. Explicitly including it.
+        # conn.commit() 
         success = True
     except Error as e:
         st.error(f"Database Insertion Error (Company ID: {current_company_id}): Failed to save registration data. Details: {e}")
@@ -191,7 +203,8 @@ def save_visitor_data_to_db(data):
     finally:
         if cursor:
             cursor.close()
-    
+        # NOTE: We do not close the connection object itself as it is cached by Streamlit.
+        
     return success
 
 # ==============================================================================
@@ -200,6 +213,7 @@ def save_visitor_data_to_db(data):
 
 def render_custom_styles():
     """Applies custom CSS for the header banner and buttons."""
+    # Simple triangular logo SVG
     logo_svg_data = """
     <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M12 2L2 22H22L12 2Z" fill="#FFFFFF"/>
@@ -320,15 +334,15 @@ def render_header(current_step):
 # 5. STEP 1: Primary Details Form
 # ==============================================================================
 
-def render_primary_details_form():
+def render_primary_details_form(navigate_to):
     """Renders the Name, Phone, and Email form fields."""
     
     # 1. Navigation Buttons (Outside the form)
     col_reset, col_spacer = st.columns([1, 3])
     with col_reset:
-        # Use navigate_to_main_screen() which only clears state and reruns
+        # Use navigate_to provided by router, set target to main_screen
         if st.button("Reset / Main Menu", use_container_width=True, key="reset_primary"):
-            navigate_to_main_screen()
+            reset_registration_flow(navigate_to)
 
     # Placeholders for error messages
     error_placeholder = st.empty()
@@ -371,14 +385,14 @@ def render_primary_details_form():
             if not (full_name and phone_number and email):
                 error_placeholder.error("⚠️ Please fill in all required fields (*).")
             # Basic phone validation (can be enhanced with regex)
-            elif not phone_number.isdigit() or len(phone_number) < 10:
+            elif not phone_number.strip().isdigit() or len(phone_number.strip()) < 10:
                 error_placeholder.error("⚠️ Please enter a valid 10-digit phone number.")
             else:
                 # Save validated data to session state for step 2
                 st.session_state['visitor_data'].update({
-                    'name': full_name,
-                    'phone': phone_number,
-                    'email': email
+                    'name': full_name.strip(),
+                    'phone': phone_number.strip(),
+                    'email': email.strip()
                 })
                 # Navigate to next step
                 st.session_state['registration_step'] = 'secondary'
@@ -388,7 +402,7 @@ def render_primary_details_form():
 # 6. STEP 2: Secondary Details Form
 # ==============================================================================
 
-def render_secondary_details_form():
+def render_secondary_details_form(navigate_to):
     """Renders the Other Details form fields and handles final submission to DB."""
     
     # Placeholders for error/success messages
@@ -402,9 +416,9 @@ def render_secondary_details_form():
             st.rerun()
 
     with col_main_menu:
-        # Use navigate_to_main_screen() which only clears state and reruns
+        # Use navigate_to provided by router, set target to main_screen
         if st.button("Back to Main Menu", key='main_menu_button_secondary', use_container_width=True):
-            navigate_to_main_screen()
+            reset_registration_flow(navigate_to)
             
     st.markdown("---") # Visual separator
 
@@ -414,8 +428,12 @@ def render_secondary_details_form():
         
     # Default selection for radio
     gender_options = ["Male", "Female", "Others"]
-    default_gender_index = gender_options.index(get_val('gender', 'Male'))
-        
+    # Safely get the index for the current gender state
+    try:
+        default_gender_index = gender_options.index(get_val('gender', 'Male'))
+    except ValueError:
+        default_gender_index = 0 # Default to Male if state is invalid
+            
     with st.form("secondary_details_form", clear_on_submit=False):
         st.markdown("### Organizational & Visit Details")
         
@@ -423,22 +441,22 @@ def render_secondary_details_form():
         col_vt, col_fc = st.columns(2)
         with col_vt:
             visit_type = st.text_input("Visit Type", key='form_visit_type', 
-                                     value=get_val('visit_type'), 
-                                     placeholder="e.g., Business, Personal")
+                                       value=get_val('visit_type'), 
+                                       placeholder="e.g., Business, Personal")
         with col_fc:
             from_company = st.text_input("From Company", key='form_from_company', 
-                                       value=get_val('from_company'))
+                                         value=get_val('from_company'))
         
         # 2. Professional Details
         col_dept, col_des = st.columns(2)
         with col_dept:
             department = st.text_input("Department", key='form_department',
-                                     value=get_val('department'),
-                                     placeholder="e.g., Sales, HR, IT")
+                                       value=get_val('department'),
+                                       placeholder="e.g., Sales, HR, IT")
         with col_des:
             designation = st.text_input("Designation", key='form_designation',
-                                      value=get_val('designation'),
-                                      placeholder="e.g., Manager, Engineer")
+                                        value=get_val('designation'),
+                                        placeholder="e.g., Manager, Engineer")
         
         # 3. Address
         st.text_input("Organization Address", placeholder="Address Line 1", key='form_address_line_1',
@@ -451,7 +469,7 @@ def render_secondary_details_form():
         with col_state:
             state = st.text_input("State / Province", key='form_state',
                                   value=get_val('state'))
-                
+                        
         col_postal, col_country = st.columns(2)
         with col_postal:
             postal_code = st.text_input("Postal Code", key='form_postal_code',
@@ -500,7 +518,7 @@ def render_secondary_details_form():
         # --- Submission Logic ---
         if submitted:
             # Mandatory check
-            if not person_to_meet:
+            if not person_to_meet.strip():
                 message_placeholder.error("⚠️ 'Person to Meet' is a required field.")
                 return
 
@@ -530,48 +548,54 @@ def render_secondary_details_form():
             
             # Save to Database
             if save_visitor_data_to_db(final_data):
-                message_placeholder.success("🎉 Visitor Registration Complete! You are now checked in. You will be redirected shortly.")
+                message_placeholder.success("🎉 Visitor Registration Complete! You are now checked in. Redirecting...")
                 st.balloons()
                 
                 # Clear session state for next registration
                 st.session_state['registration_step'] = 'primary'
                 st.session_state['visitor_data'] = {} 
                 
-                # Triggers a reload of the main app or the current page
-                st.rerun() 
+                # Triggers navigation back to the main screen or dashboard
+                # For this isolated module, we rerun. If integrated, we use navigate_to.
+                reset_registration_flow(navigate_to) 
             else:
                 # Error already displayed in save_visitor_data_to_db
-                message_placeholder.error("Registration failed due to a database error.")
+                message_placeholder.error("Registration failed due to a database error. Please check logs.")
             
             st.rerun()
 
 # ==============================================================================
-# 7. Main Application Logic
+# 7. Main Module Entry Point for Router
 # ==============================================================================
 
-def render_visitor_registration():
-    """Main function to run the multi-step visitor registration form."""
+def render_visitor_registration_page(navigate_to):
+    """
+    Main entry point function, designed to be called by the Streamlit router.
+    It manages authentication, connection, and multi-step rendering.
+    """
     
     # 1. Initialize State
-    initialize_session_state()
+    initialize_registration_state()
     
     # 2. ENFORCE LOGIN AND COMPANY ID CHECK
     if not st.session_state.get('admin_logged_in'):
         st.error("Access Denied: Please log in as an Admin to register visitors.")
-        st.rerun()
+        # If integrated with a router, you would navigate to the login page here.
+        # navigate_to('conference_login') 
         return
         
     # CRITICAL: Must have a company_id to associate the visitor with.
     company_id = st.session_state.get('company_id')
     if not company_id:
-        st.error("Session missing Company ID. Please log in again.")
-        st.rerun()
+        st.error("Session missing Company ID. Please log in again as an Admin.")
+        # navigate_to('conference_login') 
         return
         
     st.info(f"Logged in for Company ID: **{company_id}**") # Show current context
         
     # 3. Connection Test (Stops app if connection fails)
-    conn = get_fast_connection()
+    # The cache ensures this only executes once per unique set of credentials/config
+    conn = get_fast_connection() 
     if conn is None:
         return # App should already be stopped by get_fast_connection
 
@@ -580,17 +604,25 @@ def render_visitor_registration():
 
     # 5. Render Forms based on Step
     if st.session_state['registration_step'] == 'primary':
-        render_primary_details_form()
+        render_primary_details_form(navigate_to)
     
     elif st.session_state['registration_step'] == 'secondary':
-        render_secondary_details_form()
+        render_secondary_details_form(navigate_to)
     
 
 if __name__ == "__main__":
-    # --- Mock login state for testing ---
+    # --- Mock navigate_to function for standalone testing ---
+    # When running this file directly: python -m streamlit run visitor_registration_page.py
+    def mock_navigate_to(page_key):
+        print(f"MOCK NAVIGATION: Attempting to navigate to {page_key}")
+        
+    # --- Mock login state for testing (Must be outside the function call) ---
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = True
         # Set the mock company ID explicitly to 1 for testing the constraint
         st.session_state['company_id'] = 1 
+    
+    # Set page config for standalone testing
+    st.set_page_config(layout="wide")
         
-    render_visitor_registration()
+    render_visitor_registration_page(navigate_to=mock_navigate_to)
