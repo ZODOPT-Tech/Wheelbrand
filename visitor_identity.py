@@ -2,14 +2,44 @@ import streamlit as st
 from datetime import datetime
 import mysql.connector
 import boto3
-import base64
+import json
 from botocore.exceptions import ClientError
 from streamlit_drawable_canvas import st_canvas
 
 # ------------------ AWS CONFIG ------------------
 AWS_REGION = "ap-south-1"
-AWS_BUCKET = "zodopt-visitor-identity"   # change to your bucket name
+AWS_BUCKET = "zodopt-visitor-identity"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
+
+# ------------------ STYLES ------------------
+def load_styles():
+    st.markdown("""
+        <style>
+            .header-box {
+                background: linear-gradient(90deg, #5036FF, #9C2CFF);
+                padding: 25px;
+                border-radius: 12px;
+                color: white;
+                font-size: 28px;
+                font-weight: 700;
+                margin-bottom: 25px;
+            }
+            .sub-text {
+                font-size: 15px;
+                opacity: 0.9;
+                font-weight: 400;
+            }
+            .primary-btn button {
+                background: linear-gradient(90deg, #5036FF, #9C2CFF) !important;
+                border: none !important;
+                color: white !important;
+                border-radius: 8px !important;
+                padding: 12px !important;
+                font-size: 17px !important;
+                font-weight: 600 !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
 
 
 # ------------------ FETCH SECRET ------------------
@@ -71,22 +101,28 @@ def save_identity_record(company_id, photo_url, signature_url):
 # ------------------ PAGE RENDER ------------------
 def render_identity_page():
 
+    load_styles()
+
     if "company_id" not in st.session_state:
         st.error("Missing company session. Please login again.")
         st.stop()
 
-    st.markdown("## 🆔 Identity Capture")
-    st.info("Please capture your **live photo** and **digital signature** below.")
-
     company_id = st.session_state["company_id"]
-    camera_photo = None
-    signature_image = None
 
-    # ------------------ CAMERA ------------------
+    # ------------------ HEADER ------------------
+    st.markdown("""
+        <div class="header-box">
+            Identity Verification
+            <div class="sub-text">Capture live photo & digital signature</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ------------------ CAMERA PERMISSION MESSAGE ------------------
+    st.info("📷 This app would like to use your camera. Please allow camera access.")
+
     st.subheader("📸 Take Visitor Photo")
-    camera_photo = st.camera_input("Capture Photo")
+    camera_photo = st.camera_input("Please allow camera access to capture the image")
 
-    # ------------------ SIGNATURE ------------------
     st.subheader("✍️ Visitor Signature")
     canvas = st_canvas(
         stroke_width=3,
@@ -98,40 +134,43 @@ def render_identity_page():
         key="signature_canvas"
     )
 
-    # ------------------ SUBMIT ------------------
-    if st.button("Submit Identity →"):
+    st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
+
+    if st.button("Submit Identity →", use_container_width=True):
 
         if camera_photo is None:
             st.error("Please capture a photo.")
             return
 
         if canvas.image_data is None:
-            st.error("Please sign in the box.")
+            st.error("Please add signature.")
             return
 
         with st.spinner("Uploading..."):
 
             # ------- Upload Photo -------
             photo_bytes = camera_photo.read()
-            photo_filename = f"identity/company_{company_id}/{datetime.now().timestamp()}_photo.jpg"
-            photo_url = upload_to_s3(photo_bytes, photo_filename, "image/jpeg")
+            filename_photo = f"identity/company_{company_id}/{datetime.now().timestamp()}_photo.jpg"
+            photo_url = upload_to_s3(photo_bytes, filename_photo, "image/jpeg")
 
             # ------- Upload Signature -------
             signature_bytes = canvas.image_data.tobytes()
-            sig_filename = f"identity/company_{company_id}/{datetime.now().timestamp()}_sign.png"
-            signature_url = upload_to_s3(signature_bytes, sig_filename, "image/png")
+            filename_sig = f"identity/company_{company_id}/{datetime.now().timestamp()}_sign.png"
+            signature_url = upload_to_s3(signature_bytes, filename_sig, "image/png")
 
             # ------- Save to DB -------
             save_identity_record(company_id, photo_url, signature_url)
 
-        st.success("Identity Successfully Captured & Stored!")
+        st.success("Identity Successfully Captured!")
         st.balloons()
 
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
+    st.markdown("</div>", unsafe_allow_html=True)
+
     st.markdown("---")
+
     if st.button("⬅ Back to Dashboard"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
-
