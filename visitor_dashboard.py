@@ -1,36 +1,51 @@
 import streamlit as st
-import os
+import mysql.connector
+from datetime import datetime
+import json
+import boto3
+from botocore.exceptions import ClientError
 
-# ===========================
-# REFRESH REDIRECT PROTECTION
-# ===========================
-# 🚨 If user refreshes this page directly, force redirect to main_screen.py
-if "current_page" not in st.session_state:
-    st.session_state["current_page"] = "main_screen"
-    st.rerun()
+# ======================================================
+# AWS + DB CONFIG
+# ======================================================
 
-# ===========================
-# CONFIGURATION
-# ===========================
-
-# ⭐ Update GitHub raw logo URL
-LOGO_PATH = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
-
+AWS_REGION = "ap-south-1"
+AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
 HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
+LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 
 
-# ===========================
-# CUSTOM CSS
-# ===========================
+# ---------------- AWS Secret ----------------
+@st.cache_resource
+def get_credentials():
+    client = boto3.client("secretsmanager", region_name=AWS_REGION)
+    secret = client.get_secret_value(SecretId=AWS_SECRET_NAME)
+    return json.loads(secret["SecretString"])
 
-def load_dashboard_css():
+
+# ---------------- MySQL Connection ----------------
+@st.cache_resource
+def get_conn():
+    creds = get_credentials()
+    return mysql.connector.connect(
+        host=creds["DB_HOST"],
+        user=creds["DB_USER"],
+        password=creds["DB_PASSWORD"],
+        database=creds["DB_NAME"],
+        autocommit=True
+    )
+
+
+# ======================================================
+# CSS
+# ======================================================
+
+def load_css():
     st.markdown(f"""
     <style>
-
     .stApp > header {{visibility: hidden;}}
 
-    /* HEADER */
     .header-box {{
         background: {HEADER_GRADIENT};
         padding: 26px 45px;
@@ -42,7 +57,6 @@ def load_dashboard_css():
         display: flex;
         justify-content: space-between;
         align-items: center;
-
         box-shadow: 0px 4px 22px rgba(0,0,0,0.25);
     }}
 
@@ -55,141 +69,206 @@ def load_dashboard_css():
 
     .header-logo {{
         height: 55px;
-        object-fit: contain;
     }}
 
-    /* MAIN BUTTON */
-    .stButton > button {{
-        background: {HEADER_GRADIENT} !important;
-        color: white !important;
-        border-radius: 12px !important;
-        width: 100% !important;
-        padding: 18px 0 !important;
-        font-size: 20px !important;
-        font-weight: 700 !important;
-        border: none !important;
-        margin-top: 10px !important;
-    }}
-    .stButton > button:hover {{
-        opacity: 0.92 !important;
-    }}
-
-    /* DASHBOARD CARD */
-    .dashboard-card {{
+    .dash-card {{
         background: white;
-        padding: 28px;
-        border-radius: 14px;
-        box-shadow: 0px 4px 18px rgba(0,0,0,0.10);
+        padding: 25px;
+        border-radius: 12px;
+        box-shadow: 0px 4px 15px rgba(0,0,0,0.08);
         margin-bottom: 25px;
     }}
 
-    .welcome-title {{
-        font-size: 28px;
-        font-weight: 800;
-        color: #222;
-    }}
-
-    .company-label {{
-        font-size: 16px;
-        font-weight: 600;
-        color: #666;
+    .visitor-table table {{
+        width: 100% !important;
+        border-collapse: collapse;
         margin-top: 15px;
     }}
 
-    .company-value {{
-        font-size: 20px;
+    .visitor-table th {{
+        background: #F3F1FF;
+        padding: 12px;
+        text-align: left;
         font-weight: 700;
-        color: #333;
-        margin-bottom: 15px;
     }}
 
+    .visitor-table td {{
+        padding: 10px;
+        border-bottom: 1px solid #EEE;
+    }}
+
+    .action-btn {{
+        background: #4B2ECF;
+        color: white;
+        padding: 6px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 600;
+        border: none;
+        cursor: pointer;
+        margin-right: 5px;
+    }}
+
+    .reset-btn {{
+        background: #D9534F !important;
+    }}
+
+    .checkout-btn {{
+        background: #28a745 !important;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
 
-# ===========================
-# HEADER
-# ===========================
+# ======================================================
+# Header Section
+# ======================================================
 
 def render_header():
-    # Display GitHub logo if valid URL
-    if LOGO_PATH.startswith("http"):
-        logo_html = f'<img src="{LOGO_PATH}" class="header-logo">'
-    else:
-        logo_html = '<div style="color:white;font-size:24px;font-weight:900">zodopt</div>'
-
     st.markdown(f"""
         <div class="header-box">
             <div class="header-title">VISITOR MANAGEMENT DASHBOARD</div>
-            {logo_html}
+            <img src="{LOGO_URL}" class="header-logo">
         </div>
     """, unsafe_allow_html=True)
 
 
-# ===========================
-# MAIN DASHBOARD CONTENT
-# ===========================
+# ======================================================
+# Fetch Visitors for Company
+# ======================================================
+
+def get_visitors(company_id):
+    conn = get_conn()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT id, full_name, phone_number, visit_type, person_to_meet,
+               registration_timestamp, checkout_time
+        FROM visitors
+        WHERE company_id = %s
+        ORDER BY registration_timestamp DESC
+    """, (company_id,))
+
+    return cursor.fetchall()
+
+
+# ======================================================
+# Update Checkout Time
+# ======================================================
+
+def mark_checkout(visitor_id):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE visitors SET checkout_time=%s WHERE id=%s",
+        (datetime.now(), visitor_id)
+    )
+
+
+# ======================================================
+# Reset Visitor Entry
+# ======================================================
+
+def reset_visitor(visitor_id):
+    conn = get_conn()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM visitors WHERE id=%s", (visitor_id,))
+
+
+# ======================================================
+# Visitor Dashboard Main Section
+# ======================================================
 
 def render_visitor_dashboard():
 
-    # Access check
+    # Redirect if not logged in
     if "admin_logged_in" not in st.session_state or not st.session_state["admin_logged_in"]:
-        st.error("Access Denied: Please login.")
+        st.error("Access Denied")
         st.stop()
 
-    load_dashboard_css()
+    load_css()
     render_header()
 
-    admin_name = st.session_state.get("admin_name", "Admin")
-    company_id = st.session_state.get("company_id", "N/A")
+    admin = st.session_state.get("admin_name", "Admin")
+    company_id = st.session_state.get("company_id")
 
-    # ---------------------------
-    # CLEAN HTML CARD BLOCK
-    # ---------------------------
-
-    card_html = f"""
-    <div class="dashboard-card">
-
-        <div class="welcome-title">
-            Welcome, {admin_name}
-        </div>
-
-        <div class="company-label">Company ID</div>
-        <div class="company-value">{company_id}</div>
-
-        <hr style="margin:20px 0;">
-
-        <div style="font-size:17px; color:#555;">
-            Use the button below to begin a new visitor registration.
-        </div>
-
+    # ================= WELCOME CARD =================
+    st.markdown(f"""
+    <div class="dash-card">
+        <h2 style='margin-bottom:5px;'>Welcome, {admin}</h2>
+        <div style='font-size:17px;color:#555;'>Company ID: <b>{company_id}</b></div>
     </div>
-    """
+    """, unsafe_allow_html=True)
 
-    st.markdown(card_html, unsafe_allow_html=True)
-
-    # ---------------------------
-    # BUTTON → visitor_registration
-    # ---------------------------
+    # ================= NEW VISITOR BUTTON =================
     if st.button("➕ NEW VISITOR REGISTRATION"):
         st.session_state["current_page"] = "visitor_details"
         st.rerun()
 
+    # ================= VISITOR LIST =================
+    st.markdown("### 🧾 Visitor List")
 
-# ===========================
+    visitors = get_visitors(company_id)
+
+    if not visitors:
+        st.info("No visitors found yet.")
+        return
+
+    st.markdown("<div class='visitor-table'>", unsafe_allow_html=True)
+
+    # Table Headers
+    st.markdown("""
+    <table>
+        <tr>
+            <th>Name</th>
+            <th>Phone</th>
+            <th>Meeting</th>
+            <th>Visited</th>
+            <th>Checkout</th>
+            <th>Actions</th>
+        </tr>
+    """, unsafe_allow_html=True)
+
+    # Table rows
+    for v in visitors:
+        checkout = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
+
+        st.markdown(f"""
+        <tr>
+            <td>{v['full_name']}</td>
+            <td>{v['phone_number']}</td>
+            <td>{v['person_to_meet']}</td>
+            <td>{v['registration_timestamp'].strftime("%d-%m-%Y %H:%M")}</td>
+            <td>{checkout}</td>
+            <td>
+                <form action="" method="get">
+                    <button class="action-btn checkout-btn" name="checkout_{v['id']}">Checkout</button>
+                    <button class="action-btn reset-btn" name="reset_{v['id']}">Reset</button>
+                </form>
+            </td>
+        </tr>
+        """, unsafe_allow_html=True)
+
+        # Action handlers
+        if f"checkout_{v['id']}" in st.query_params:
+            mark_checkout(v["id"])
+            st.rerun()
+
+        if f"reset_{v['id']}" in st.query_params:
+            reset_visitor(v["id"])
+            st.rerun()
+
+    st.markdown("</table></div>", unsafe_allow_html=True)
+
+
 # EXPORT FOR ROUTER
-# ===========================
-
 def render_dashboard():
     return render_visitor_dashboard()
 
 
-# ===========================
-# DEBUG MODE
-# ===========================
+# Manual Test
 if __name__ == "__main__":
     st.session_state["admin_logged_in"] = True
     st.session_state["admin_name"] = "Test Admin"
     st.session_state["company_id"] = 1
-
     render_visitor_dashboard()
