@@ -13,8 +13,10 @@ from typing import Dict, Any, Optional
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
-LOGO_PATH = "https://github.com/ZODOPT-Tech/Wheelbrand/blob/11318005e661b1a053bd96974f5c3ee2186da2ba/images/zodopt.png"
-LOGO_PLACEHOLDER_TEXT = "zodopt"
+# ✅ RAW GITHUB IMAGE = Works in Streamlit
+LOGO_PATH = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
+
+LOGO_PLACEHOLDER_TEXT = "ZODOPT"
 
 HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
 MIN_PASSWORD_LENGTH = 8
@@ -244,7 +246,6 @@ def render_visitor_login_page():
         object-fit: contain;
     }}
 
-    /* Fully wide gradient buttons */
     .stButton > button, .stForm button[type="submit"] {{
         background: {HEADER_GRADIENT} !important;
         color: white !important;
@@ -264,10 +265,7 @@ def render_visitor_login_page():
     """, unsafe_allow_html=True)
 
     # ---------------- HEADER ----------------
-    if os.path.exists(LOGO_PATH):
-        logo_html = f'<img src="{LOGO_PATH}" class="header-logo">'
-    else:
-        logo_html = f'<div style="color:white;font-weight:900;font-size:24px">{LOGO_PLACEHOLDER_TEXT}</div>'
+    logo_html = f'<img src="{LOGO_PATH}" class="header-logo">'
 
     st.markdown(
         f"""
