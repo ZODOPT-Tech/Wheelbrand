@@ -171,7 +171,7 @@ def render_visitor_dashboard():
     # BUTTON → visitor_registration
     # ---------------------------
     if st.button("➕ NEW VISITOR REGISTRATION"):
-        st.session_state["current_page"] = "visitor_registration"
+        st.session_state["current_page"] = "visitor_details"
         st.rerun()
 
 
