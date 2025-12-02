@@ -154,4 +154,4 @@ def render_main_screen():
 
     # Remove the bottom line and caption for a cleaner look, closer to the image
     # st.markdown("---")
-     st.caption("A ZODOPT Visitor and Conference Management System.")
+      st.caption("A ZODOPT Visitor and Conference Management System.")
