@@ -119,9 +119,8 @@ def initialize_session_state():
         # visitor_data stores validated primary data and accumulates secondary data
         st.session_state['visitor_data'] = {}
     
-    # Global state (assumed to be set by a previous login screen)
+    # Global state (for login)
     if 'company_id' not in st.session_state:
-        # Default to None or a secure default like 0 if not set, but the main logic checks this.
         st.session_state['company_id'] = None
     if 'admin_logged_in' not in st.session_state:
         st.session_state['admin_logged_in'] = False
@@ -141,7 +140,7 @@ def navigate_to_main_screen():
         if key in st.session_state:
             del st.session_state[key]
     
-    # Rerunning will restart the script, allowing the external app to manage navigation
+    # Rerunning will restart the script
     st.rerun()
 
 # ==============================================================================
@@ -667,37 +666,72 @@ def render_registration_flow():
     elif st.session_state['registration_step'] == 'secondary':
         render_secondary_details_form()
 
+# ==============================================================================
+# 9. ADMIN LOGIN PAGE (NEWLY ADDED)
+# ==============================================================================
+
+def render_admin_login_page():
+    """Renders a simple login form for the admin, setting admin_logged_in and company_id."""
+    
+    st.title("Admin Login Required")
+    st.markdown("Please enter your credentials to access the Visitor Management System.")
+
+    with st.form("admin_login_form"):
+        st.markdown("---")
+        # Dummy credentials for this example
+        st.markdown("For testing: Username: **admin** | Password: **password** | Company ID: **1**")
+        st.markdown("---")
+        
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        company_id_input = st.text_input("Company ID (e.g., 1)")
+        
+        submitted = st.form_submit_button("Log In", type="primary")
+
+        if submitted:
+            # Simple, hardcoded check for demonstration (replace with DB check in production)
+            if username == "admin" and password == "password" and company_id_input.isdigit():
+                # Store the successful login state
+                st.session_state['admin_logged_in'] = True
+                st.session_state['company_id'] = int(company_id_input) 
+                st.success(f"Login successful for Company ID: {st.session_state['company_id']}")
+                st.balloons()
+                st.rerun()
+            else:
+                st.error("Invalid Username, Password, or Company ID.")
+
 
 # ==============================================================================
-# 9. Main Application Logic
+# 10. Main Application Logic (MODIFIED)
 # ==============================================================================
 
 def main_app_flow():
-    """Main function to run the application, handling flow between menu and registration."""
+    """Main function to run the application, handling flow between login, menu, and registration."""
     
     # 1. Initialize State
     initialize_session_state()
     
     # 2. ENFORCE LOGIN AND COMPANY ID CHECK
-    if not st.session_state.get('admin_logged_in'):
-        st.error("Access Denied: Please log in as an Admin to register visitors.")
-        st.rerun()
-        return
-        
+    if not st.session_state.get('admin_logged_in') or not st.session_state.get('company_id'):
+        render_app_header() # Render the header for visual consistency
+        render_admin_login_page() # Show the new login page
+        return # Stop execution until logged in
+    
     # CRITICAL: Must have a company_id to associate the visitor with.
-    company_id = st.session_state.get('company_id')
+    company_id = st.session_state['company_id'] # Safe to assume it's set after successful login
     if not company_id:
+        # Fallback security check
         st.error("Session missing Company ID. Please log in again.")
-        st.rerun()
+        st.session_state['admin_logged_in'] = False
+        st.rerun() 
         return
         
     # 3. Connection Test (Stops app if connection fails)
-    # This also handles credential retrieval via the caching mechanism
     conn = get_fast_connection()
     if conn is None:
-        return # App should already be stopped by get_fast_connection
+        return 
 
-    # 4. Render Main Header (Always render the main banner)
+    # 4. Render Main Header (Always render the main banner after successful login)
     render_app_header()
     
     st.info(f"Logged in for Company ID: **{company_id}**")
@@ -711,10 +745,4 @@ def main_app_flow():
     
 
 if __name__ == "__main__":
-    # --- Mock login state for testing ---
-    if 'admin_logged_in' not in st.session_state:
-        st.session_state['admin_logged_in'] = True
-        # Set the mock company ID explicitly to 1 for testing the constraint
-        st.session_state['company_id'] = 1
-        
     main_app_flow()
