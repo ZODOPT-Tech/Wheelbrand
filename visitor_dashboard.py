@@ -115,7 +115,6 @@ def render_header():
     if LOGO_PATH.startswith("http"):
         logo_html = f'<img src="{LOGO_PATH}" class="header-logo">'
     else:
-        # fallback text logo
         logo_html = '<div style="color:white;font-size:24px;font-weight:900">zodopt</div>'
 
     st.markdown(f"""
@@ -132,51 +131,52 @@ def render_header():
 
 def render_visitor_dashboard():
 
-    # Access security check
+    # Access check
     if "admin_logged_in" not in st.session_state or not st.session_state["admin_logged_in"]:
         st.error("Access Denied: Please login.")
         st.stop()
 
-    # Load UI styles + header
     load_dashboard_css()
     render_header()
 
-    # Pull session data
     admin_name = st.session_state.get("admin_name", "Admin")
     company_id = st.session_state.get("company_id", "N/A")
 
     # ---------------------------
-    # DASHBOARD CARD
+    # CLEAN HTML CARD BLOCK
     # ---------------------------
-    st.markdown(f"""
-        <div class="dashboard-card">
 
-            <div class="welcome-title">
-                Welcome, {admin_name}
-            </div>
+    card_html = f"""
+    <div class="dashboard-card">
 
-            <div class="company-label">Company ID</div>
-            <div class="company-value">{company_id}</div>
-
-            <hr style="margin:20px 0;">
-
-            <div style="font-size:17px; color:#555;">
-                Use the button below to begin a new visitor registration.
-            </div>
-
+        <div class="welcome-title">
+            Welcome, {admin_name}
         </div>
-    """, unsafe_allow_html=True)
+
+        <div class="company-label">Company ID</div>
+        <div class="company-value">{company_id}</div>
+
+        <hr style="margin:20px 0;">
+
+        <div style="font-size:17px; color:#555;">
+            Use the button below to begin a new visitor registration.
+        </div>
+
+    </div>
+    """
+
+    st.markdown(card_html, unsafe_allow_html=True)
 
     # ---------------------------
-    # NEW VISITOR REGISTRATION BUTTON
+    # BUTTON → visitor_registration
     # ---------------------------
     if st.button("➕ NEW VISITOR REGISTRATION"):
-        st.session_state["current_page"] = "visitor_registration"  # loads visitor_details.py
+        st.session_state["current_page"] = "visitor_registration"
         st.rerun()
 
 
 # ===========================
-# EXPORT FUNCTION FOR MAIN ROUTER
+# EXPORT FOR ROUTER
 # ===========================
 
 def render_dashboard():
@@ -184,9 +184,8 @@ def render_dashboard():
 
 
 # ===========================
-# DEBUG MODE (if run standalone)
+# DEBUG MODE
 # ===========================
-
 if __name__ == "__main__":
     st.session_state["admin_logged_in"] = True
     st.session_state["admin_name"] = "Test Admin"
