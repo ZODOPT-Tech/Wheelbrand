@@ -3,7 +3,9 @@ from datetime import datetime
 import mysql.connector
 import boto3
 import json
+import base64
 from streamlit_drawable_canvas import st_canvas
+
 
 AWS_REGION = "ap-south-1"
 AWS_BUCKET = "zodopt-visitor-identity"
@@ -31,15 +33,10 @@ def get_connection():
     )
 
 
-# ---------------- UPLOAD TO S3 ----------------
+# ---------------- S3 UPLOAD (USING IAM ROLE) ----------------
 def upload_to_s3(file_bytes, filename, content_type):
-    creds = get_aws_credentials()
-    s3 = boto3.client(
-        "s3",
-        aws_access_key_id=creds["AWS_KEY"],
-        aws_secret_access_key=creds["AWS_SECRET"],
-        region_name=AWS_REGION,
-    )
+    s3 = boto3.client("s3")  # No keys needed – uses EC2 IAM role
+
     s3.put_object(
         Bucket=AWS_BUCKET,
         Key=filename,
@@ -51,13 +48,15 @@ def upload_to_s3(file_bytes, filename, content_type):
 
 
 # ---------------- SAVE TO DB ----------------
-def save_identity(company_id, photo_url, signature_url):
+def save_identity(company_id, photo_url, signature_text):
     conn = get_connection()
     cursor = conn.cursor()
+
     cursor.execute("""
-        INSERT INTO visitor_identity (company_id, photo_url, signature_url, captured_at)
+        INSERT INTO visitor_identity (company_id, photo_url, signature_text, captured_at)
         VALUES (%s, %s, %s, %s)
-    """, (company_id, photo_url, signature_url, datetime.now()))
+    """, (company_id, photo_url, signature_text, datetime.now()))
+
     cursor.close()
 
 
@@ -100,16 +99,14 @@ def render_identity_page():
 
     company_id = st.session_state["company_id"]
 
-    # ------------- PHOTO + SIGNATURE SIDE BY SIDE -------------
     col1, col2 = st.columns([1, 1])
 
+    # --- PHOTO ---
     with col1:
         st.subheader("📸 Visitor Photo (Optional)")
-        camera_photo = st.camera_input(
-            "Take Photo",
-            label_visibility="collapsed"
-        )
+        camera_photo = st.camera_input("Take Photo", label_visibility="collapsed")
 
+    # --- SIGNATURE ---
     with col2:
         st.subheader("✍️ Visitor Signature")
         canvas = st_canvas(
@@ -123,9 +120,8 @@ def render_identity_page():
         )
 
     st.write("")
-    st.write("")
 
-    # ------------- SUBMIT BUTTON -------------
+    # ---------------- SUBMIT BUTTON ----------------
     st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
     if st.button("Generate Visitor Pass →", use_container_width=True):
 
@@ -133,25 +129,24 @@ def render_identity_page():
             st.error("Signature is required.")
             return
 
-        with st.spinner("Saving identity..."):
+        with st.spinner("Saving visitor identity..."):
 
+            # Photo upload only if captured
             photo_url = None
-
-            # Upload photo only if provided
             if camera_photo:
-                pbytes = camera_photo.read()
-                pfile = f"identity/company_{company_id}/{datetime.now().timestamp()}_photo.jpg"
-                photo_url = upload_to_s3(pbytes, pfile, "image/jpeg")
+                bytes_photo = camera_photo.read()
+                filename = f"identity/company_{company_id}/{datetime.now().timestamp()}_photo.jpg"
+                photo_url = upload_to_s3(bytes_photo, filename, "image/jpeg")
 
-            # Upload signature (required)
-            sig_bytes = canvas.image_data.tobytes()
-            sfile = f"identity/company_{company_id}/{datetime.now().timestamp()}_sign.png"
-            signature_url = upload_to_s3(sig_bytes, sfile, "image/png")
+            # Convert signature to Base64 text
+            signature_png = canvas.image_data
+            signature_bytes = signature_png.tobytes()
+            signature_text = base64.b64encode(signature_bytes).decode("utf-8")
 
-            # Save record
-            save_identity(company_id, photo_url, signature_url)
+            # Save record in DB
+            save_identity(company_id, photo_url, signature_text)
 
-        st.success("Visitor Pass Generated Successfully!")
+        st.success("Visitor Pass Created Successfully!")
         st.balloons()
 
         st.session_state["current_page"] = "visitor_dashboard"
@@ -159,7 +154,6 @@ def render_identity_page():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ------------- BACK BUTTON -------------
     if st.button("⬅ Back to Dashboard"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
