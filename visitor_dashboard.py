@@ -4,7 +4,7 @@ import os
 # ===========================
 # REFRESH REDIRECT PROTECTION
 # ===========================
-# 🚨 If user refreshes this page directly, redirect to main_screen.py
+# 🚨 If user refreshes this page directly, force redirect to main_screen.py
 if "current_page" not in st.session_state:
     st.session_state["current_page"] = "main_screen"
     st.rerun()
@@ -13,8 +13,8 @@ if "current_page" not in st.session_state:
 # CONFIGURATION
 # ===========================
 
-# ⭐ UPDATE THIS: Replace with your actual GitHub RAW link
-LOGO_PATH = "zodopt.png"
+# ⭐ Update GitHub raw logo URL
+LOGO_PATH = "https://raw.githubusercontent.com/<USERNAME>/<REPO>/main/zodopt.png"
 
 HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
 
@@ -111,9 +111,11 @@ def load_dashboard_css():
 # ===========================
 
 def render_header():
+    # Display GitHub logo if valid URL
     if LOGO_PATH.startswith("http"):
         logo_html = f'<img src="{LOGO_PATH}" class="header-logo">'
     else:
+        # fallback text logo
         logo_html = '<div style="color:white;font-size:24px;font-weight:900">zodopt</div>'
 
     st.markdown(f"""
@@ -125,21 +127,21 @@ def render_header():
 
 
 # ===========================
-# DASHBOARD CONTENT
+# MAIN DASHBOARD CONTENT
 # ===========================
 
-def render_dashboard():
+def render_visitor_dashboard():
 
-    # Access check
+    # Access security check
     if "admin_logged_in" not in st.session_state or not st.session_state["admin_logged_in"]:
         st.error("Access Denied: Please login.")
         st.stop()
 
-    # Load CSS + Header
+    # Load UI styles + header
     load_dashboard_css()
     render_header()
 
-    # Values from session
+    # Pull session data
     admin_name = st.session_state.get("admin_name", "Admin")
     company_id = st.session_state.get("company_id", "N/A")
 
@@ -166,23 +168,23 @@ def render_dashboard():
     """, unsafe_allow_html=True)
 
     # ---------------------------
-    # NEW REGISTRATION BUTTON
+    # NEW VISITOR REGISTRATION BUTTON
     # ---------------------------
     if st.button("➕ NEW VISITOR REGISTRATION"):
-        st.session_state["current_page"] = "visitor_registration"   # will load visitor_details.py
+        st.session_state["current_page"] = "visitor_registration"  # loads visitor_details.py
         st.rerun()
 
 
 # ===========================
-# EXPORT FOR ROUTER
+# EXPORT FUNCTION FOR MAIN ROUTER
 # ===========================
 
 def render_dashboard():
-    render_visitor_dashboard()
+    return render_visitor_dashboard()
 
 
 # ===========================
-# DEBUG RUN (Standalone)
+# DEBUG MODE (if run standalone)
 # ===========================
 
 if __name__ == "__main__":
