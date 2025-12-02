@@ -152,6 +152,5 @@ def render_main_screen():
                 st.session_state['current_page'] = 'conference_login'
                 st.rerun()
 
-    # Remove the bottom line and caption for a cleaner look, closer to the image
-    # st.markdown("---")
-      st.caption("A ZODOPT Visitor and Conference Management System.")
+    # Re-adding the caption as requested
+    st.caption("A ZODOPT Visitor and Conference Management System.")
