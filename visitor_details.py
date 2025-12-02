@@ -44,23 +44,24 @@ def get_fast_connection():
 
 # ============================== CSS ==============================
 def load_styles():
-    st.markdown("""
+    st.markdown(
+        """
         <style>
 
         /* Gradient Header */
         .header-box {
             background: linear-gradient(90deg, #5036FF, #9C2CFF);
-            padding: 25px 25px 20px 25px;
-            border-radius: 12px;
+            padding: 26px 26px 18px 26px;
+            border-radius: 14px;
             color: white;
-            font-size: 27px;
+            font-size: 26px;
             font-weight: 700;
-            margin-bottom: 15px;
+            margin-bottom: 8px;
         }
 
         .header-sub {
             font-size: 15px;
-            opacity: 0.9;
+            opacity: 0.92;
             margin-top: -6px;
         }
 
@@ -68,11 +69,11 @@ def load_styles():
         .tab-row {
             display: flex;
             gap: 40px;
-            padding-left: 5px;
-            margin-top: 18px;
+            padding: 10px 5px 0px 5px;
+            margin-top: 8px;
         }
         .tab-item {
-            font-size: 18px;
+            font-size: 17px;
             font-weight: 600;
             padding-bottom: 6px;
             cursor: pointer;
@@ -83,18 +84,26 @@ def load_styles():
             border-bottom: 3px solid #4F49FF;
         }
 
-        /* White container */
+        /* White form container */
         .form-container {
             background: white;
-            padding: 30px 30px 20px 30px;
+            padding: 30px 30px 22px 30px;
             border-radius: 14px;
+            margin-top: 18px;
             box-shadow: 0px 4px 18px rgba(0,0,0,0.06);
-            margin-top: 15px;
         }
 
         label {
             font-weight: 600 !important;
             margin-top: 10px !important;
+        }
+
+        /* Input styling */
+        .stTextInput > div > div > input {
+            background: #F3F5FB !important;
+            border-radius: 8px !important;
+            border: 1px solid #DDE2EE !important;
+            padding: 10px 14px !important;
         }
 
         /* Gradient Button */
@@ -103,38 +112,43 @@ def load_styles():
             border: none !important;
             color: white !important;
             border-radius: 8px !important;
-            padding: 12px !important;
+            padding: 11px !important;
             font-size: 17px !important;
             font-weight: 600 !important;
         }
 
         </style>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ============================== HEADER ==============================
 def render_header():
+
     load_styles()
 
-    st.markdown("""
+    st.markdown(
+        """
         <div class="header-box">
             Visitor Registration
             <div class="header-sub">Please fill in your details</div>
         </div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
     step = st.session_state["registration_step"]
 
-    st.markdown(f"""
+    st.markdown(
+        f"""
         <div class="tab-row">
-            <div class="tab-item {'tab-active' if step=='primary' else ''}">
-                PRIMARY DETAILS
-            </div>
-            <div class="tab-item {'tab-active' if step=='secondary' else ''}">
-                SECONDARY DETAILS
-            </div>
+            <div class="tab-item {'tab-active' if step=='primary' else ''}">PRIMARY DETAILS</div>
+            <div class="tab-item {'tab-active' if step=='secondary' else ''}">SECONDARY DETAILS</div>
         </div>
-    """, unsafe_allow_html=True)
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 # ============================== PRIMARY FORM ==============================
@@ -154,23 +168,22 @@ def render_primary_form():
             st.error("All fields are required.")
             return
 
-        st.session_state["visitor_data"].update({
-            "name": name,
-            "phone": phone,
-            "email": email
-        })
+        st.session_state["visitor_data"].update(
+            {"name": name, "phone": phone, "email": email}
+        )
 
         st.session_state["registration_step"] = "secondary"
         st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ============================== SECONDARY FORM ==============================
 def render_secondary_form():
 
     d = st.session_state["visitor_data"]
+
     st.markdown('<div class="form-container">', unsafe_allow_html=True)
 
     visit_type = st.text_input("Visit Type", d.get("visit_type", ""))
@@ -193,6 +206,7 @@ def render_secondary_form():
     person_to_meet = st.text_input("Person to Meet *", d.get("person_to_meet", ""))
 
     st.markdown("### Belongings")
+
     colb1, colb2 = st.columns(2)
     with colb1:
         bags = st.checkbox("Bags", d.get("has_bags", False))
@@ -210,36 +224,37 @@ def render_secondary_form():
             st.error("Person to Meet is required.")
             return
 
-        st.session_state["visitor_data"].update({
-            "visit_type": visit_type,
-            "from_company": from_company,
-            "department": department,
-            "designation": designation,
-            "address_line_1": address_line_1,
-            "city": city,
-            "state": state,
-            "postal_code": postal_code,
-            "country": country,
-            "gender": gender,
-            "purpose": purpose,
-            "person_to_meet": person_to_meet,
-            "has_bags": bags,
-            "has_documents": documents,
-            "has_electronic_items": electronics,
-            "has_laptop": laptop,
-            "has_charger": charger,
-            "has_power_bank": power_bank,
-        })
+        st.session_state["visitor_data"].update(
+            {
+                "visit_type": visit_type,
+                "from_company": from_company,
+                "department": department,
+                "designation": designation,
+                "address_line_1": address_line_1,
+                "city": city,
+                "state": state,
+                "postal_code": postal_code,
+                "country": country,
+                "gender": gender,
+                "purpose": purpose,
+                "person_to_meet": person_to_meet,
+                "has_bags": bags,
+                "has_documents": documents,
+                "has_electronic_items": electronics,
+                "has_laptop": laptop,
+                "has_charger": charger,
+                "has_power_bank": power_bank,
+            }
+        )
 
         st.session_state["current_page"] = "visitor_identity"
         st.rerun()
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
 
-
-# ============================== ENTRY (main.py calls this) ==============================
+# ============================== ENTRY FOR main.py ==============================
 def render_details_page():
 
     if not st.session_state.get("admin_logged_in"):
