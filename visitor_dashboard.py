@@ -38,7 +38,7 @@ def get_conn():
 
 
 # ======================================================
-# CSS
+# CSS — PROFESSIONAL UI
 # ======================================================
 
 def load_css():
@@ -46,12 +46,15 @@ def load_css():
     <style>
     .stApp > header {{visibility: hidden;}}
 
+    /* HEADER BAR */
     .header-box {{
         background: {HEADER_GRADIENT};
         padding: 26px 45px;
         border-radius: 12px;
         width: 100%;
+        max-width: 1600px;
         margin: 0 auto 35px auto;
+
         display: flex;
         justify-content: space-between;
         align-items: center;
@@ -68,6 +71,7 @@ def load_css():
         height: 55px;
     }}
 
+    /* DASHBOARD CARD */
     .dash-card {{
         background: white;
         padding: 25px;
@@ -76,49 +80,37 @@ def load_css():
         margin-bottom: 25px;
     }}
 
-    .visitor-table table {{
-        width: 100%;
-        border-collapse: collapse;
-        margin-top: 15px;
-    }}
-
-    .visitor-table th {{
-        background: #F3F1FF;
-        padding: 12px;
-        text-align: left;
-        font-weight: 700;
-    }}
-
-    .visitor-table td {{
-        padding: 10px;
+    /* TABLE */
+    .visitor-row {{
+        padding: 12px 0;
         border-bottom: 1px solid #EEE;
+        font-size: 16px;
     }}
 
-    .action-btn {{
-        background: #4B2ECF;
-        color: white;
-        padding: 6px 14px;
-        border-radius: 8px;
-        font-size: 13px;
-        font-weight: 600;
-        border: none;
-        cursor: pointer;
-        margin-right: 5px;
+    /* BUTTONS */
+    .stButton > button {{
+        background: {HEADER_GRADIENT} !important;
+        color: white !important;
+        font-weight: 700 !important;
+        padding: 10px 14px !important;
+        border-radius: 8px !important;
+        border: none !important;
+    }}
+
+    .checkout-btn {{
+        background: #28a745 !important;
     }}
 
     .reset-btn {{
         background: #D9534F !important;
     }}
 
-    .checkout-btn {{
-        background: #28a745 !important;
-    }}
     </style>
     """, unsafe_allow_html=True)
 
 
 # ======================================================
-# Header Section
+# HEADER
 # ======================================================
 
 def render_header():
@@ -131,7 +123,7 @@ def render_header():
 
 
 # ======================================================
-# Fetch Visitors for Company (FIXED visitor_id)
+# FETCH VISITORS FOR THIS COMPANY
 # ======================================================
 
 def get_visitors(company_id):
@@ -139,8 +131,8 @@ def get_visitors(company_id):
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
-        SELECT visitor_id, full_name, phone_number, visit_type, person_to_meet,
-               registration_timestamp, checkout_time
+        SELECT visitor_id, full_name, phone_number, visit_type, 
+               person_to_meet, registration_timestamp, checkout_time
         FROM visitors
         WHERE company_id = %s
         ORDER BY registration_timestamp DESC
@@ -150,7 +142,7 @@ def get_visitors(company_id):
 
 
 # ======================================================
-# Update Checkout Time  (FIXED visitor_id)
+# CHECKOUT
 # ======================================================
 
 def mark_checkout(visitor_id):
@@ -163,7 +155,7 @@ def mark_checkout(visitor_id):
 
 
 # ======================================================
-# Reset Visitor Entry (FIXED visitor_id)
+# RESET VISITOR ENTRY
 # ======================================================
 
 def reset_visitor(visitor_id):
@@ -173,11 +165,12 @@ def reset_visitor(visitor_id):
 
 
 # ======================================================
-# Visitor Dashboard Main
+# DASHBOARD MAIN
 # ======================================================
 
 def render_visitor_dashboard():
 
+    # AUTH CHECK
     if "admin_logged_in" not in st.session_state or not st.session_state["admin_logged_in"]:
         st.error("Access Denied")
         st.stop()
@@ -188,7 +181,7 @@ def render_visitor_dashboard():
     admin = st.session_state.get("admin_name", "Admin")
     company_id = st.session_state.get("company_id")
 
-    # ------------------ Welcome Card ------------------
+    # ------------------ WELCOME CARD ------------------
     st.markdown(f"""
     <div class="dash-card">
         <h2 style='margin-bottom:5px;'>Welcome, {admin}</h2>
@@ -196,68 +189,69 @@ def render_visitor_dashboard():
     </div>
     """, unsafe_allow_html=True)
 
-    # ------------------ New Registration Button ------------------
+    # ------------------ NEW REGISTRATION BUTTON ------------------
     if st.button("➕ NEW VISITOR REGISTRATION"):
         st.session_state["current_page"] = "visitor_details"
         st.rerun()
 
-    # ------------------ Visitor Table ------------------
+    # ------------------ VISITOR LIST ------------------
     st.markdown("### 🧾 Visitor List")
+
     visitors = get_visitors(company_id)
 
     if not visitors:
         st.info("No visitors found yet.")
         return
 
-    st.markdown("<div class='visitor-table'>", unsafe_allow_html=True)
+    # TABLE HEADER
+    header_cols = st.columns([3, 2, 2, 3, 2, 3])
+    header_cols[0].markdown("**Name**")
+    header_cols[1].markdown("**Phone**")
+    header_cols[2].markdown("**Meeting**")
+    header_cols[3].markdown("**Visited**")
+    header_cols[4].markdown("**Checkout**")
+    header_cols[5].markdown("**Actions**")
 
-    st.markdown("""
-    <table>
-        <tr>
-            <th>Name</th>
-            <th>Phone</th>
-            <th>Meeting</th>
-            <th>Visited</th>
-            <th>Checkout</th>
-            <th>Actions</th>
-        </tr>
-    """, unsafe_allow_html=True)
+    st.markdown("---")
 
+    # TABLE ROWS
     for v in visitors:
+
         vid = v["visitor_id"]
 
-        checkout = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
+        checkout = (
+            v["checkout_time"].strftime("%d-%m-%Y %H:%M")
+            if v["checkout_time"] else "—"
+        )
 
-        st.markdown(f"""
-        <tr>
-            <td>{v['full_name']}</td>
-            <td>{v['phone_number']}</td>
-            <td>{v['person_to_meet']}</td>
-            <td>{v['registration_timestamp'].strftime("%d-%m-%Y %H:%M")}</td>
-            <td>{checkout}</td>
+        row = st.columns([3, 2, 2, 3, 2, 3])
 
-            <td>
-                <form action="" method="get">
-                    <button class="action-btn checkout-btn" name="checkout_{vid}">Checkout</button>
-                    <button class="action-btn reset-btn" name="reset_{vid}">Reset</button>
-                </form>
-            </td>
-        </tr>
-        """, unsafe_allow_html=True)
+        row[0].write(v["full_name"])
+        row[1].write(v["phone_number"])
+        row[2].write(v["person_to_meet"])
+        row[3].write(v["registration_timestamp"].strftime("%d-%m-%Y %H:%M"))
+        row[4].write(checkout)
 
-        # ----- Handle checkout -----
-        if f"checkout_{vid}" in st.query_params:
-            mark_checkout(vid)
-            st.rerun()
+        with row[5]:
+            b1, b2 = st.columns([1, 1])
 
-        # ----- Handle reset -----
-        if f"reset_{vid}" in st.query_params:
-            reset_visitor(vid)
-            st.rerun()
+            if b1.button("Checkout", key=f"checkout_{vid}"):
+                mark_checkout(vid)
+                st.rerun()
 
-    st.markdown("</table></div>", unsafe_allow_html=True)
+            if b2.button("Reset", key=f"reset_{vid}"):
+                reset_visitor(vid)
+                st.rerun()
 
 
 # EXPORT FOR ROUTER
 def render_dashboard():
     return render_visitor_dashboard()
+
+
+# Manual Test
+if __name__ == "__main__":
+    st.session_state["admin_logged_in"] = True
+    st.session_state["admin_name"] = "Test Admin"
+    st.session_state["company_id"] = 1
+    render_visitor_dashboard()
