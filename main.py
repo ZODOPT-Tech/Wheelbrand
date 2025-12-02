@@ -2,6 +2,7 @@ import streamlit as st
 import importlib
 
 # --- Import Page Modules ---
+# NOTE: These modules must exist as separate .py files in the same directory.
 import main_screen
 import visitor_login
 import visitor_dashboard
@@ -49,25 +50,28 @@ def navigate_to(page_key: str):
     else:
         st.error(f"⚠️ **Developer Error**: Invalid navigation target: `{page_key}`. Page key not found in `PAGE_MODULES`.")
 
-# --- Session State Initialization (FORCED RESET ON REFRESH) ---
+---
+
+# --- Session State Initialization (CRUCIAL CHANGE) ---
 def initialize_session_state():
     """
-    Clears all existing session state variables and re-initializes
-    only the necessary default variables to force a reset upon every
-    browser refresh or rerun.
+    Initializes session state variables *only if* they don't exist yet (first load).
+    This allows the application to maintain state and navigate pages without
+    resetting to the main screen on every single rerun.
     """
+    if 'current_page' not in st.session_state:
+        # This only runs on the very first load or explicit browser refresh (F5).
+        # Ensures the application always starts at the main_screen.
+        st.session_state['current_page'] = PAGE_MAIN
+        st.session_state['is_logged_in'] = False 
+        st.session_state['user_role'] = None     
+        st.session_state['user_data'] = {}       
     
-    # 🚨 CLEAR ALL STATE 🚨
-    # Use list() to avoid dictionary size changes during iteration
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-        
-    # --- Re-Initialize Default State ---
-    st.session_state['current_page'] = PAGE_MAIN
-    st.session_state['is_logged_in'] = False 
-    st.session_state['user_role'] = None     
-    st.session_state['user_data'] = {}       
+    # Optional: If you want to force a state clear on a browser refresh,
+    # you can keep the previous logic, but that defeats SPA navigation.
+    # The current logic is better for a multi-page app feel.
 
+---
 
 # --- Main Application Logic (Router) ---
 def main():
@@ -78,28 +82,28 @@ def main():
         initial_sidebar_state="collapsed" 
     )
 
-    # 2. Initialize State (This is where the reset occurs on every run)
+    # 2. Initialize State (Only runs on first load)
     initialize_session_state()
 
     # 3. Get Current Page Info
     page_key: str = st.session_state.get('current_page', PAGE_MAIN)
     page_info = PAGE_MODULES.get(page_key)
 
-    # 4. Authentication Guard (Ensures a proper redirect if the default PAGE_MAIN isn't login)
+    # 4. Authentication Guard
     if page_info and page_info.get('auth_required', False) and not st.session_state['is_logged_in']:
-        # This guard is technically redundant now because initialize_session_state
-        # always sets the page key to PAGE_MAIN and login status to False, but
-        # it is good practice to keep for robust routing logic.
+        # If the current page requires auth but the user is logged out,
+        # redirect to the appropriate login page.
         st.warning("🔒 Session expired or unauthorized access. Redirecting to login.")
-        st.session_state['current_page'] = PAGE_V_LOGIN
+        st.session_state['current_page'] = PAGE_V_LOGIN if page_key.startswith('visitor') else (PAGE_C_LOGIN if page_key.startswith('conference') else PAGE_MAIN)
         st.rerun()
         
     # 5. Render Page
     if page_info:
         try:
+            # Dynamically get the render function from the imported module
             render_func = getattr(page_info['module'], page_info['func'])
             
-            # Pass navigate_to to page modules
+            # Pass navigate_to to page modules so they can trigger navigation
             render_func(navigate_to=navigate_to) 
             
         except AttributeError:
