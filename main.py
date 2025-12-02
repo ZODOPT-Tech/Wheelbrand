@@ -26,6 +26,7 @@ PAGE_MODULES = {
     PAGE_MAIN: {'module': main_screen, 'func': 'render_main_screen', 'auth_required': False},
 
     # --- VISITOR FLOW ---
+    # ERROR FIX: This line mandates the function render_visitor_login_page exists in visitor_login.py
     PAGE_V_LOGIN: {'module': visitor_login, 'func': 'render_visitor_login_page', 'auth_required': False},
     PAGE_V_DASH: {'module': visitor_dashboard, 'func': 'render_dashboard', 'auth_required': True},
     'visitor_details': {'module': visitor_details, 'func': 'render_details_page', 'auth_required': True},
