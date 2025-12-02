@@ -14,7 +14,8 @@ if "current_page" not in st.session_state:
 # ===========================
 
 # ⭐ Update GitHub raw logo URL
-LOGO_PATH = "https://raw.githubusercontent.com/<USERNAME>/<REPO>/main/zodopt.png"
+LOGO_PATH = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
+
 
 HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
 
