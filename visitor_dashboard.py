@@ -1,6 +1,6 @@
 import streamlit as st
 import mysql.connector
-from datetime import datetime
+from datetime import datetime, date
 import json
 import boto3
 from botocore.exceptions import ClientError
@@ -50,7 +50,7 @@ def load_css():
     /* HEADER */
     .header-box {{
         background: {HEADER_GRADIENT};
-        padding: 34px 45px;
+        padding: 36px 45px;
         border-radius: 14px;
         margin: 0 auto 40px auto;
         display: flex;
@@ -60,46 +60,57 @@ def load_css():
     }}
 
     .header-title {{
-        font-size: 42px;
+        font-size: 44px;
         font-weight: 900;
         color: white;
-        letter-spacing: -0.5px;
     }}
 
     .header-logo {{
-        height: 60px;
+        height: 62px;
     }}
 
-    /* BUTTON (Matches Header Gradient) */
+    /* INFO CARDS */
+    .info-card {{
+        background: white;
+        padding: 22px;
+        border-radius: 12px;
+        text-align: center;
+        box-shadow: 0px 4px 18px rgba(0,0,0,0.08);
+    }}
+
+    .info-title {{
+        font-size: 15px;
+        color: #555;
+        font-weight: 600;
+    }}
+
+    .info-value {{
+        font-size: 34px;
+        font-weight: 900;
+        color: #222;
+        margin-top: 4px;
+    }}
+
+    /* Buttons */
     .stButton > button {{
         background: {HEADER_GRADIENT} !important;
         color: white !important;
         border-radius: 12px !important;
         font-size: 20px !important;
-        padding: 16px !important;
+        padding: 14px !important;
         font-weight: 700 !important;
         border: none !important;
         width: 100%;
-        box-shadow: 0 4px 14px rgba(79,73,255,0.35);
     }}
 
-    .stButton > button:hover {{
-        opacity: 0.92 !important;
-        transform: scale(1.01);
-    }}
-
-    /* Visitor Table */
-    .table-header {{
-        font-weight: 800;
-        font-size: 18px;
-        margin-top: 20px;
-        color: #333;
-        padding-bottom: 10px;
-    }}
-
-    .data-row {{
-        padding: 12px 0;
-        border-bottom: 1px solid #EEE;
+    /* Table */
+    .completed-box {{
+        background: #E4FFEE;
+        padding: 6px 14px;
+        border-radius: 8px;
+        text-align: center;
+        font-weight: 600;
+        color: #1A8A4A;
     }}
 
     .checkout-btn {{
@@ -110,15 +121,6 @@ def load_css():
         font-weight: 600 !important;
         border: none !important;
         width: 100%;
-    }}
-
-    .completed-box {{
-        background: #E4FFEE;
-        padding: 6px 14px;
-        border-radius: 8px;
-        text-align: center;
-        font-weight: 600;
-        color: #1A8A4A;
     }}
 
     </style>
@@ -158,6 +160,35 @@ def get_visitors(company_id):
 
 
 # ======================================================
+# ANALYTICS
+# ======================================================
+
+def dashboard_stats(company_id):
+    visitors = get_visitors(company_id)
+
+    today = date.today()
+
+    total_company_visitors = len(visitors)
+
+    visited_today = [
+        v for v in visitors if v["registration_timestamp"].date() == today
+    ]
+
+    total_today = len(visited_today)
+
+    inside_now = [
+        v for v in visitors if v["checkout_time"] is None
+    ]
+
+    checked_out_today = [
+        v for v in visitors
+        if v["checkout_time"] is not None and v["checkout_time"].date() == today
+    ]
+
+    return total_today, len(inside_now), len(checked_out_today), total_company_visitors
+
+
+# ======================================================
 # Checkout
 # ======================================================
 
@@ -176,6 +207,7 @@ def mark_checkout(visitor_id):
 
 def render_visitor_dashboard():
 
+    # Redirect if not logged in
     if "admin_logged_in" not in st.session_state or not st.session_state["admin_logged_in"]:
         st.error("Access Denied")
         st.stop()
@@ -185,37 +217,72 @@ def render_visitor_dashboard():
 
     company_id = st.session_state.get("company_id")
 
-    # NEW VISITOR BUTTON
-    st.button("➕ NEW VISITOR REGISTRATION")
+    # =============== ANALYTICS ===============
+    daily, inside, checked_out, total_visitors = dashboard_stats(company_id)
 
-    st.markdown("## 🧾 Visitor List")
+    st.markdown("### 📊 Today's Summary")
 
-    # Fetch all visitors
-    visitors = get_visitors(company_id)
+    c1, c2, c3, c4 = st.columns(4)
 
-    if not visitors:
-        st.info("No visitors yet.")
-        return
+    c1.markdown(f"""
+        <div class="info-card">
+            <div class="info-title">Visitors Today</div>
+            <div class="info-value">{daily}</div>
+        </div>
+    """, unsafe_allow_html=True)
 
-    # Header Row
-    table_header = st.columns([3, 2, 2, 3, 2, 2])
-    table_header[0].markdown("### Name")
-    table_header[1].markdown("### Phone")
-    table_header[2].markdown("### Meeting")
-    table_header[3].markdown("### Visited")
-    table_header[4].markdown("### Checkout")
-    table_header[5].markdown("### Action")
+    c2.markdown(f"""
+        <div class="info-card">
+            <div class="info-title">Currently Inside</div>
+            <div class="info-value">{inside}</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    c3.markdown(f"""
+        <div class="info-card">
+            <div class="info-title">Checked Out Today</div>
+            <div class="info-value">{checked_out}</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    c4.markdown(f"""
+        <div class="info-card">
+            <div class="info-title">Total Visitors (All Time)</div>
+            <div class="info-value">{total_visitors}</div>
+        </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("---")
 
-    # Visitor Rows
-    for v in visitors:
+    # =============== NEW REGISTRATION BUTTON ===============
+    if st.button("➕ NEW VISITOR REGISTRATION"):
+        st.session_state["current_page"] = "visitor_details"
+        st.rerun()
 
+    st.markdown("## 🧾 Visitor List")
+
+    visitors = get_visitors(company_id)
+
+    if not visitors:
+        st.info("No visitors found.")
+        return
+
+    # Table header
+    header = st.columns([3, 2, 2, 3, 2, 2])
+    header[0].markdown("### Name")
+    header[1].markdown("### Phone")
+    header[2].markdown("### Meeting")
+    header[3].markdown("### Visited")
+    header[4].markdown("### Checkout")
+    header[5].markdown("### Action")
+
+    st.markdown("---")
+
+    # Table rows
+    for v in visitors:
         vid = v["visitor_id"]
-        checkout_time = (
-            v["checkout_time"].strftime("%d-%m-%Y %H:%M")
-            if v["checkout_time"] else "—"
-        )
+
+        checkout_time = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
 
         row = st.columns([3, 2, 2, 3, 2, 2])
 
@@ -225,22 +292,22 @@ def render_visitor_dashboard():
         row[3].write(v["registration_timestamp"].strftime("%d-%m-%Y %H:%M"))
         row[4].write(checkout_time)
 
-        # Only checkout button if not completed
+        # Checkout button
         with row[5]:
             if not v["checkout_time"]:
-                if st.button("Checkout", key=f"checkout_{vid}", help="Mark visitor checkout"):
+                if st.button("Checkout", key=f"checkout_{vid}"):
                     mark_checkout(vid)
                     st.rerun()
             else:
-                st.markdown(f"<div class='completed-box'>Completed</div>", unsafe_allow_html=True)
+                st.markdown("<div class='completed-box'>Completed</div>", unsafe_allow_html=True)
 
 
-# EXPORT
+# EXPORT FOR ROUTER
 def render_dashboard():
     return render_visitor_dashboard()
 
 
-# Manual Test
+# Debug Test
 if __name__ == "__main__":
     st.session_state["admin_logged_in"] = True
     st.session_state["company_name"] = "Zodopt"
