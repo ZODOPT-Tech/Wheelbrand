@@ -53,7 +53,7 @@ def load_css():
 # PAGE FUNCTION
 # ---------------------------------------------------------
 
-def render_visitor_login():
+def render_visitor_login_page():
     """Renders the Visitor Login screen."""
     st.title("Visitor Login")
     st.subheader("Manage Your Visit Plan")
@@ -87,4 +87,4 @@ def render_visitor_login():
 if __name__ == "__main__":
     st.set_page_config(layout="centered")
     load_css()
-    render_visitor_login()
+    render_visitor_login_page()
