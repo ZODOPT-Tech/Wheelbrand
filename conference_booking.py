@@ -7,7 +7,6 @@ from streamlit_calendar import calendar
 # ==============================
 # CONFIG
 # ==============================
-
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 AWS_REGION = "ap-south-1"
@@ -75,6 +74,32 @@ def delete_booking(bid, user_id):
 
 
 # ==============================
+# Update Booking
+# ==============================
+def update_booking(bid, user_id, nd, ns, ne, ndp, npp):
+    conn = get_conn()
+    c = conn.cursor()
+    c.execute("""
+        UPDATE conference_bookings
+        SET booking_date=%s,
+            start_time=%s,
+            end_time=%s,
+            department=%s,
+            purpose=%s
+        WHERE id=%s AND user_id=%s
+    """,
+    (
+        nd,
+        datetime.combine(nd, ns),
+        datetime.combine(nd, ne),
+        ndp,
+        npp,
+        bid,
+        user_id
+    ))
+
+
+# ==============================
 # Calendar Events Builder
 # ==============================
 def prepare_events(bookings):
@@ -114,7 +139,6 @@ def inject_css():
     st.markdown(f"""
     <style>
         header[data-testid="stHeader"] {{display:none;}}
-
         .block-container {{padding-top:0rem;}}
 
         .header-box {{
@@ -136,20 +160,6 @@ def inject_css():
             height:48px;
         }}
 
-        .create-box {{
-            background:white;
-            border-radius:14px;
-            padding:18px;
-            box-shadow:0 2px 12px rgba(0,0,0,0.08);
-            margin-bottom:20px;
-        }}
-
-        .booking-box {{
-            background:white;
-            border-radius:14px;
-            padding:18px;
-            box-shadow:0 2px 12px rgba(0,0,0,0.08);
-        }}
         .booking-row {{
             background:#F6F3FF;
             border-radius:10px;
@@ -158,7 +168,6 @@ def inject_css():
             display:flex;
             justify-content:space-between;
         }}
-
         .btn {{
             background:{HEADER_GRADIENT} !important;
             color:white !important;
@@ -166,6 +175,7 @@ def inject_css():
             padding:7px 14px;
             border-radius:8px;
             font-size:14px;
+            cursor:pointer;
         }}
     </style>
     """, unsafe_allow_html=True)
@@ -220,18 +230,15 @@ def render_booking_page():
             st.session_state['current_page'] = "conference_dashboard"
             st.rerun()
 
-    # ========= BOOKING FORM + MY BOOKINGS
+    # ========= BOOKING FORM
     with col2:
-        # Create Booking
         st.subheader("New Booking")
-        st.markdown('<div class="create-box">', unsafe_allow_html=True)
-
         with st.form("form_create"):
             d = st.date_input("Date", date.today())
-            start = st.selectbox("Start Time", TIME_OPTIONS)
-            end = st.selectbox("End Time", TIME_OPTIONS)
-            dept = st.selectbox("Department", DEPARTMENTS)
-            purpose = st.selectbox("Purpose", PURPOSES)
+            start = st.selectbox("Start Time", TIME_OPTIONS, index=0)
+            end = st.selectbox("End Time", TIME_OPTIONS, index=0)
+            dept = st.selectbox("Department", DEPARTMENTS, index=0)
+            purpose = st.selectbox("Purpose", PURPOSES, index=0)
 
             if st.form_submit_button("Confirm Booking", type="primary"):
                 if start == "Select" or end == "Select" or dept == "Select" or purpose == "Select":
@@ -254,15 +261,33 @@ def render_booking_page():
                         st.success("Booking Successful.")
                         st.rerun()
 
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        # My Bookings
+        # ========= MY BOOKINGS
         st.subheader("My Bookings")
         my = get_my_bookings(user_id)
+
+        params = st.query_params
+
+        # CANCEL handler
+        if "cancel" in params:
+            delete_booking(params["cancel"], user_id)
+            st.success("Booking cancelled.")
+            st.rerun()
+
+        # EDIT Save handler
+        if "save_edit" in params:
+            bid = params["save_edit"]
+            nd = datetime.strptime(params["ed_date"], "%Y-%m-%d").date()
+            ns = datetime.strptime(params["ed_start"], "%I:%M %p").time()
+            ne = datetime.strptime(params["ed_end"], "%I:%M %p").time()
+            ndp = params["ed_dept"]
+            npp = params["ed_purpose"]
+            update_booking(bid, user_id, nd, ns, ne, ndp, npp)
+            st.success("Updated successfully")
+            st.rerun()
+
         if not my:
             st.info("No bookings found.")
         else:
-            st.markdown('<div class="booking-box">', unsafe_allow_html=True)
             for b in my:
                 st.markdown(f"""
                 <div class="booking-row">
@@ -272,16 +297,36 @@ def render_booking_page():
                         {b['purpose']} | {b['department']}
                     </div>
                     <div>
+                        <button class="btn" onClick="window.location.href='?edit={b['id']}'">Edit</button>
                         <button class="btn" onClick="window.location.href='?cancel={b['id']}'">Cancel</button>
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
 
+                # Inline EDIT form
+                if "edit" in params and params["edit"] == str(b['id']):
+                    st.write("---")
+                    with st.form(f"edit_form_{b['id']}"):
+                        nd = st.date_input("Date", value=b["booking_date"])
+                        stime = b["start_time"].strftime("%I:%M %p")
+                        etime = b["end_time"].strftime("%I:%M %p")
 
-    # Cancel Action
-    params = st.query_params
-    if "cancel" in params:
-        delete_booking(params["cancel"], user_id)
-        st.success("Booking cancelled.")
-        st.rerun()
+                        ns = st.selectbox("Start", TIME_OPTIONS, index=TIME_OPTIONS.index(stime))
+                        ne = st.selectbox("End", TIME_OPTIONS, index=TIME_OPTIONS.index(etime))
+
+                        ndp = st.selectbox("Department", DEPARTMENTS, index=DEPARTMENTS.index(b['department']))
+                        npp = st.selectbox("Purpose", PURPOSES, index=PURPOSES.index(b['purpose']))
+
+                        save = st.form_submit_button("Save Changes", type="primary")
+
+                        if save:
+                            # redirect with params to update in same request
+                            st.query_params = {
+                                "save_edit": b['id'],
+                                "ed_date": nd,
+                                "ed_start": ns,
+                                "ed_end": ne,
+                                "ed_dept": ndp,
+                                "ed_purpose": npp
+                            }
+                            st.rerun()
