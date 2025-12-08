@@ -28,6 +28,7 @@ def get_conn():
         autocommit=True,
     )
 
+
 # ------------------------------------------------------
 # UI CONFIG
 # ------------------------------------------------------
@@ -35,65 +36,76 @@ LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images
 
 def set_dashboard_css():
     st.markdown("""
-        <style>
-        header[data-testid="stHeader"]{display:none;}
-        .block-container{padding-top:0rem;}
+    <style>
 
-        .header-box{
-            background:linear-gradient(90deg,#50309D,#7A42FF);
-            padding:24px 32px;
-            margin:-1rem -1rem 2rem -1rem;
-            border-radius:18px;
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            box-shadow:0 6px 16px rgba(0,0,0,0.18);
-        }
+    header[data-testid="stHeader"]{display:none;}
+    .block-container{padding-top:0rem;}
 
-        .header-left{display:flex;flex-direction:column;}
+    .header-box{
+        background:linear-gradient(90deg,#50309D,#7A42FF);
+        padding:24px 32px;
+        margin:-1rem -1rem 1.2rem -1rem;
+        border-radius:18px;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        box-shadow:0 6px 16px rgba(0,0,0,0.18);
+    }
 
-        .header-title{
-            font-size:28px;
-            font-weight:800;
-            color:white;
-        }
+    .header-left{
+        display:flex;
+        flex-direction:column;
+    }
+    .header-title{
+        font-size:28px;
+        font-weight:800;
+        color:white;
+    }
+    .header-sub{
+        font-size:17px;
+        font-weight:500;
+        color:white;
+        opacity:0.85;
+    }
 
-        .header-sub{
-            font-size:17px;
-            font-weight:500;
-            color:white;
-            opacity:0.85;
-        }
+    .header-right{
+        display:flex;
+        align-items:center;
+        gap:20px;
+    }
+    .header-logo{
+        height:52px;
+    }
 
-        .header-right{
-            display:flex;
-            align-items:center;
-            gap:20px;
-        }
+    /* Action bar */
+    .action-bar{
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        margin-bottom:1rem;
+    }
 
-        .header-logo{
-            height:50px;
-        }
+    .logout-icon{
+        width:34px;
+        cursor:pointer;
+        transition:0.25s;
+    }
+    .logout-icon:hover{
+        filter:brightness(200%);
+    }
 
-        .logout-icon{
-            width:32px;
-            cursor:pointer;
-            transition:0.2s;
-        }
-        .logout-icon:hover{
-            filter:brightness(200%);
-        }
+    /* Primary button style */
+    .stButton>button {
+        background: linear-gradient(90deg,#50309D,#7A42FF) !important;
+        color:white !important;
+        border:none !important;
+        border-radius:8px !important;
+        font-weight:600 !important;
+        padding:10px 20px !important;
+        font-size:15px !important;
+    }
 
-        /* Full button style */
-        .btn-primary > button {
-            background: linear-gradient(90deg, #50309D, #7A42FF) !important;
-            color: white !important;
-            border: none !important;
-            font-weight: 600;
-            padding: 10px 18px;
-            border-radius: 8px;
-        }
-        </style>
+    </style>
     """, unsafe_allow_html=True)
 
 
@@ -104,7 +116,7 @@ def get_user_details(user_id):
     conn = get_conn()
     c = conn.cursor(dictionary=True)
     c.execute("""
-        SELECT id, name, email, company, department
+        SELECT id, name, company
         FROM conference_users
         WHERE id=%s AND is_active=1
     """, (user_id,))
@@ -136,57 +148,57 @@ def load_company_bookings(company):
 # ------------------------------------------------------
 def render_header(user):
     st.markdown(f"""
-        <div class="header-box">
-            <div class="header-left">
-                <div class="header-title">Welcome, {user['company']}</div>
-                <div class="header-sub">{user['name']}</div>
-            </div>
-
-            <div class="header-right">
-                <img class="header-logo" src="{LOGO_URL}"/>
-                <img class="logout-icon"
-                    src="https://cdn-icons-png.flaticon.com/512/1828/1828490.png"
-                    onclick="document.getElementById('logout_click').click();"/>
-            </div>
+    <div class="header-box">
+        <div class="header-left">
+            <div class="header-title">Welcome, {user['company']}</div>
+            <div class="header-sub">{user['name']}</div>
         </div>
-    """, unsafe_allow_html=True)
 
-    if st.button("logout", key="logout_click", help="", use_container_width=False):
-        st.session_state.clear()
-        st.session_state['current_page'] = "conference_login"
-        st.rerun()
+        <div class="header-right">
+            <img class="header-logo" src="{LOGO_URL}"/>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
 
 # ------------------------------------------------------
-# DASHBOARD PAGE
+# DASHBOARD
 # ------------------------------------------------------
 def render_dashboard():
 
-    # Security: login must exist
     if "user_id" not in st.session_state:
         st.session_state["current_page"] = "conference_login"
         st.rerun()
 
     set_dashboard_css()
 
-    # 1. Fetch logged in user data from DB
+    # Fetch user from DB
     user = get_user_details(st.session_state["user_id"])
-
-    # 2. Render header
     render_header(user)
 
-    # 3. Load bookings for that company
+    # Load bookings
     bookings = load_company_bookings(user["company"])
 
-    # 4. New Booking Button
-    if st.button("New Booking", key="new_booking", help="", use_container_width=True):
-        st.session_state["current_page"] = "conference_bookings"
-        st.rerun()
+    # Action bar (same row)
+    st.markdown('<div class="action-bar">', unsafe_allow_html=True)
 
-    st.write("")
+    colA, colB = st.columns([8,1])
 
-    # ---- LAYOUT ----
-    col_left, col_right = st.columns([2, 1])
+    with colA:
+        if st.button("New Booking"):
+            st.session_state["current_page"] = "conference_bookings"
+            st.rerun()
+
+    with colB:
+        # logout icon triggers hidden button
+        if st.button("🔓", key="logout_click"):
+            st.session_state.clear()
+            st.session_state["current_page"] = "conference_login"
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # ---- Layout
+    col_left, col_right = st.columns([2,1])
 
     # LEFT TABLE
     with col_left:
@@ -196,22 +208,21 @@ def render_dashboard():
             st.info("No bookings found.")
         else:
             df = pd.DataFrame(bookings)
-
             df["Date"] = pd.to_datetime(df["start_time"]).dt.date
             df["Time"] = (
-                pd.to_datetime(df["start_time"]).dt.strftime("%I:%M %p")
-                + " - " +
+                pd.to_datetime(df["start_time"]).dt.strftime("%I:%M %p") +
+                " - " +
                 pd.to_datetime(df["end_time"]).dt.strftime("%I:%M %p")
             )
 
             df = df[["employee_name","department","Date","Time","purpose"]]
             df.columns = ["Booked By","Department","Date","Time","Purpose"]
-            st.dataframe(df, use_container_width=True, height=420)
+
+            st.dataframe(df, use_container_width=True, height=430)
 
 
     # RIGHT METRICS
     with col_right:
-
         st.write("### Summary")
 
         today = datetime.today().date()
