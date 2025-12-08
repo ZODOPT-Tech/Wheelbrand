@@ -5,6 +5,7 @@ import mysql.connector
 from datetime import datetime
 import pandas as pd
 
+
 # -------------------------------------------------------
 # AWS & DB CONFIG
 # -------------------------------------------------------
@@ -28,75 +29,76 @@ def get_conn():
         autocommit=True
     )
 
+
 # -------------------------------------------------------
 # UI CONFIG
 # -------------------------------------------------------
-HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
+HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
+
+
+# -------------------------------------------------------
+# CUSTOM GLOBAL CSS
+# -------------------------------------------------------
+def set_global_css():
+    st.markdown("""
+    <style>
+    header[data-testid="stHeader"] {display:none!important;}
+    .block-container {padding-top:0;}
+
+    .header-box {
+        background:linear-gradient(90deg,#50309D,#7A42FF);
+        padding:24px 36px;
+        margin:-1rem -1rem 2rem -1rem;
+        border-radius:20px;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        box-shadow:0 6px 18px rgba(0,0,0,0.18);
+    }
+
+    .header-left {display:flex;flex-direction:column;}
+
+    .header-title {
+        font-size:30px;
+        font-weight:800;
+        color:white;
+        margin-bottom:4px;
+    }
+
+    .header-sub {
+        font-size:17px;
+        font-weight:500;
+        color:white;
+        opacity:0.88;
+    }
+
+    .header-right {
+        display:flex;
+        align-items:center;
+        gap:18px;
+    }
+
+    .header-logo {height:48px;}
+
+    .logout-icon {
+        width:30px;
+        cursor:pointer;
+        transition:0.3s;
+    }
+    .logout-icon:hover {filter:brightness(200%);}
+    
+    </style>
+    """, unsafe_allow_html=True)
 
 
 # -------------------------------------------------------
 # HEADER COMPONENT
 # -------------------------------------------------------
 def render_header():
+
     username = st.session_state.get("user_name", "")
     company = st.session_state.get("company", "")
-
-    st.markdown(f"""
-        <style>
-        header[data-testid="stHeader"] {{display:none!important;}}
-        .block-container {{padding-top:0;}}
-
-        .header-box {{
-            background:{HEADER_GRADIENT};
-            padding:22px 32px;
-            margin:-1rem -1rem 1.5rem -1rem;
-            border-radius:18px;
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            box-shadow:0 4px 20px rgba(0,0,0,0.18);
-        }}
-
-        .header-left {{
-            display:flex;
-            flex-direction:column;
-        }}
-
-        .header-title {{
-            color:white;
-            font-size:28px;
-            font-weight:800;
-            margin-bottom:3px;
-        }}
-
-        .header-sub {{
-            color:white;
-            opacity:0.85;
-            font-size:16px;
-            font-weight:500;
-        }}
-
-        .header-right {{
-            display:flex;
-            align-items:center;
-            gap:20px;
-        }}
-
-        .header-logo {{
-            height:48px;
-        }}
-
-        .logout-icon-button {{
-            width:34px;
-            cursor:pointer;
-            transition:0.3s;
-        }}
-        .logout-icon-button:hover {{
-            filter:brightness(200%);
-        }}
-        </style>
-    """, unsafe_allow_html=True)
 
     st.markdown(f"""
         <div class="header-box">
@@ -108,18 +110,21 @@ def render_header():
             <div class="header-right">
                 <img class="header-logo" src="{LOGO_URL}"/>
 
-                <img class="logout-icon-button" 
+                <img class="logout-icon"
                      src="https://cdn-icons-png.flaticon.com/512/1828/1828490.png"
-                     onclick="window.location.href='?logout=true';"/>
+                     onclick="document.getElementById('hidden_logout').click();"/>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    # Handle logout
-    if st.experimental_get_query_params().get("logout"):
+    # hidden logout trigger
+    col1, col2, col3 = st.columns([9,1,1])
+    with col2:
+        logout_trigger = st.button("logout", key="hidden_logout", label_visibility="hidden")
+
+    if logout_trigger:
         st.session_state.clear()
-        st.session_state['current_page'] = 'conference_login'
-        st.experimental_set_query_params()
+        st.session_state["current_page"] = "conference_login"
         st.rerun()
 
 
@@ -143,21 +148,23 @@ def load_company_bookings(company):
 # DASHBOARD PAGE
 # -------------------------------------------------------
 def render_dashboard():
+
+    set_global_css()
     render_header()
 
     company = st.session_state.get("company")
     bookings = load_company_bookings(company)
 
-    st.button("➕ New Booking", use_container_width=True, 
-              on_click=lambda: go_to_booking_page())
+    # New booking button
+    if st.button("➕ New Booking", use_container_width=True):
+        st.session_state['current_page'] = "conference_bookings"
+        st.rerun()
 
     st.write("")
 
-    col_left, col_right = st.columns([2, 1])
+    col_left, col_right = st.columns([2,1])
 
-    # ---------------------------------------------------
-    # LEFT SIDE TABLE
-    # ---------------------------------------------------
+    # Left : Bookings Table
     with col_left:
         st.subheader("📅 Booking List")
 
@@ -175,48 +182,41 @@ def render_dashboard():
             df = df[["employee_name", "department", "Date", "Time", "purpose"]]
             df.columns = ["Booked By", "Department", "Date", "Time", "Purpose"]
 
-            st.dataframe(df, use_container_width=True, height=420)
+            st.dataframe(df, use_container_width=True, height=430)
 
 
-    # ---------------------------------------------------
-    # RIGHT SIDE SUMMARY
-    # ---------------------------------------------------
+    # Right : Metrics
     with col_right:
         st.subheader("📊 Summary")
 
         today = datetime.today().date()
 
-        today_bookings = [b for b in bookings if b.get("booking_date") == today]
+        today_count = len([b for b in bookings if b.get("booking_date") == today])
+        all_count = len(bookings)
 
-        st.metric("Today's Bookings", len(today_bookings))
-        st.metric("Total Bookings", len(bookings))
+        st.metric("Today's Bookings", today_count)
+        st.metric("Total Bookings", all_count)
 
-        # Departments count
+        # department metric
         st.markdown("---")
         st.write("#### By Department")
 
-        dept_counts = {}
+        dept = {}
         for b in bookings:
-            dept_counts[b["department"]] = dept_counts.get(b["department"], 0) + 1
+            d = b["department"]
+            dept[d] = dept.get(d, 0) + 1
 
-        for dept, count in dept_counts.items():
-            st.metric(dept, count)
+        for d, c in dept.items():
+            st.metric(d, c)
 
-        # Purpose statistics
+        # purpose
         st.markdown("---")
         st.write("#### By Purpose")
-        purpose_count = {}
+
+        purpose = {}
         for b in bookings:
             p = b["purpose"]
-            purpose_count[p] = purpose_count.get(p, 0) + 1
+            purpose[p] = purpose.get(p, 0) + 1
 
-        for p, count in purpose_count.items():
-            st.metric(p, count)
-
-
-# ---------------------------------------------------
-# PAGE NAVIGATION (CALLBACK)
-# ---------------------------------------------------
-def go_to_booking_page():
-    st.session_state['current_page'] = "conference_bookings"
-    st.rerun()
+        for p, c in purpose.items():
+            st.metric(p, c)
