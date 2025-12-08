@@ -2,142 +2,154 @@ import streamlit as st
 from datetime import datetime, timedelta, time
 from streamlit_calendar import calendar
 
-# === PAGE CONFIG ===
-st.set_page_config(page_title="ZODOPT MeetEase - Scheduler", layout="wide")
-
-# --- WORKING HOURS SETTINGS ---
+# ---------------- SETTINGS ----------------
 WORKING_HOUR_START = 9
 WORKING_MINUTE_START = 30
 WORKING_HOUR_END = 19
 WORKING_MINUTE_END = 0
 
-DEPARTMENT_OPTIONS = ["Select", "Sales", "HR", "Finance", "Delivery/Tech", "Digital Marketing", "IT"]
-PURPOSE_OPTIONS = ["Select", "Client Visit", "Internal Meeting", "HOD Meeting", "Inductions", "Training"]
+DEPARTMENT_OPTIONS = [
+    "Select",
+    "Sales",
+    "HR",
+    "Finance",
+    "Delivery/Tech",
+    "Digital Marketing",
+    "IT"
+]
 
-# --- Store Bookings in Session ---
-if "bookings" not in st.session_state:
-    st.session_state.bookings = []
+PURPOSE_OPTIONS = [
+    "Select",
+    "Client Visit",
+    "Internal Meeting",
+    "HOD Meeting",
+    "Inductions",
+    "Training"
+]
 
-# --- Create Timeslots ---
-def generate_time_slots():
+# ------------ Generate Time Slots ------------
+def _generate_time_options():
     slots = ["Select"]
-    start_dt = datetime(1,1,1,WORKING_HOUR_START,WORKING_MINUTE_START)
-    end_dt = datetime(1,1,1,WORKING_HOUR_END,WORKING_MINUTE_END)
+    start_dt = datetime(1, 1, 1, WORKING_HOUR_START, WORKING_MINUTE_START)
+    end_dt = datetime(1, 1, 1, WORKING_HOUR_END, WORKING_MINUTE_END)
 
     while start_dt <= end_dt:
         slots.append(start_dt.strftime("%I:%M %p"))
         start_dt += timedelta(minutes=30)
-
     return slots
 
-TIME_OPTIONS = generate_time_slots()
+TIME_OPTIONS = _generate_time_options()
 
-# --- Calendar Events ---
-def prepare_events(bookings_list):
+
+# ------------ Generate Calendar Events ------------
+def _prepare_events():
     events = []
-    for i, booking in enumerate(bookings_list):
+    for i, b in enumerate(st.session_state.bookings):
         events.append({
             "id": str(i),
-            "title": f"{booking['purpose']} ({booking['dept']})",
-            "start": booking["start"].isoformat(),
-            "end": booking["end"].isoformat(),
+            "title": f"{b['purpose']} ({b['dept']})",
+            "start": b["start"].isoformat(),
+            "end": b["end"].isoformat(),
             "color": "#ff4d4d",
-            "resourceId": "RoomA"
         })
     return events
 
 
-# === UI ===
-st.title("🗓️ ZODOPT MeetEase — Conference Room Scheduler")
-st.write("Book the conference room below using the booking form.")
+# ------------ MAIN PAGE ------------
+def render_booking_page():
+    
+    # Initialize bookings list
+    if "bookings" not in st.session_state:
+        st.session_state.bookings = []
 
+    st.title("🗓 Conference Room Booking")
+    st.write("Book the conference room using the calendar and form.")
 
-col_calendar, col_form = st.columns([2, 1])
+    col_calendar, col_form = st.columns([2, 1])
 
-# === Calendar ===
-with col_calendar:
-    st.subheader("📅 Schedule View")
+    # ---- CALENDAR SECTION ----
+    with col_calendar:
+        st.subheader("📅 Schedule View")
 
-    calendar_options = {
-        "initialView": "timeGridDay",
-        "slotDuration": "00:30:00",
-        "slotMinTime": f"{WORKING_HOUR_START:02}:{WORKING_MINUTE_START:02}:00",
-        "slotMaxTime": f"{WORKING_HOUR_END:02}:{WORKING_MINUTE_END:02}:00",
-        "height": 700,
-        "headerToolbar": {
-            "left": "today prev,next",
-            "center": "title",
-            "right": "timeGridDay,timeGridWeek"
-        },
-    }
+        MIN_TIME = f"{WORKING_HOUR_START:02}:{WORKING_MINUTE_START:02}:00"
+        MAX_TIME = f"{WORKING_HOUR_END:02}:{WORKING_MINUTE_END:02}:00"
 
-    events_data = prepare_events(st.session_state.bookings)
+        calendar(
+            events=_prepare_events(),
+            options={
+                "initialView": "timeGridDay",
+                "slotDuration": "00:30:00",
+                "slotMinTime": MIN_TIME,
+                "slotMaxTime": MAX_TIME,
+                "height": 700,
+                "headerToolbar": {
+                    "left": "today prev,next",
+                    "center": "title",
+                    "right": "timeGridDay,timeGridWeek",
+                },
+            },
+            key="calendar",
+        )
 
-    calendar(
-        events=events_data,
-        options=calendar_options,
-        key="calendar",
-    )
+    # ---- BOOKING FORM SECTION ----
+    with col_form:
+        st.subheader("📝 Book a Slot")
+        with st.form("booking_form"):
+            booking_date = st.date_input("Date", datetime.today().date())
+            start_str = st.selectbox("Start Time", TIME_OPTIONS)
+            end_str = st.selectbox("End Time", TIME_OPTIONS)
 
+            dept = st.selectbox("Department", DEPARTMENT_OPTIONS)
+            purpose = st.selectbox("Purpose", PURPOSE_OPTIONS)
 
-# === Booking Form ===
-with col_form:
-    st.subheader("📝 Book a Slot")
+            submitted = st.form_submit_button("Confirm Booking")
 
-    with st.form("booking_form"):
-        booking_date = st.date_input("Date", datetime.today().date())
-        start_time_str = st.selectbox("Start Time", options=TIME_OPTIONS)
-        end_time_str = st.selectbox("End Time", options=TIME_OPTIONS)
+            if submitted:
+                # Validations
+                if start_str == "Select" or end_str == "Select":
+                    st.error("Select valid start & end time.")
+                    st.stop()
 
-        department = st.selectbox("Department", options=DEPARTMENT_OPTIONS)
-        purpose = st.selectbox("Purpose", options=PURPOSE_OPTIONS)
+                if dept == "Select":
+                    st.error("Select Department.")
+                    st.stop()
 
-        submit = st.form_submit_button("Book Slot")
+                if purpose == "Select":
+                    st.error("Select Purpose.")
+                    st.stop()
 
-        if submit:
-            # Validate
-            if start_time_str == "Select" or end_time_str == "Select":
-                st.error("Select valid start and end times.")
-                st.stop()
+                start_time = datetime.strptime(start_str, "%I:%M %p").time()
+                end_time = datetime.strptime(end_str, "%I:%M %p").time()
 
-            if department == "Select":
-                st.error("Select department.")
-                st.stop()
+                start_dt = datetime.combine(booking_date, start_time)
+                end_dt = datetime.combine(booking_date, end_time)
 
-            if purpose == "Select":
-                st.error("Select meeting purpose.")
-                st.stop()
+                # Check order
+                if end_dt <= start_dt:
+                    st.error("End time must be after start time.")
+                    st.stop()
 
-            # Convert
-            start_time_obj = datetime.strptime(start_time_str, "%I:%M %p").time()
-            end_time_obj = datetime.strptime(end_time_str, "%I:%M %p").time()
+                # Working hour limits
+                min_dt = datetime.combine(booking_date, time(WORKING_HOUR_START, WORKING_MINUTE_START))
+                max_dt = datetime.combine(booking_date, time(WORKING_HOUR_END, WORKING_MINUTE_END))
 
-            start_dt = datetime.combine(booking_date, start_time_obj)
-            end_dt = datetime.combine(booking_date, end_time_obj)
+                if start_dt < min_dt or end_dt > max_dt:
+                    st.error("Booking must be within working hours (9:30 AM - 7:00 PM).")
+                    st.stop()
 
-            # Logic checks
-            if end_dt <= start_dt:
-                st.error("End time must be after start time.")
-                st.stop()
+                # Overlap check
+                for b in st.session_state.bookings:
+                    if b["start"] < end_dt and b["end"] > start_dt:
+                        st.error("This slot is already booked.")
+                        st.stop()
 
-            min_dt = datetime.combine(booking_date, time(WORKING_HOUR_START, WORKING_MINUTE_START))
-            max_dt = datetime.combine(booking_date, time(WORKING_HOUR_END, WORKING_MINUTE_END))
-            if start_dt < min_dt or end_dt > max_dt:
-                st.error("Booking must be inside working hours (9:30 AM - 7:00 PM).")
-                st.stop()
+                # Save booking
+                st.session_state.bookings.append({
+                    "start": start_dt,
+                    "end": end_dt,
+                    "dept": dept,
+                    "purpose": purpose
+                })
 
-            overlap = any(b["start"] < end_dt and b["end"] > start_dt for b in st.session_state.bookings)
-            if overlap:
-                st.error("This slot is already booked.")
-                st.stop()
-
-            # Save booking
-            st.session_state.bookings.append({
-                "start": start_dt,
-                "end": end_dt,
-                "dept": department,
-                "purpose": purpose
-            })
-
-            st.success("Booking confirmed!")
-            st.rerun()
+                st.success("Booking Confirmed!")
+                st.rerun()
