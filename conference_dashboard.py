@@ -12,11 +12,13 @@ import pandas as pd
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
+
 @st.cache_resource
 def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
     secret = client.get_secret_value(SecretId=AWS_SECRET_NAME)
     return json.loads(secret["SecretString"])
+
 
 @st.cache_resource
 def get_conn():
@@ -38,23 +40,23 @@ HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
 
 # -------------------------------------------------------
-# CUSTOM GLOBAL CSS
+# GLOBAL CSS
 # -------------------------------------------------------
 def set_global_css():
     st.markdown("""
     <style>
-    header[data-testid="stHeader"] {display:none!important;}
+    header[data-testid="stHeader"] {display:none;}
     .block-container {padding-top:0;}
 
     .header-box {
         background:linear-gradient(90deg,#50309D,#7A42FF);
-        padding:24px 36px;
-        margin:-1rem -1rem 2rem -1rem;
+        padding:22px 34px;
+        margin:-1rem -1rem 1.8rem -1rem;
         border-radius:20px;
         display:flex;
         justify-content:space-between;
         align-items:center;
-        box-shadow:0 6px 18px rgba(0,0,0,0.18);
+        box-shadow:0 5px 16px rgba(0,0,0,0.18);
     }
 
     .header-left {display:flex;flex-direction:column;}
@@ -63,7 +65,7 @@ def set_global_css():
         font-size:30px;
         font-weight:800;
         color:white;
-        margin-bottom:4px;
+        margin-bottom:3px;
     }
 
     .header-sub {
@@ -79,21 +81,33 @@ def set_global_css():
         gap:18px;
     }
 
-    .header-logo {height:48px;}
+    .header-logo {
+        height:48px;
+    }
 
     .logout-icon {
         width:30px;
         cursor:pointer;
-        transition:0.3s;
+        transition:0.25s;
     }
-    .logout-icon:hover {filter:brightness(200%);}
-    
+    .logout-icon:hover {
+        filter:brightness(200%);
+    }
+
+    /* Hide button fully */
+    .hidden-button {
+        visibility:hidden;
+        height:0px;
+        width:0px;
+        padding:0;
+        margin:0;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 
 # -------------------------------------------------------
-# HEADER COMPONENT
+# HEADER
 # -------------------------------------------------------
 def render_header():
 
@@ -112,17 +126,14 @@ def render_header():
 
                 <img class="logout-icon"
                      src="https://cdn-icons-png.flaticon.com/512/1828/1828490.png"
-                     onclick="document.getElementById('hidden_logout').click();"/>
+                     onclick="document.getElementById('logout_trigger').click();"/>
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    # hidden logout trigger
-    col1, col2, col3 = st.columns([9,1,1])
-    with col2:
-        logout_trigger = st.button("logout", key="hidden_logout", label_visibility="hidden")
-
-    if logout_trigger:
+    # hidden logout button for Streamlit
+    logout_btn = st.button("logout", key="logout_trigger", help="", on_click=None)
+    if logout_btn:
         st.session_state.clear()
         st.session_state["current_page"] = "conference_login"
         st.rerun()
@@ -155,21 +166,20 @@ def render_dashboard():
     company = st.session_state.get("company")
     bookings = load_company_bookings(company)
 
-    # New booking button
     if st.button("➕ New Booking", use_container_width=True):
-        st.session_state['current_page'] = "conference_bookings"
+        st.session_state["current_page"] = "conference_bookings"
         st.rerun()
 
     st.write("")
 
-    col_left, col_right = st.columns([2,1])
+    col_left, col_right = st.columns([2, 1])
 
-    # Left : Bookings Table
+    # LEFT : Booking Table
     with col_left:
         st.subheader("📅 Booking List")
 
         if not bookings:
-            st.info("No bookings found yet.")
+            st.info("No bookings found.")
         else:
             df = pd.DataFrame(bookings)
             df["Date"] = pd.to_datetime(df["start_time"]).dt.date
@@ -185,38 +195,35 @@ def render_dashboard():
             st.dataframe(df, use_container_width=True, height=430)
 
 
-    # Right : Metrics
+    # RIGHT : Metrics
     with col_right:
         st.subheader("📊 Summary")
 
         today = datetime.today().date()
-
-        today_count = len([b for b in bookings if b.get("booking_date") == today])
-        all_count = len(bookings)
+        today_count = sum(1 for b in bookings if b.get("booking_date") == today)
+        total_count = len(bookings)
 
         st.metric("Today's Bookings", today_count)
-        st.metric("Total Bookings", all_count)
+        st.metric("Total Bookings", total_count)
 
-        # department metric
         st.markdown("---")
         st.write("#### By Department")
 
-        dept = {}
+        dept_count = {}
         for b in bookings:
             d = b["department"]
-            dept[d] = dept.get(d, 0) + 1
+            dept_count[d] = dept_count.get(d, 0) + 1
 
-        for d, c in dept.items():
-            st.metric(d, c)
+        for dept, count in dept_count.items():
+            st.metric(dept, count)
 
-        # purpose
         st.markdown("---")
         st.write("#### By Purpose")
 
-        purpose = {}
+        purpose_count = {}
         for b in bookings:
             p = b["purpose"]
-            purpose[p] = purpose.get(p, 0) + 1
+            purpose_count[p] = purpose_count.get(p, 0) + 1
 
-        for p, c in purpose.items():
-            st.metric(p, c)
+        for p, count in purpose_count.items():
+            st.metric(p, count)
