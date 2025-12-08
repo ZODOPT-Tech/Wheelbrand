@@ -26,98 +26,157 @@ def get_conn():
         autocommit=True
     )
 
-
 # -------------------- UI CONFIG --------------------
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
 
 # -------------------- HEADER --------------------
-def render_header():
+def render_header(company_name):
     st.markdown(f"""
     <style>
-    header[data-testid="stHeader"]{{display:none!important;}}
-    .block-container{{padding-top:0rem!important;}}
-    .header-box {{
-        background:{HEADER_GRADIENT};
-        padding:24px 36px;
-        margin:-1rem -1rem 1rem -1rem;
-        border-radius:18px;
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        box-shadow:0 6px 16px rgba(0,0,0,0.18);
-    }}
-    .header-title {{
-        font-size:30px;
-        font-weight:800;
-        color:white;
-    }}
-    .header-logo {{height:48px;}}
+        header[data-testid="stHeader"] {{display:none!important;}}
+        .block-container {{padding-top:0rem!important;}}
+
+        .header-box {{
+            background:{HEADER_GRADIENT};
+            padding:24px 38px;
+            margin:-1rem -1rem 1.5rem -1rem;
+            border-radius:18px;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            box-shadow:0 6px 16px rgba(0,0,0,0.18);
+        }}
+        .header-title {{
+            font-size:28px;
+            font-weight:800;
+            color:white;
+        }}
+        .header-sub {{
+            font-size:15px;
+            color:white;
+            margin-top:4px;
+            opacity:0.85;
+        }}
+        .header-right {{
+            display:flex;
+            align-items:center;
+            gap:18px;
+        }}
+        .logout-btn {{
+            background:transparent;
+            border:none;
+            cursor:pointer;
+        }}
+        .logout-icon {{
+            width:30px;
+            filter:brightness(95%);
+        }}
+        .header-logo {{
+            height:48px;
+        }}
     </style>
     """, unsafe_allow_html=True)
 
-    username = st.session_state.get("user_name", "User")
+    username = st.session_state.get("user_name", "")
+    
     st.markdown(f"""
     <div class="header-box">
-        <div class="header-title">Welcome, {username}</div>
-        <img class="header-logo" src="{LOGO_URL}">
+        <div>
+            <div class="header-title">Welcome, {username}</div>
+            <div class="header-sub">{company_name} Dashboard</div>
+        </div>
+
+        <div class="header-right">
+            <img class="header-logo" src="{LOGO_URL}">
+            <form action="" method="post">
+                <button class="logout-btn" name="logout">
+                    <img class="logout-icon" src="https://cdn-icons-png.flaticon.com/512/1828/1828490.png"/>
+                </button>
+            </form>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
+    # Logout handler
+    if "logout" in st.session_state.get('form_submitter', {}):
+        st.session_state.clear()
+        st.session_state['current_page'] = "conference_login"
+        st.rerun()
+
 
 # -------------------- FETCH DATA --------------------
-def load_bookings():
+def load_company_bookings(company):
     conn = get_conn()
     cursor = conn.cursor(dictionary=True)
     cursor.execute("""
-        SELECT b.*, u.name, u.department
+        SELECT b.*, u.name AS employee_name, u.department
         FROM conference_bookings b
         JOIN conference_users u ON u.id = b.user_id
+        WHERE u.company = %s
         ORDER BY b.start_time DESC
-    """)
+    """, (company,))
     return cursor.fetchall()
 
 
 # -------------------- DASHBOARD --------------------
 def render_dashboard():
-    render_header()
+    # Current user details
+    company = st.session_state.get("company", None)
 
-    bookings = load_bookings()
+    # HEADER
+    render_header(company)
 
-    if st.button("➕ New Booking Registration"):
+    # DATA
+    bookings = load_company_bookings(company)
+
+    # TOP ACTION BUTTON
+    st.write("")  # spacing
+    if st.button("New Booking Registration", use_container_width=True):
         st.session_state['current_page'] = 'conference_bookings'
         st.rerun()
 
-    col_left, col_right = st.columns([2,1])
+    st.write("")  # spacing
 
+    # LAYOUT
+    col_left, col_right = st.columns([2, 1])
+
+    # LEFT: Booking Table
     with col_left:
-        st.subheader("📋 Booking List")
+        st.subheader("Booking List")
         if not bookings:
             st.info("No bookings available.")
         else:
             df = pd.DataFrame(bookings)
-            df["meeting_date"] = df["start_time"].dt.date
-            df["time"] = df["start_time"].dt.strftime("%H:%M") + " - " + df["end_time"].dt.strftime("%H:%M")
-            st.dataframe(df[["name","department","meeting_date","time","purpose"]],
-                         use_container_width=True)
+            df["Date"] = df["start_time"].dt.date
+            df["Time"] = df["start_time"].dt.strftime("%I:%M %p") + " - " + df["end_time"].dt.strftime("%I:%M %p")
 
+            df = df[["employee_name", "department", "Date", "Time", "purpose"]]
+            df.columns = ["Booked By", "Department", "Date", "Time", "Purpose"]
+
+            st.dataframe(
+                df,
+                use_container_width=True,
+                height=410
+            )
+
+    # RIGHT: Metrics
     with col_right:
-        st.subheader("📊 Summary")
+        st.subheader("Summary Overview")
+
         today = datetime.today().date()
         today_count = len([b for b in bookings if b["booking_date"] == today])
-        st.metric("Today's Bookings", today_count)
+        st.metric("Bookings Today", today_count)
+
         st.metric("Total Bookings", len(bookings))
 
-        dept_map = {}
+        # Department Metrics
+        st.write("---")
+        dept_counts = {}
         for b in bookings:
-            dept_map[b['department']] = dept_map.get(b['department'],0)+1
+            d = b['department']
+            dept_counts[d] = dept_counts.get(d, 0) + 1
 
-        for d,c in dept_map.items():
-            st.metric(d, c)
-
-    st.write("---")
-    if st.button("Logout"):
-        st.session_state.clear()
-        st.session_state['current_page'] = 'conference_login'
-        st.rerun()
+        for dept, count in dept_counts.items():
+            st.metric(dept, count)
