@@ -1,9 +1,11 @@
 import streamlit as st
-import boto3, json, mysql.connector
+import boto3
+import json
+import mysql.connector
 from datetime import datetime
 import pandas as pd
 
-# ---------------- DB ----------------
+# -------------------- AWS DB CONFIG --------------------
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
@@ -24,11 +26,14 @@ def get_conn():
         autocommit=True
     )
 
-# ---------------- UI ----------------
+
+# -------------------- UI CONFIG --------------------
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
-def render_header(title):
+
+# -------------------- HEADER --------------------
+def render_header():
     st.markdown(f"""
     <style>
     header[data-testid="stHeader"]{{display:none!important;}}
@@ -48,21 +53,20 @@ def render_header(title):
         font-weight:800;
         color:white;
     }}
-    .header-logo {{
-        height:48px;
-    }}
+    .header-logo {{height:48px;}}
     </style>
     """, unsafe_allow_html=True)
 
+    username = st.session_state.get("user_name", "User")
     st.markdown(f"""
     <div class="header-box">
-        <div class="header-title">{title}</div>
+        <div class="header-title">Welcome, {username}</div>
         <img class="header-logo" src="{LOGO_URL}">
     </div>
     """, unsafe_allow_html=True)
 
 
-# ---------------- Data Fetch ----------------
+# -------------------- FETCH DATA --------------------
 def load_bookings():
     conn = get_conn()
     cursor = conn.cursor(dictionary=True)
@@ -75,41 +79,41 @@ def load_bookings():
     return cursor.fetchall()
 
 
-# ---------------- Page ----------------
+# -------------------- DASHBOARD --------------------
 def render_dashboard():
-    render_header("CONFERENCE DASHBOARD")
+    render_header()
 
     bookings = load_bookings()
 
-    if st.button("➕ New Booking"):
+    if st.button("➕ New Booking Registration"):
         st.session_state['current_page'] = 'conference_bookings'
         st.rerun()
 
-    col1, col2 = st.columns([2,1])
+    col_left, col_right = st.columns([2,1])
 
-    with col1:
-        st.subheader("Bookings")
+    with col_left:
+        st.subheader("📋 Booking List")
         if not bookings:
-            st.info("No bookings yet.")
+            st.info("No bookings available.")
         else:
             df = pd.DataFrame(bookings)
-            df['date'] = df['booking_date'].astype(str)
-            df['time'] = df['start_time'].dt.strftime("%H:%M") + " - " + df['end_time'].dt.strftime("%H:%M")
-            st.dataframe(df[['name','department','date','time','purpose']], use_container_width=True)
+            df["meeting_date"] = df["start_time"].dt.date
+            df["time"] = df["start_time"].dt.strftime("%H:%M") + " - " + df["end_time"].dt.strftime("%H:%M")
+            st.dataframe(df[["name","department","meeting_date","time","purpose"]],
+                         use_container_width=True)
 
-    with col2:
-        st.subheader("Insights")
-
+    with col_right:
+        st.subheader("📊 Summary")
         today = datetime.today().date()
-        today_count = sum(b['booking_date'] == today for b in bookings)
-        st.metric("Today", today_count)
-        st.metric("Total", len(bookings))
+        today_count = len([b for b in bookings if b["booking_date"] == today])
+        st.metric("Today's Bookings", today_count)
+        st.metric("Total Bookings", len(bookings))
 
-        dept_count = {}
+        dept_map = {}
         for b in bookings:
-            dept_count[b['department']] = dept_count.get(b['department'],0)+1
+            dept_map[b['department']] = dept_map.get(b['department'],0)+1
 
-        for d,c in dept_count.items():
+        for d,c in dept_map.items():
             st.metric(d, c)
 
     st.write("---")
