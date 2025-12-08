@@ -2,9 +2,10 @@ import streamlit as st
 import boto3
 import json
 import mysql.connector
-from datetime import datetime, date, time, timedelta
+from datetime import datetime, time, timedelta
+from streamlit_calendar import calendar
 
-# -------------------- AWS DB CONFIG --------------------
+# ------------------------------- AWS DB CONFIG -------------------------------
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
@@ -25,253 +26,255 @@ def get_conn():
         autocommit=True
     )
 
-
-# ================== UI CONSTANTS ==================
+# ------------------------------- STYLE CONFIG --------------------------------
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
-WORK_START = time(9,30)
-WORK_END = time(19,0)
+WORK_START = time(9, 30)
+WORK_END   = time(19, 0)
 
-DEPARTMENTS = [
-    "Select",
-    "Sales",
-    "HR",
-    "Finance",
-    "Delivery/Tech",
-    "Digital Marketing",
-    "IT"
-]
-
-PURPOSES = [
-    "Select",
-    "Client Visit",
-    "Internal Meeting",
-    "HOD Meeting",
-    "Inductions",
-    "Training"
-]
+DEPT_OPTIONS = ["Sales", "HR", "Finance", "Tech", "Marketing", "Admin"]
+PURPOSE_OPTIONS = ["Client Visit", "Internal Meeting", "HOD Meeting", "Training"]
 
 
-# ================== UTILITIES ==================
-def generate_time_slots():
-    slots = ["Select"]
-    t = datetime(2024,1,1,WORK_START.hour,WORK_START.minute)
-    end = datetime(2024,1,1,WORK_END.hour,WORK_END.minute)
-    
-    while t <= end:
-        slots.append(t.strftime("%I:%M %p"))
-        t += timedelta(minutes=30)
-    return slots
-
-
-TIME_OPTIONS = generate_time_slots()
-
-
-def str_to_time(s):
-    return datetime.strptime(s, "%I:%M %p").time()
-
-
-# ================== DB OPERATIONS ==================
-def save_booking(meeting_date, start_time, end_time, dept, purpose):
-    conn = get_conn()
-    cur = conn.cursor()
-
-    booking_date = datetime.today().date()
-    start_dt = datetime.combine(meeting_date, start_time)
-    end_dt = datetime.combine(meeting_date, end_time)
-
-    # conflict check
-    cur.execute("""
-        SELECT id FROM conference_bookings
-        WHERE booking_date=%s
-        AND (%s < end_time AND %s > start_time)
-    """, (booking_date, start_dt, end_dt))
-    
-    if cur.fetchone():
-        return False, "Slot already booked."
-
-    cur.execute("""
-        INSERT INTO conference_bookings
-        (user_id, booking_date, start_time, end_time, department, purpose)
-        VALUES (%s,%s,%s,%s,%s,%s)
-    """, (
-        st.session_state['user_id'],
-        booking_date,
-        start_dt,
-        end_dt,
-        dept,
-        purpose
-    ))
-
-    conn.commit()
-    return True, "Booking Successful!"
-
-
-def load_user_bookings():
-    conn = get_conn()
-    cur = conn.cursor(dictionary=True)
-    cur.execute("""
-        SELECT * FROM conference_bookings
-        WHERE user_id=%s
-        ORDER BY start_time DESC
-    """, (st.session_state['user_id'],))
-    return cur.fetchall()
-
-
-def cancel_booking(booking_id):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM conference_bookings WHERE id=%s AND user_id=%s",
-                (booking_id, st.session_state['user_id']))
-    conn.commit()
-
-
-def update_booking(booking_id, new_start, new_end):
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        UPDATE conference_bookings
-        SET start_time=%s, end_time=%s
-        WHERE id=%s AND user_id=%s
-    """, (new_start, new_end, booking_id, st.session_state['user_id']))
-    conn.commit()
-
-
-# ================== HEADER ==================
+# ---------------------------- HEADER UI --------------------------------------
 def render_header():
     st.markdown(f"""
     <style>
-    header[data-testid="stHeader"]{{display:none!important;}}
-    .block-container{{padding-top:0rem!important;}}
-    .header-box {{
-        background:{HEADER_GRADIENT};
-        padding:26px 40px;
-        margin:-1rem -1rem 1rem -1rem;
-        border-radius:18px;
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        box-shadow:0 6px 16px rgba(0,0,0,0.18);
-    }}
-    .header-title {{
-        font-size:30px;
-        font-weight:800;
-        color:white;
-    }}
-    .header-right {{
-        display:flex;
-        align-items:center;
-        gap:12px;
-    }}
-    .back-btn {{
-        background:none;
-        border:none;
-        color:white;
-        font-size:16px;
-        font-weight:700;
-        cursor:pointer;
-    }}
-    .header-logo {{height:48px;}}
+        header[data-testid="stHeader"] {{ display:none!important; }}
+        .block-container {{ padding-top:0rem!important; }}
+
+        .header-box {{
+            background:{HEADER_GRADIENT};
+            padding:22px 36px;
+            margin:-1rem -1rem 1rem -1rem;
+            border-radius:18px;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            box-shadow:0 5px 16px rgba(0,0,0,0.16);
+        }}
+
+        .title-container {{
+            display:flex;
+            flex-direction:column;
+        }}
+
+        .header-title {{
+            font-size:28px;
+            font-weight:800;
+            color:white;
+            margin-bottom:4px;
+        }}
+
+        .back-btn {{
+            background:white;
+            color:#50309D;
+            padding:8px 16px;
+            font-weight:700;
+            border-radius:8px;
+            border:none;
+            cursor:pointer;
+            margin-right:10px;
+        }}
+
+        .header-right {{
+            display:flex;
+            align-items:center;
+            gap:12px;
+        }}
+
+        .logo-img {{ height:48px; }}
     </style>
     """, unsafe_allow_html=True)
 
-    # Header Bar
     st.markdown(f"""
         <div class="header-box">
-            <div class="header-title">Conference Booking</div>
+            <div class="title-container">
+                <div class="header-title">Conference Booking</div>
+            </div>
+            
             <div class="header-right">
-                <button class="back-btn" type="button" onclick="window.location.reload()">◀ Back</button>
-                <img src="{LOGO_URL}" class="header-logo"/>
+                <button class="back-btn" onclick="window.location.reload();">⬅ Back</button>
+                <img src="{LOGO_URL}" class="logo-img" />
             </div>
         </div>
     """, unsafe_allow_html=True)
 
-    # Back logic
-    if st.button(""):
-        st.session_state['current_page'] = "conference_dashboard"
-        st.rerun()
+
+# ---------------------------- TIME FILTER ------------------------------------
+def filtered_time_slots(meeting_date):
+    slots = []
+    now = datetime.now()
+
+    base = datetime.combine(meeting_date, WORK_START)
+    end  = datetime.combine(meeting_date, WORK_END)
+
+    while base <= end:
+        if meeting_date > now.date():
+            slots.append(base.strftime("%I:%M %p"))
+        else:
+            if base.time() > now.time():
+                slots.append(base.strftime("%I:%M %p"))
+        base += timedelta(minutes=30)
+
+    return slots
 
 
-# ================== MAIN PAGE ==================
-def render_booking_page():
+# ---------------------------- EVENTS FETCH -----------------------------------
+def fetch_events():
+    conn = get_conn()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("SELECT * FROM conference_bookings")
+    rows = cur.fetchall()
+
+    events=[]
+    for r in rows:
+        events.append({
+            "title": f"{r['purpose']} ({r['department']})",
+            "start": r["start_time"].isoformat(),
+            "end": r["end_time"].isoformat(),
+            "color": "#ff4d4d"
+        })
+    return events
+
+
+# ---------------------------- MY BOOKINGS ------------------------------------
+def fetch_my_bookings():
+    conn = get_conn()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("""
+        SELECT * FROM conference_bookings
+        WHERE user_id=%s ORDER BY start_time ASC
+    """,(st.session_state["user_id"],))
+    return cur.fetchall()
+
+
+# ---------------------------- SAVE BOOKING -----------------------------------
+def save_booking(meeting_date, start_time_str, end_time_str, dept, purpose):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    booking_date = datetime.today().date()
+
+    start_time = datetime.strptime(start_time_str,"%I:%M %p").time()
+    end_time   = datetime.strptime(end_time_str,"%I:%M %p").time()
+
+    start_dt = datetime.combine(meeting_date,start_time)
+    end_dt   = datetime.combine(meeting_date,end_time)
+
+    cur.execute("""
+        SELECT * FROM conference_bookings
+        WHERE booking_date=%s
+        AND (%s < end_time AND %s > start_time)
+    """,(meeting_date,start_dt,end_dt))
     
+    if cur.fetchone():
+        st.error("This time slot is already booked.")
+        return False
+
+    cur.execute("""
+        INSERT INTO conference_bookings
+        (user_id,booking_date,start_time,end_time,department,purpose)
+        VALUES (%s,%s,%s,%s,%s,%s)
+    """,(st.session_state["user_id"],booking_date,start_dt,end_dt,dept,purpose))
+    conn.commit()
+    return True
+
+
+# ---------------------------- DELETE BOOKING -----------------------------------
+def delete_booking(bid):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM conference_bookings WHERE id=%s AND user_id=%s",(bid,st.session_state["user_id"]))
+    conn.commit()
+
+
+# ---------------------------- EDIT BOOKING -----------------------------------
+def update_booking(bid,new_start,new_end,meeting_date):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    stt = datetime.strptime(new_start,"%I:%M %p").time()
+    ett = datetime.strptime(new_end,"%I:%M %p").time()
+
+    start_dt = datetime.combine(meeting_date,stt)
+    end_dt   = datetime.combine(meeting_date,ett)
+
+    cur.execute("""
+        UPDATE conference_bookings SET start_time=%s,end_time=%s
+        WHERE id=%s AND user_id=%s
+    """,(start_dt,end_dt,bid,st.session_state["user_id"]))
+    conn.commit()
+
+
+# ---------------------------- RENDER PAGE -----------------------------------
+def render_booking_page():
     render_header()
 
-    st.subheader("📝 Book a Meeting")
+    tab1,tab2 = st.tabs(["📅 Book Slot","🛠 Manage My Meetings"])
 
-    col1, col2 = st.columns([2,1])
+    # ================= BOOKING TAB =================
+    with tab1:
+        col1,col2 = st.columns([2,1])
 
-    # form
-    with col1:
-        with st.form("book"):
-            meeting_date = st.date_input("Date", date.today())
-            start_str = st.selectbox("Start Time", TIME_OPTIONS)
-            end_str = st.selectbox("End Time", TIME_OPTIONS)
-            dept = st.selectbox("Department", DEPARTMENTS)
-            purpose = st.selectbox("Purpose", PURPOSES)
+        with col1:
+            st.subheader("Calendar View")
+            calendar(events=fetch_events(),options={"height":650})
 
-            submit = st.form_submit_button("Confirm Booking")
+        with col2:
+            st.subheader("Book a Slot")
 
-            if submit:
-                if start_str == "Select" or end_str == "Select":
-                    st.error("Select valid timings")
-                    return
+            meeting_date = st.date_input("Meeting Date",datetime.today().date())
 
-                if dept == "Select":
-                    st.error("Select department")
-                    return
+            start_opts = filtered_time_slots(meeting_date)
+            end_opts   = filtered_time_slots(meeting_date)
 
-                if purpose == "Select":
-                    st.error("Select purpose")
-                    return
+            start_sel = st.selectbox("Start Time",start_opts)
+            end_sel   = st.selectbox("End Time",end_opts)
 
-                start = str_to_time(start_str)
-                end = str_to_time(end_str)
+            dept = st.selectbox("Department",DEPT_OPTIONS)
+            purpose = st.selectbox("Purpose",PURPOSE_OPTIONS)
 
-                now = datetime.now()
-                if meeting_date == now.date() and start <= now.time():
-                    st.error("Cannot book past time")
-                    return
-
-                if start >= end:
-                    st.error("End must be after start")
-                    return
-
-                success, msg = save_booking(meeting_date, start, end, dept, purpose)
-                if success:
-                    st.success(msg)
-                    st.session_state['current_page'] = "conference_dashboard"
+            if st.button("Confirm Booking",use_container_width=True):
+                ok = save_booking(meeting_date,start_sel,end_sel,dept,purpose)
+                if ok:
+                    st.success("🎉 Booking Successful!")
+                    st.session_state["current_page"]="conference_dashboard"
                     st.rerun()
-                else:
-                    st.error(msg)
 
-    # Manage Meetings
-    with col2:
-        st.subheader("🗂 Manage My Meetings")
-        bookings = load_user_bookings()
+    # ================= MANAGE TAB =================
+    with tab2:
+        st.subheader("Your Meetings")
 
-        if not bookings:
-            st.info("No meetings yet.")
+        b_list = fetch_my_bookings()
+        if not b_list:
+            st.info("No bookings found.")
         else:
-            for b in bookings:
-                st.write(f"📅 {b['start_time'].strftime('%d %b %Y')} | {b['start_time'].strftime('%I:%M %p')} - {b['end_time'].strftime('%I:%M %p')}")
-                st.write(f"🏢 {b['department']} — {b['purpose']}")
+            for b in b_list:
+                st.write("------------")
+                st.write(f"📅 {b['start_time'].strftime('%d %b %Y')}")
+                st.write(f"⏰ {b['start_time'].strftime('%I:%M %p')} - {b['end_time'].strftime('%I:%M %p')}")
+                st.write(f"🏛 {b['department']}")
+                st.write(f"🎯 {b['purpose']}")
 
-                c1, c2 = st.columns(2)
-                if c1.button("Cancel", key=f"cancel_{b['id']}"):
-                    cancel_booking(b['id'])
-                    st.rerun()
-
-                if c2.button("Edit", key=f"edit_{b['id']}"):
-                    new_start_str = st.selectbox("New Start", TIME_OPTIONS, key=f"ns_{b['id']}")
-                    new_end_str = st.selectbox("New End", TIME_OPTIONS, key=f"ne_{b['id']}")
-                    
-                    if new_start_str != "Select" and new_end_str != "Select":
-                        ns = str_to_time(new_start_str)
-                        ne = str_to_time(new_end_str)
-                        update_booking(b['id'],
-                                       datetime.combine(b['start_time'].date(), ns),
-                                       datetime.combine(b['end_time'].date(), ne))
+                c1,c2 = st.columns(2)
+                with c1:
+                    if st.button(f"❌ Cancel #{b['id']}",key=f"D{b['id']}"):
+                        delete_booking(b["id"])
                         st.rerun()
-                st.write("---")
+                with c2:
+                    if st.button(f"✏ Edit #{b['id']}",key=f"E{b['id']}"):
+                        st.session_state["edit"]=b["id"]
+                        st.rerun()
+
+                if "edit" in st.session_state and st.session_state["edit"]==b["id"]:
+                    st.info("Editing booking...")
+                    ns = st.selectbox("New Start Time",filtered_time_slots(b['booking_date']),key=f"ns{b['id']}")
+                    ne = st.selectbox("New End Time",filtered_time_slots(b['booking_date']),key=f"ne{b['id']}")
+
+                    if st.button("Update",key=f"U{b['id']}"):
+                        update_booking(b["id"],ns,ne,b["booking_date"])
+                        del st.session_state["edit"]
+                        st.success("Updated successfully!")
+                        st.rerun()
