@@ -11,13 +11,11 @@ import pandas as pd
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
-
 @st.cache_resource
 def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
     secret = client.get_secret_value(SecretId=AWS_SECRET_NAME)
     return json.loads(secret["SecretString"])
-
 
 @st.cache_resource
 def get_conn():
@@ -30,12 +28,11 @@ def get_conn():
         autocommit=True
     )
 
-
 # -------------------------------------------------------
 # UI CONFIG
 # -------------------------------------------------------
-LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
+LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 
 
 # -------------------------------------------------------
@@ -47,63 +44,83 @@ def render_header():
 
     st.markdown(f"""
         <style>
-            header[data-testid="stHeader"]{{display:none!important;}}
-            .block-container{{padding-top:0;}}
+        header[data-testid="stHeader"] {{display:none!important;}}
+        .block-container {{padding-top:0;}}
 
-            .header-box {{
-                background:{HEADER_GRADIENT};
-                padding:24px 36px;
-                margin:-1rem -1rem 2rem -1rem;
-                border-radius:18px;
-                display:flex;
-                justify-content:space-between;
-                align-items:center;
-                box-shadow:0 6px 16px rgba(0,0,0,0.18);
-            }}
-            .header-left {{
-                display:flex;
-                flex-direction:column;
-            }}
-            .header-username {{
-                font-size:30px;
-                font-weight:800;
-                color:white;
-                margin-bottom:3px;
-            }}
-            .header-company {{
-                font-size:17px;
-                font-weight:500;
-                color:white;
-                opacity:0.9;
-            }}
-            .header-right {{
-                display:flex;
-                align-items:center;
-                gap:18px;
-            }}
-            .header-logo {{
-                height:48px;
-            }}
+        .header-box {{
+            background:{HEADER_GRADIENT};
+            padding:22px 32px;
+            margin:-1rem -1rem 1.5rem -1rem;
+            border-radius:18px;
+            display:flex;
+            justify-content:space-between;
+            align-items:center;
+            box-shadow:0 4px 20px rgba(0,0,0,0.18);
+        }}
+
+        .header-left {{
+            display:flex;
+            flex-direction:column;
+        }}
+
+        .header-title {{
+            color:white;
+            font-size:28px;
+            font-weight:800;
+            margin-bottom:3px;
+        }}
+
+        .header-sub {{
+            color:white;
+            opacity:0.85;
+            font-size:16px;
+            font-weight:500;
+        }}
+
+        .header-right {{
+            display:flex;
+            align-items:center;
+            gap:20px;
+        }}
+
+        .header-logo {{
+            height:48px;
+        }}
+
+        .logout-icon-button {{
+            width:34px;
+            cursor:pointer;
+            transition:0.3s;
+        }}
+        .logout-icon-button:hover {{
+            filter:brightness(200%);
+        }}
         </style>
     """, unsafe_allow_html=True)
 
-    col1, col2 = st.columns([6, 1])
+    st.markdown(f"""
+        <div class="header-box">
+            <div class="header-left">
+                <div class="header-title">Welcome, {company}</div>
+                <div class="header-sub">{username}</div>
+            </div>
 
-    with col1:
-        st.markdown(
-            f"<div class='header-box'>"
-            f"<div class='header-left'>"
-            f"<div class='header-username'>Welcome, {username}</div>"
-            f"<div class='header-company'>{company}</div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+            <div class="header-right">
+                <img class="header-logo" src="{LOGO_URL}"/>
 
-    with col2:
-        if st.button("Logout"):
-            st.session_state.clear()
-            st.session_state['current_page'] = 'conference_login'
-            st.rerun()
+                <img class="logout-icon-button" 
+                     src="https://cdn-icons-png.flaticon.com/512/1828/1828490.png"
+                     onclick="window.location.href='?logout=true';"/>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # Handle logout
+    if st.experimental_get_query_params().get("logout"):
+        st.session_state.clear()
+        st.session_state['current_page'] = 'conference_login'
+        st.experimental_set_query_params()
+        st.rerun()
 
 
 # -------------------------------------------------------
@@ -131,19 +148,21 @@ def render_dashboard():
     company = st.session_state.get("company")
     bookings = load_company_bookings(company)
 
-    if st.button("New Booking Registration", use_container_width=True):
-        st.session_state['current_page'] = "conference_bookings"
-        st.rerun()
+    st.button("➕ New Booking", use_container_width=True, 
+              on_click=lambda: go_to_booking_page())
 
     st.write("")
 
     col_left, col_right = st.columns([2, 1])
 
+    # ---------------------------------------------------
+    # LEFT SIDE TABLE
+    # ---------------------------------------------------
     with col_left:
-        st.subheader("Booking List")
+        st.subheader("📅 Booking List")
 
         if not bookings:
-            st.info("No bookings added yet.")
+            st.info("No bookings found yet.")
         else:
             df = pd.DataFrame(bookings)
             df["Date"] = pd.to_datetime(df["start_time"]).dt.date
@@ -156,25 +175,48 @@ def render_dashboard():
             df = df[["employee_name", "department", "Date", "Time", "purpose"]]
             df.columns = ["Booked By", "Department", "Date", "Time", "Purpose"]
 
-            st.dataframe(df, use_container_width=True, height=400)
+            st.dataframe(df, use_container_width=True, height=420)
 
+
+    # ---------------------------------------------------
+    # RIGHT SIDE SUMMARY
+    # ---------------------------------------------------
     with col_right:
-        st.subheader("Summary")
+        st.subheader("📊 Summary")
 
         today = datetime.today().date()
-        today_count = len([b for b in bookings if b.get("booking_date") == today])
-        total_count = len(bookings)
 
-        st.metric("Today", today_count)
-        st.metric("Total", total_count)
+        today_bookings = [b for b in bookings if b.get("booking_date") == today]
 
-        st.write("---")
+        st.metric("Today's Bookings", len(today_bookings))
+        st.metric("Total Bookings", len(bookings))
 
-        # Department-wise counts
-        by_dept = {}
+        # Departments count
+        st.markdown("---")
+        st.write("#### By Department")
+
+        dept_counts = {}
         for b in bookings:
-            dept = b.get("department")
-            by_dept[dept] = by_dept.get(dept, 0) + 1
+            dept_counts[b["department"]] = dept_counts.get(b["department"], 0) + 1
 
-        for dept, count in by_dept.items():
+        for dept, count in dept_counts.items():
             st.metric(dept, count)
+
+        # Purpose statistics
+        st.markdown("---")
+        st.write("#### By Purpose")
+        purpose_count = {}
+        for b in bookings:
+            p = b["purpose"]
+            purpose_count[p] = purpose_count.get(p, 0) + 1
+
+        for p, count in purpose_count.items():
+            st.metric(p, count)
+
+
+# ---------------------------------------------------
+# PAGE NAVIGATION (CALLBACK)
+# ---------------------------------------------------
+def go_to_booking_page():
+    st.session_state['current_page'] = "conference_bookings"
+    st.rerun()
