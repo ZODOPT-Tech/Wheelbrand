@@ -1,26 +1,71 @@
 import streamlit as st
+import mysql.connector
+import boto3
+import json
 from datetime import datetime
 
 # ---------------- CONFIG -----------------
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
+AWS_REGION = "ap-south-1"
+AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
+
+
+# ---------------- AWS + DB -----------------
+@st.cache_resource
+def get_credentials():
+    client = boto3.client("secretsmanager", region_name=AWS_REGION)
+    secret = client.get_secret_value(SecretId=AWS_SECRET_NAME)
+    return json.loads(secret["SecretString"])
+
+
+@st.cache_resource
+def get_conn():
+    creds = get_credentials()
+    return mysql.connector.connect(
+        host=creds["DB_HOST"],
+        user=creds["DB_USER"],
+        password=creds["DB_PASSWORD"],
+        database=creds["DB_NAME"],
+        autocommit=True
+    )
+
+
+# ---------------- FETCH BOOKINGS -----------------
+def _get_bookings():
+    conn = get_conn()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT 
+            cu.name AS booked_by,
+            cu.department,
+            cb.purpose,
+            cb.start_time,
+            cb.end_time
+        FROM conference_bookings cb
+        JOIN conference_users cu ON cu.id = cb.user_id
+        ORDER BY cb.start_time DESC
+    """)
+
+    rows = cursor.fetchall()
+    cursor.close()
+    return rows
+
 
 # ---------------- HEADER UI -----------------
 def render_header():
     st.markdown(f"""
     <style>
-        /* Hide default Streamlit header */
         header[data-testid="stHeader"] {{
             display: none !important;
         }}
 
-        /* Move content up */
         .block-container {{
             padding-top: 0rem !important;
         }}
 
-        /* Header Bar */
         .header-box {{
             background: {HEADER_GRADIENT};
             padding: 26px 40px;
@@ -44,7 +89,6 @@ def render_header():
             height: 52px;
         }}
 
-        /* Summary Card */
         .summary-card {{
             background: white;
             border-radius: 18px;
@@ -65,7 +109,6 @@ def render_header():
             color: #50309D;
         }}
 
-        /* Table */
         table {{
             width: 100%;
         }}
@@ -95,11 +138,9 @@ def render_header():
 
 # ---------------- PAGE BODY -----------------
 def render_dashboard():
-    # Render header
     render_header()
 
-    # Fake bookings data
-    bookings = st.session_state.get("bookings", [])
+    bookings = _get_bookings()
 
     # New Booking Button
     if st.button("➕ New Booking Registration", use_container_width=False):
@@ -108,16 +149,16 @@ def render_dashboard():
 
     st.write("")  # spacing
 
-    # Layout: 2 columns
     col_left, col_right = st.columns([2, 1], gap="large")
 
-    # LEFT SIDE: Booking List Table
+    # LEFT: Booking Table
     with col_left:
         st.subheader("📋 Booking List")
 
         if not bookings:
             st.info("No bookings available.")
         else:
+            # Table header
             st.markdown("""
             <table>
                 <tr>
@@ -129,27 +170,33 @@ def render_dashboard():
                 </tr>
             """, unsafe_allow_html=True)
 
+            # Table rows
             for b in bookings:
+                date_str = b['start_time'].strftime("%d %b %Y")
+                time_str = f"{b['start_time'].strftime('%H:%M')} - {b['end_time'].strftime('%H:%M')}"
+
                 st.markdown(f"""
                 <tr>
-                    <td>{b['user']}</td>
-                    <td>{b['dept']}</td>
-                    <td>{b['start'].date()}</td>
-                    <td>{b['start'].strftime('%H:%M')} - {b['end'].strftime('%H:%M')}</td>
+                    <td>{b['booked_by']}</td>
+                    <td>{b['department']}</td>
+                    <td>{date_str}</td>
+                    <td>{time_str}</td>
                     <td>{b['purpose']}</td>
                 </tr>
                 """, unsafe_allow_html=True)
 
             st.markdown("</table>", unsafe_allow_html=True)
 
-    # RIGHT SIDE: Summary Metrics
+    # RIGHT: Summary
     with col_right:
         st.subheader("📊 Summary")
 
         today = datetime.today().date()
-        today_count = len([b for b in bookings if b['start'].date() == today])
+
+        today_count = len([b for b in bookings if b['start_time'].date() == today])
         total = len(bookings)
 
+        # Today
         st.markdown(f"""
         <div class="summary-card">
             <div class="sum-title">Bookings Today</div>
@@ -157,6 +204,7 @@ def render_dashboard():
         </div>
         """, unsafe_allow_html=True)
 
+        # Total
         st.markdown(f"""
         <div class="summary-card">
             <div class="sum-title">Total Bookings</div>
@@ -164,23 +212,21 @@ def render_dashboard():
         </div>
         """, unsafe_allow_html=True)
 
-        # Department level summary
-        depts = {}
+        # Per Department split
+        dept_count = {}
         for b in bookings:
-            depts[b['dept']] = depts.get(b['dept'], 0) + 1
+            dept_count[b['department']] = dept_count.get(b['department'], 0) + 1
 
-        if depts:
-            for d, c in depts.items():
-                st.markdown(f"""
-                <div class="summary-card">
-                    <div class="sum-title">{d}</div>
-                    <div class="sum-value">{c}</div>
-                </div>
-                """, unsafe_allow_html=True)
+        for d, c in dept_count.items():
+            st.markdown(f"""
+            <div class="summary-card">
+                <div class="sum-title">{d}</div>
+                <div class="sum-value">{c}</div>
+            </div>
+            """, unsafe_allow_html=True)
 
     st.write("---")
 
-    # Logout
     if st.button("Logout", use_container_width=True):
         st.session_state.clear()
         st.session_state['current_page'] = 'conference_login'
