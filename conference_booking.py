@@ -12,14 +12,15 @@ from streamlit_calendar import calendar
 
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
+
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
 WORK_START = time(9, 30)
 WORK_END = time(19, 0)
 
-DEPT_OPTIONS = ["Sales", "HR", "Finance", "Tech", "Marketing", "Admin"]
-PURPOSE_OPTIONS = ["Client Visit", "Internal Meeting", "HOD Meeting", "Training"]
+DEPARTMENTS = ["Sales", "HR", "Finance", "Tech", "Marketing", "Admin"]
+PURPOSES = ["Client Visit", "Internal Meeting", "HOD Meeting", "Training"]
 
 
 # ======================================================
@@ -46,10 +47,10 @@ def get_conn():
 
 
 # ======================================================
-# HEADER
+# HEADER UI
 # ======================================================
 
-def render_header():
+def header():
     st.markdown(f"""
     <style>
         header[data-testid="stHeader"] {{ display:none !important; }}
@@ -57,113 +58,66 @@ def render_header():
 
         .header-box {{
             background:{HEADER_GRADIENT};
-            padding:18px 32px;
+            padding:20px 32px;
             margin:-1rem -1rem 1rem -1rem;
-            border-radius:14px;
+            border-radius:16px;
             display:flex;
-            justify-content:space-between;
+            justify-content:flex-start;
             align-items:center;
-            box-shadow:0 5px 14px rgba(0,0,0,0.14);
+            gap:14px;
+            box-shadow:0 6px 16px rgba(0,0,0,0.15);
         }}
 
         .header-title {{
-            font-size:24px;
+            font-size:26px;
             font-weight:700;
             color:white;
-            font-family:Inter,sans-serif;
+            font-family:Inter, sans-serif;
         }}
 
-        .header-right {{
-            display:flex;
-            gap:14px;
-            align-items:center;
+        .logo-img {{
+            height:42px;
+            border-radius:6px;
         }}
 
-        .back-btn {{
-            background:white;
-            border:none;
-            padding:6px 16px;
-            border-radius:8px;
-            color:#50309D;
-            font-weight:600;
-            cursor:pointer;
+        .purple > button {{
+            background:{HEADER_GRADIENT} !important;
+            color:white !important;
+            border:none !important;
+            font-weight:600 !important;
+            border-radius:8px !important;
+            height:45px !important;
             font-size:15px;
         }}
 
-        .logo-img {{ height:42px; }}
+        .purple > button:hover {{
+            opacity:0.92;
+        }}
+
     </style>
     """, unsafe_allow_html=True)
 
-    # Header content
     st.markdown(f"""
     <div class="header-box">
         <div class="header-title">Conference Booking</div>
-        <div class="header-right">
-            <button class="back-btn" onclick="document.getElementById('backBtn').click()">Back</button>
-            <img src="{LOGO_URL}" class="logo-img">
-        </div>
+        <img src="{LOGO_URL}" class="logo-img">
     </div>
     """, unsafe_allow_html=True)
 
-    # Hidden real back button for python click
-    if st.button("BACK", key="backBtn", help="",type="secondary"):
-        st.session_state["current_page"] = "conference_dashboard"
-        st.rerun()
-
 
 # ======================================================
-# TIME SLOT HANDLING
+# TIME SLOTS
 # ======================================================
 
-def future_slots(meeting_date):
+def future_slots(dt):
     now = datetime.now()
     slots = []
-    slot_dt = datetime.combine(meeting_date, WORK_START)
-    last_dt = datetime.combine(meeting_date, WORK_END)
-
-    while slot_dt <= last_dt:
-        if meeting_date > now.date():
-            slots.append(slot_dt.strftime("%I:%M %p"))
-        else:
-            if slot_dt.time() > now.time():
-                slots.append(slot_dt.strftime("%I:%M %p"))
-        slot_dt += timedelta(minutes=30)
-
+    t = datetime.combine(dt, WORK_START)
+    while t <= datetime.combine(dt, WORK_END):
+        if dt > now.date() or t.time() > now.time():
+            slots.append(t.strftime("%I:%M %p"))
+        t += timedelta(minutes=30)
     return slots
-
-
-# ======================================================
-# SAVE BOOKING
-# ======================================================
-
-def save_booking(meeting_date, start_str, end_str, dept, purpose):
-    conn = get_conn()
-    cur = conn.cursor()
-
-    booking_date = date.today()
-
-    start_time = datetime.strptime(start_str, "%I:%M %p").time()
-    end_time = datetime.strptime(end_str, "%I:%M %p").time()
-
-    start_dt = datetime.combine(meeting_date, start_time)
-    end_dt = datetime.combine(meeting_date, end_time)
-
-    # overlap
-    cur.execute("""
-        SELECT 1 FROM conference_bookings
-        WHERE booking_date=%s AND (%s < end_time AND %s > start_time)
-    """, (meeting_date, start_dt, end_dt))
-    if cur.fetchone():
-        st.error("This time slot is already booked.")
-        return False
-
-    cur.execute("""
-        INSERT INTO conference_bookings
-        (user_id, booking_date, start_time, end_time, department, purpose)
-        VALUES (%s,%s,%s,%s,%s,%s)
-    """, (st.session_state["user_id"], booking_date, start_dt, end_dt, dept, purpose))
-
-    return True
 
 
 # ======================================================
@@ -172,30 +126,70 @@ def save_booking(meeting_date, start_str, end_str, dept, purpose):
 
 def fetch_events():
     conn = get_conn()
-    cur = conn.cursor(dictionary=True)
-    cur.execute("SELECT * FROM conference_bookings")
-    rows = cur.fetchall()
-
-    return [{
-        "title": f"{r['purpose']} ({r['department']})",
-        "start": r["start_time"].isoformat(),
-        "end": r["end_time"].isoformat(),
-        "color": "#7A42FF"
-    } for r in rows]
+    c = conn.cursor(dictionary=True)
+    c.execute("SELECT department, purpose, start_time, end_time FROM conference_bookings")
+    data = c.fetchall()
+    return [
+        {
+            "title": f"{r['purpose']} ({r['department']})",
+            "start": r["start_time"].isoformat(),
+            "end": r["end_time"].isoformat(),
+            "color": "#7A42FF",
+        }
+        for r in data
+    ]
 
 
 # ======================================================
-# UI PAGE
+# SAVE BOOKING
+# ======================================================
+
+def save_booking(meeting_date, start_str, end_str, dept, purpose):
+    conn = get_conn()
+    c = conn.cursor()
+
+    booking_date = date.today()
+    start_dt = datetime.combine(meeting_date, datetime.strptime(start_str, "%I:%M %p").time())
+    end_dt = datetime.combine(meeting_date, datetime.strptime(end_str, "%I:%M %p").time())
+
+    # Check overlap
+    c.execute("""
+        SELECT 1 FROM conference_bookings
+        WHERE booking_date=%s
+        AND (%s < end_time AND %s > start_time)
+    """, (meeting_date, start_dt, end_dt))
+
+    if c.fetchone():
+        st.error("This time slot is already booked.")
+        return False
+
+    c.execute("""
+        INSERT INTO conference_bookings
+        (user_id, booking_date, start_time, end_time, department, purpose)
+        VALUES (%s,%s,%s,%s,%s,%s)
+    """, (
+        st.session_state["user_id"],
+        booking_date,
+        start_dt,
+        end_dt,
+        dept,
+        purpose,
+    ))
+    return True
+
+
+# ======================================================
+# MAIN PAGE RENDER
 # ======================================================
 
 def render_booking_page():
-    render_header()
+    header()
 
-    left, right = st.columns([2, 1])
+    col1, col2 = st.columns([2.2, 1], gap="large")
 
-    # -------------------------------------------------- Calendar
-    with left:
-        st.subheader("Schedule View")
+    # ================= LEFT: Calendar =================
+    with col1:
+        st.subheader("Schedule")
         calendar(
             events=fetch_events(),
             options={
@@ -203,36 +197,50 @@ def render_booking_page():
                 "slotMinTime": "09:30:00",
                 "slotMaxTime": "19:00:00",
                 "slotDuration": "00:30:00",
-                "height": 680,
+                "height": 720,
                 "headerToolbar": {
-                    "left":"prev,next today",
-                    "center":"title",
-                    "right":"timeGridDay,timeGridWeek"
+                    "left": "prev,next today",
+                    "center": "title",
+                    "right": "timeGridDay,timeGridWeek"
                 },
             },
-            key="cal",
+            key="calendar",
         )
 
-    # -------------------------------------------------- Form
-    with right:
+    # ================= RIGHT: Booking Form =============
+    with col2:
         st.subheader("Create Booking")
 
         meeting_date = st.date_input("Meeting Date", date.today())
-
         start_options = future_slots(meeting_date)
         start_time = st.selectbox("Start Time", start_options)
 
-        # End times must be greater than start time
-        valid_end = [t for t in start_options if
-                     datetime.strptime(t, "%I:%M %p") >
-                     datetime.strptime(start_time, "%I:%M %p")]
-        end_time = st.selectbox("End Time", valid_end)
+        end_options = [
+            t for t in start_options
+            if datetime.strptime(t, "%I:%M %p") > datetime.strptime(start_time, "%I:%M %p")
+        ]
+        end_time = st.selectbox("End Time", end_options)
 
-        dept = st.selectbox("Department", DEPT_OPTIONS)
-        purpose = st.selectbox("Purpose", PURPOSE_OPTIONS)
+        dept = st.selectbox("Department", DEPARTMENTS)
+        purpose = st.selectbox("Purpose", PURPOSES)
 
+        st.write("")
+        st.write("")
+
+        # Confirm Button
+        st.markdown('<div class="purple">', unsafe_allow_html=True)
         if st.button("Confirm Booking", use_container_width=True):
             if save_booking(meeting_date, start_time, end_time, dept, purpose):
                 st.success("Booking Successful.")
                 st.session_state["current_page"] = "conference_dashboard"
                 st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        st.write("")
+
+        # Back Button
+        st.markdown('<div class="purple">', unsafe_allow_html=True)
+        if st.button("Back to Dashboard", use_container_width=True):
+            st.session_state["current_page"] = "conference_dashboard"
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
