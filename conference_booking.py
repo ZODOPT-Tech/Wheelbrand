@@ -1,9 +1,11 @@
 import streamlit as st
-import boto3, json, mysql.connector
+import boto3
+import json
+import mysql.connector
 from datetime import datetime, time
 from streamlit_calendar import calendar
 
-# ---------------- DB ----------------
+# -------------------- AWS DB CONFIG --------------------
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
@@ -24,14 +26,17 @@ def get_conn():
         autocommit=True
     )
 
-# ---------------- UI ----------------
+
+# -------------------- UI CONFIG --------------------
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
+
 WORK_START = time(9,30)
 WORK_END = time(19,0)
 
 
-def render_header(title):
+# -------------------- HEADER --------------------
+def render_header():
     st.markdown(f"""
     <style>
     header[data-testid="stHeader"]{{display:none!important;}}
@@ -48,7 +53,7 @@ def render_header(title):
     }}
     .back-btn {{
         color:white;
-        font-weight:600;
+        font-weight:700;
         cursor:pointer;
     }}
     .header-title {{
@@ -60,15 +65,20 @@ def render_header(title):
     </style>
     """, unsafe_allow_html=True)
 
+    # if you want back button to use navigation
+    if st.button("⬅ Back"):
+        st.session_state['current_page'] = 'conference_dashboard'
+        st.rerun()
+
     st.markdown(f"""
     <div class="header-box">
-        <div class="back-btn" onclick="window.location.reload()">⬅ Back</div>
-        <div class="header-title">{title}</div>
+        <div class="header-title">Conference Booking</div>
         <img class="header-logo" src="{LOGO_URL}">
     </div>
     """, unsafe_allow_html=True)
 
 
+# -------------------- FETCH EVENTS --------------------
 def fetch_events():
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
@@ -86,56 +96,75 @@ def fetch_events():
     return events
 
 
-def save_booking(date, start, end, dept, purpose):
+# -------------------- SAVE BOOKING --------------------
+def save_booking(meeting_date, start_time, end_time, dept, purpose):
     conn = get_conn()
     cur = conn.cursor()
+
+    booking_date = datetime.today().date()  # today
+    start_dt = datetime.combine(meeting_date, start_time)
+    end_dt   = datetime.combine(meeting_date, end_time)
+
+    # insert values
     cur.execute("""
-        INSERT INTO conference_bookings 
+        INSERT INTO conference_bookings
         (user_id, booking_date, start_time, end_time, department, purpose)
-        VALUES (%s,%s,%s,%s,%s,%s)
-    """, (st.session_state['user_id'], date, start, end, dept, purpose))
+        VALUES (%s, %s, %s, %s, %s, %s)
+    """, (
+        st.session_state['user_id'],  # from login
+        booking_date,
+        start_dt,
+        end_dt,
+        dept,
+        purpose
+    ))
+
     conn.commit()
 
 
+# -------------------- PAGE ENTRY --------------------
 def render_booking_page():
-    render_header("CONFERENCE BOOKING")
+    render_header()
 
     left, right = st.columns([2,1])
 
+    # calendar
     with left:
-        st.subheader("Calendar")
-        calendar(events=fetch_events(),
-                 options={
-                     "initialView":"timeGridDay",
-                     "slotMinTime":"09:30:00",
-                     "slotMaxTime":"19:00:00"
-                 })
+        st.subheader("📅 Calendar")
+        calendar(
+            events=fetch_events(),
+            options={
+                "initialView":"timeGridDay",
+                "slotMinTime":"09:30:00",
+                "slotMaxTime":"19:00:00",
+                "height":700
+            }
+        )
 
+    # booking form
     with right:
-        st.subheader("Book Slot")
-
+        st.subheader("📝 Book Slot")
         with st.form("book"):
-            date = st.date_input("Date", datetime.today())
-            start = st.time_input("Start", WORK_START)
-            end = st.time_input("End", WORK_END)
+            meeting_date = st.date_input("Meeting Date", datetime.today().date())
+            start_time = st.time_input("Start Time", WORK_START)
+            end_time   = st.time_input("End Time", WORK_END)
             dept = st.text_input("Department")
             purpose = st.text_input("Purpose")
-            submit = st.form_submit_button("Confirm")
+
+            submit = st.form_submit_button("Confirm Booking")
 
             if submit:
+
                 now = datetime.now()
-                if date == now.date() and start <= now.time():
+                if meeting_date == now.date() and start_time <= now.time():
                     st.error("Cannot book past time.")
                     return
 
-                if start >= end:
-                    st.error("End must be greater than start.")
+                if start_time >= end_time:
+                    st.error("End time must be after start time.")
                     return
 
-                start_dt = datetime.combine(date,start)
-                end_dt = datetime.combine(date,end)
-
-                save_booking(date, start_dt, end_dt, dept, purpose)
-                st.success("Booking Successful")
+                save_booking(meeting_date, start_time, end_time, dept, purpose)
+                st.success("Booking Successful!")
                 st.session_state['current_page'] = 'conference_dashboard'
                 st.rerun()
