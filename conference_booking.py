@@ -5,7 +5,6 @@ import json
 from datetime import datetime, date, time, timedelta
 from streamlit_calendar import calendar
 
-
 # ================= CONFIG =================
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg,#50309D,#7A42FF)"
@@ -84,20 +83,19 @@ def update_booking_time(bid, uid, s, e):
     """, (s, e, bid, uid))
 
 
-# ================= TIME =================
-def generate_slots(d: date):
-    """Dynamic slots avoiding past time for today"""
+# ================= TIME SLOTS =================
+def generate_slots(selected_date: date):
     now = datetime.now()
     slots = ["Select"]
 
-    start_dt = datetime.combine(d, WORK_START)
-    end_dt = datetime.combine(d, WORK_END)
-    cur = start_dt
+    start_dt = datetime.combine(selected_date, WORK_START)
+    end_dt = datetime.combine(selected_date, WORK_END)
 
+    cur = start_dt
     while cur <= end_dt:
         label = cur.strftime("%I:%M %p")
 
-        if d == date.today():
+        if selected_date == date.today():
             if cur > now:
                 slots.append(label)
         else:
@@ -123,7 +121,7 @@ def prepare_events(rows):
 
 
 # ================= CSS =================
-def inject_css():
+def css():
     st.markdown(f"""
     <style>
     header[data-testid="stHeader"] {{display:none;}}
@@ -153,6 +151,7 @@ def inject_css():
         box-shadow:0 2px 10px rgba(0,0,0,0.08);
         margin-bottom:14px;
     }}
+
     .btn {{
         background:{HEADER_GRADIENT} !important;
         color:white !important;
@@ -165,15 +164,16 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 
-# ================= MAIN =================
+# ================= MAIN PAGE =================
 def render_booking_page():
-    inject_css()
+    css()
 
     if "edit_id" not in st.session_state:
         st.session_state.edit_id = None
 
     uid = st.session_state.get("user_id")
 
+    # -------- HEADER --------
     st.markdown(f"""
     <div class="header-box">
         <div class="header-title">Conference Booking</div>
@@ -183,7 +183,7 @@ def render_booking_page():
 
     col_left, col_right = st.columns([2, 1])
 
-    # ===== Calendar =====
+    # ================= LEFT - CALENDAR =================
     with col_left:
         rows = get_my_bookings(uid)
         events = prepare_events(rows)
@@ -203,12 +203,11 @@ def render_booking_page():
             st.session_state["current_page"] = "conference_dashboard"
             st.rerun()
 
-    # ===== Right Column — Book + My Bookings =====
+    # ================= RIGHT SIDE =================
     with col_right:
 
-        # ---------- Book a Slot ----------
+        # -------- BOOKING FORM --------
         st.subheader("Book a Slot")
-
         sel_d = st.date_input("Date", date.today())
         opts = generate_slots(sel_d)
 
@@ -222,62 +221,63 @@ def render_booking_page():
                 if s=="Select" or e=="Select" or dept=="Select" or pp=="Select":
                     st.error("All fields required")
                 else:
-                    sdt = datetime.combine(sel_d, datetime.strptime(s, "%I:%M %p").time())
-                    edt = datetime.combine(sel_d, datetime.strptime(e, "%I:%M %p").time())
-                    save_booking(uid, sel_d, sdt, edt, dept, pp)
+                    sd = sel_d
+                    sdt = datetime.combine(sd, datetime.strptime(s,"%I:%M %p").time())
+                    edt = datetime.combine(sd, datetime.strptime(e,"%I:%M %p").time())
+                    save_booking(uid, sd, sdt, edt, dept, pp)
                     st.success("Booking Successful")
                     st.rerun()
 
-        # ---------- My Bookings BELOW ----------
-        st.subheader("My Bookings")
+        # -------- SLIDING PANEL --------
+        with st.expander("Manage Your Bookings", expanded=True):
 
-        rows = get_my_bookings(uid)
-        if not rows:
-            st.info("No bookings yet")
-            return
+            rows = get_my_bookings(uid)
+            if not rows:
+                st.info("No bookings yet")
+            else:
+                for b in rows:
+                    # Each booking item
+                    st.markdown("<div class='booking-item'>", unsafe_allow_html=True)
 
-        for b in rows:
-            st.markdown("<div class='booking-item'>", unsafe_allow_html=True)
+                    st.write(
+                        f"**{b['booking_date'].strftime('%d %b %Y')}**  "
+                        f"{b['start_time'].strftime('%I:%M %p')} - {b['end_time'].strftime('%I:%M %p')}  "
+                        f"{b['purpose']} | {b['department']}"
+                    )
 
-            st.write(
-                f"**{b['booking_date'].strftime('%d %b %Y')}**  "
-                f"{b['start_time'].strftime('%I:%M %p')} - {b['end_time'].strftime('%I:%M %p')}  "
-                f"{b['purpose']} | {b['department']}"
-            )
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        if st.button("Edit", key=f"e{b['id']}"):
+                            st.session_state.edit_id = b['id']
+                            st.rerun()
+                    with c2:
+                        if st.button("Cancel", key=f"c{b['id']}"):
+                            delete_booking(b['id'], uid)
+                            st.success("Booking canceled")
+                            st.rerun()
 
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("Edit", key=f"e{b['id']}"):
-                    st.session_state.edit_id = b['id']
-                    st.rerun()
-            with c2:
-                if st.button("Cancel", key=f"c{b['id']}"):
-                    delete_booking(b['id'], uid)
-                    st.success("Booking canceled")
-                    st.rerun()
+                    # Inline Edit
+                    if st.session_state.edit_id == b['id']:
+                        st.write("---")
+                        with st.form(f"edit_form_{b['id']}"):
+                            sd = b['booking_date']
+                            slots = generate_slots(sd)
 
-            # Inline Edit Form
-            if st.session_state.edit_id == b['id']:
-                st.write("---")
-                with st.form(f"edit_form_{b['id']}"):
-                    sd = b['booking_date']
-                    slots = generate_slots(sd)
+                            s_str = b['start_time'].strftime("%I:%M %p")
+                            e_str = b['end_time'].strftime("%I:%M %p")
 
-                    s_str = b['start_time'].strftime("%I:%M %p")
-                    e_str = b['end_time'].strftime("%I:%M %p")
+                            s_idx = slots.index(s_str) if s_str in slots else 0
+                            e_idx = slots.index(e_str) if e_str in slots else 0
 
-                    s_idx = slots.index(s_str) if s_str in slots else 0
-                    e_idx = slots.index(e_str) if e_str in slots else 0
+                            ns = st.selectbox("Start", slots, index=s_idx)
+                            ne = st.selectbox("End", slots, index=e_idx)
 
-                    ns = st.selectbox("Start", slots, index=s_idx)
-                    ne = st.selectbox("End", slots, index=e_idx)
+                            if st.form_submit_button("Save"):
+                                ns_t = datetime.combine(sd, datetime.strptime(ns,"%I:%M %p").time())
+                                ne_t = datetime.combine(sd, datetime.strptime(ne,"%I:%M %p").time())
+                                update_booking_time(b['id'], uid, ns_t, ne_t)
+                                st.success("Updated")
+                                st.session_state.edit_id = None
+                                st.rerun()
 
-                    if st.form_submit_button("Save"):
-                        ns_t = datetime.combine(sd, datetime.strptime(ns, "%I:%M %p").time())
-                        ne_t = datetime.combine(sd, datetime.strptime(ne, "%I:%M %p").time())
-                        update_booking_time(b['id'], uid, ns_t, ne_t)
-                        st.success("Updated")
-                        st.session_state.edit_id = None
-                        st.rerun()
-
-            st.markdown("</div>", unsafe_allow_html=True)
+                    st.markdown("</div>", unsafe_allow_html=True)
