@@ -2,7 +2,7 @@ import streamlit as st
 from datetime import datetime, timedelta, time
 from streamlit_calendar import calendar
 
-# ------------------- GLOBAL SETTINGS -------------------
+# ---------------- SETTINGS ----------------
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D 0%, #7A42FF 100%)"
 
 WORKING_HOUR_START = 9
@@ -17,7 +17,7 @@ DEPARTMENT_OPTIONS = [
     "Finance",
     "Delivery/Tech",
     "Digital Marketing",
-    "IT"
+    "IT",
 ]
 
 PURPOSE_OPTIONS = [
@@ -26,11 +26,11 @@ PURPOSE_OPTIONS = [
     "Internal Meeting",
     "HOD Meeting",
     "Inductions",
-    "Training"
+    "Training",
 ]
 
 
-# ------------------- UTILITIES -------------------
+# ------------ Generate Time Slots ------------
 def _generate_time_options():
     slots = ["Select"]
     start_dt = datetime(1, 1, 1, WORKING_HOUR_START, WORKING_MINUTE_START)
@@ -45,125 +45,114 @@ def _generate_time_options():
 TIME_OPTIONS = _generate_time_options()
 
 
+# ------------ Generate Calendar Events ------------
 def _prepare_events():
     events = []
-    for i, booking in enumerate(st.session_state.bookings):
-        events.append({
-            "id": str(i),
-            "title": f"[{booking['dept']}] {booking['purpose']}",
-            "start": booking["start"].isoformat(),
-            "end": booking["end"].isoformat(),
-            "color": "#7A42FF",
-        })
+    for i, b in enumerate(st.session_state.bookings):
+        events.append(
+            {
+                "id": str(i),
+                "title": f"{b['purpose']} ({b['dept']})",
+                "start": b["start"].isoformat(),
+                "end": b["end"].isoformat(),
+                "color": "#7A42FF",
+            }
+        )
     return events
 
 
-# ------------------- HEADER UI -------------------
-def render_page_header():
-    st.markdown(f"""
-    <style>
-    header[data-testid="stHeader"] {{
-        display:none;
-    }}
-
-    .header-box {{
-        background: {HEADER_GRADIENT};
-        padding: 22px 35px;
-        margin: -1rem -1rem 1.6rem -1rem;
-        border-radius: 0px 0px 22px 22px;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        box-shadow: 0px 6px 16px rgba(0,0,0,0.20);
-    }}
-    .header-title {{
-        font-size: 30px;
-        font-weight: 800;
-        color: #FFFFFF;
-        font-family: 'Inter', sans-serif;
-        letter-spacing: 1px;
-    }}
-    .back-btn {{
-        font-size: 24px;
-        font-weight: 700;
-        color: #FFFFFF;
-        cursor:pointer;
-        padding:8px 14px;
-        border-radius:10px;
-    }}
-    .back-btn:hover {{
-        background: rgba(255,255,255,0.15);
-    }}
-    
-    /* FORM TRANSPARENT */
-    .stForm {{
-        background: transparent !important;
-        padding: 0 !important;
-    }}
-
-    /* Input UI */
-    .stTextInput > div > input, 
-    .stSelectbox div[data-baseweb="select"] input {{
-        background-color: #F4F6FA !important;
-        border-radius: 10px !important;
-        font-size: 15px !important;
-    }}
-    .stDateInput input {{
-        background-color: #F4F6FA !important;
-        border-radius: 10px !important;
-    }}
-    .stSelectbox div[data-baseweb="select"] {{
-        background-color:#F4F6FA !important;
-        border-radius:10px !important;
-        border:1px solid #E5E7EB !important;
-        height:48px !important;
-    }}
-
-    /* Save Button */
-    .save-button > button {{
-        width:100% !important;
-        background:{HEADER_GRADIENT} !important;
-        border:none !important;
-        border-radius:10px !important;
-        height:48px !important;
-        font-size:18px !important;
-        font-weight:700 !important;
-        color:white !important;
-        box-shadow:0 3px 10px rgba(0,0,0,0.08);
-        transition:0.2s ease;
-    }}
-    .save-button > button:hover {{
-        opacity:0.92;
-        transform:translateY(-1px);
-    }}
-    </style>
-    """, unsafe_allow_html=True)
-
-    col1, col2 = st.columns([8, 1])
-    with col1:
-        st.markdown('<div class="header-title">CONFERENCE BOOKING</div>', unsafe_allow_html=True)
-
-    with col2:
-        if st.markdown('<div class="back-btn" onclick="window.location.reload()">←</div>', unsafe_allow_html=True):
-            pass
-        if st.button(" ", help="Back", key="back_btn_style"):
-            st.session_state['current_page'] = 'conference_dashboard'
-            st.rerun()
-
-
-# ------------------- MAIN PAGE -------------------
+# ------------ MAIN PAGE ------------
 def render_booking_page():
-    # Sessions
+    # --- init state ---
     if "bookings" not in st.session_state:
         st.session_state.bookings = []
     if "edit_index" not in st.session_state:
         st.session_state.edit_index = None
 
-    render_page_header()
+    # --- GLOBAL CSS ---
+    st.markdown(
+        f"""
+    <style>
+        /* Remove default Streamlit header and pull content up */
+        header[data-testid="stHeader"] {{
+            display: none !important;
+        }}
+        .block-container {{
+            padding-top: 0rem !important;
+        }}
 
+        /* HEADER BAR */
+        .conf-header {{
+            background: {HEADER_GRADIENT};
+            padding: 22px 32px;
+            margin: 0 -1rem 1.5rem -1rem;
+            border-radius: 0 0 18px 18px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.18);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }}
+        .conf-title {{
+            font-size: 28px;
+            font-weight: 800;
+            color: #fff;
+            font-family: "Inter", sans-serif;
+            letter-spacing: 1px;
+        }}
+
+        /* Make the form background transparent */
+        .stForm {{
+            background: transparent !important;
+            padding: 0 !important;
+        }}
+
+        /* Inputs */
+        .stDateInput input,
+        .stTextInput > div > input,
+        .stSelectbox div[data-baseweb="select"] {{
+            background-color: #F4F6FA !important;
+            border-radius: 10px !important;
+            border: 1px solid #E5E7EB !important;
+            font-size: 15px !important;
+        }}
+
+        /* Gradient submit button inside the form */
+        .stForm button[type="submit"] {{
+            background: {HEADER_GRADIENT} !important;
+            color: #fff !important;
+            border: none !important;
+            border-radius: 10px !important;
+            font-size: 16px !important;
+            font-weight: 700 !important;
+            height: 48px !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15) !important;
+        }}
+        .stForm button[type="submit"]:hover {{
+            opacity: 0.95;
+            transform: translateY(-1px);
+        }}
+    </style>
+    """,
+        unsafe_allow_html=True,
+    )
+
+    # --- HEADER BAR (title + back button) ---
+    header_left, header_right = st.columns([8, 1])
+    with header_left:
+        st.markdown(
+            '<div class="conf-header"><div class="conf-title">CONFERENCE BOOKING</div></div>',
+            unsafe_allow_html=True,
+        )
+    with header_right:
+        # back button top-right (outside gradient but visually close)
+        if st.button("←", help="Back to dashboard"):
+            st.session_state["current_page"] = "conference_dashboard"
+            st.rerun()
+
+    # --- MAIN LAYOUT: Calendar + Form ---
     col_calendar, col_form = st.columns([2, 1])
 
-    # ---------- CALENDAR ----------
+    # ---- CALENDAR SECTION ----
     with col_calendar:
         st.subheader("📅 Schedule View")
 
@@ -177,31 +166,32 @@ def render_booking_page():
                 "slotDuration": "00:30:00",
                 "slotMinTime": min_time,
                 "slotMaxTime": max_time,
-                "height": 700,
+                "height": 650,
                 "headerToolbar": {
                     "left": "today prev,next",
                     "center": "title",
                     "right": "timeGridDay,timeGridWeek",
                 },
             },
-            key="calendar",
+            key="full_calendar",
         )
 
-        st.subheader("📌 Your Bookings")
-        _draw_booking_table()
+        st.subheader("📌 Bookings")
+        _draw_bookings_table()
 
-    # ---------- FORM ----------
+    # ---- BOOKING FORM SECTION ----
     with col_form:
-        _booking_form()
+        _render_booking_form()
 
 
-# ------------------- BOOKING FORM -------------------
-def _booking_form():
-    edit = st.session_state.edit_index is not None
-    st.subheader("✏️ Edit Booking" if edit else "📝 Book a Slot")
+# ------------ FORM RENDERING ------------
+def _render_booking_form():
+    editing = st.session_state.edit_index is not None
 
-    if edit:
-        b = st.session_state.bookings[edit]
+    st.subheader("✏️ Edit Booking" if editing else "📝 Book a Slot")
+
+    if editing:
+        b = st.session_state.bookings[st.session_state.edit_index]
         default_date = b["start"].date()
         default_start = b["start"].strftime("%I:%M %p")
         default_end = b["end"].strftime("%I:%M %p")
@@ -216,30 +206,44 @@ def _booking_form():
 
     with st.form("booking_form"):
         booking_date = st.date_input("Date", default_date)
-        start_time = st.selectbox("Start Time", TIME_OPTIONS, index=TIME_OPTIONS.index(default_start))
-        end_time = st.selectbox("End Time", TIME_OPTIONS, index=TIME_OPTIONS.index(default_end))
-        dept = st.selectbox("Department", DEPARTMENT_OPTIONS, index=DEPARTMENT_OPTIONS.index(default_dept))
-        purpose = st.selectbox("Purpose", PURPOSE_OPTIONS, index=PURPOSE_OPTIONS.index(default_purpose))
+        start_str = st.selectbox(
+            "Start Time", TIME_OPTIONS, index=TIME_OPTIONS.index(default_start)
+        )
+        end_str = st.selectbox(
+            "End Time", TIME_OPTIONS, index=TIME_OPTIONS.index(default_end)
+        )
+        dept = st.selectbox(
+            "Department",
+            DEPARTMENT_OPTIONS,
+            index=DEPARTMENT_OPTIONS.index(default_dept),
+        )
+        purpose = st.selectbox(
+            "Purpose",
+            PURPOSE_OPTIONS,
+            index=PURPOSE_OPTIONS.index(default_purpose),
+        )
 
-        save = st.form_submit_button("Save Slot", use_container_width=True)
+        submitted = st.form_submit_button("Save Slot", use_container_width=True)
 
-        if save:
-            _save_booking(booking_date, start_time, end_time, dept, purpose)
-            st.rerun()
+    if submitted:
+        _save_booking(booking_date, start_str, end_str, dept, purpose)
 
 
-# ------------------- SAVE BOOKING -------------------
+# ------------ SAVE / UPDATE BOOKING ------------
 def _save_booking(booking_date, start_str, end_str, dept, purpose):
     if start_str == "Select" or end_str == "Select":
-        st.error("Select valid start and end timing.")
+        st.error("Please select valid start & end time.")
         return
-
-    if dept == "Select" or purpose == "Select":
-        st.error("Select Department and Purpose")
+    if dept == "Select":
+        st.error("Please select a Department.")
+        return
+    if purpose == "Select":
+        st.error("Please select a Purpose.")
         return
 
     start_time = datetime.strptime(start_str, "%I:%M %p").time()
     end_time = datetime.strptime(end_str, "%I:%M %p").time()
+
     start_dt = datetime.combine(booking_date, start_time)
     end_dt = datetime.combine(booking_date, end_time)
 
@@ -247,56 +251,71 @@ def _save_booking(booking_date, start_str, end_str, dept, purpose):
         st.error("End time must be after start time.")
         return
 
-    min_dt = datetime.combine(booking_date, time(WORKING_HOUR_START, WORKING_MINUTE_START))
-    max_dt = datetime.combine(booking_date, time(WORKING_HOUR_END, WORKING_MINUTE_END))
+    min_dt = datetime.combine(
+        booking_date, time(WORKING_HOUR_START, WORKING_MINUTE_START)
+    )
+    max_dt = datetime.combine(
+        booking_date, time(WORKING_HOUR_END, WORKING_MINUTE_END)
+    )
 
     if start_dt < min_dt or end_dt > max_dt:
-        st.error("Booking must be within office hours (9:30 AM - 7:00 PM).")
+        st.error("Booking must be within working hours (9:30 AM - 7:00 PM).")
         return
 
+    # Overlap check (ignore currently edited slot)
     for i, b in enumerate(st.session_state.bookings):
         if st.session_state.edit_index is not None and i == st.session_state.edit_index:
             continue
         if b["start"] < end_dt and b["end"] > start_dt:
-            st.error("This slot is already booked.")
+            st.error("This slot overlaps with an existing booking.")
             return
 
+    # Save / update
     if st.session_state.edit_index is not None:
         st.session_state.bookings[st.session_state.edit_index] = {
             "start": start_dt,
             "end": end_dt,
             "dept": dept,
-            "purpose": purpose
+            "purpose": purpose,
         }
         st.session_state.edit_index = None
+        st.success("Booking updated.")
     else:
-        st.session_state.bookings.append({
-            "start": start_dt,
-            "end": end_dt,
-            "dept": dept,
-            "purpose": purpose
-        })
+        st.session_state.bookings.append(
+            {
+                "start": start_dt,
+                "end": end_dt,
+                "dept": dept,
+                "purpose": purpose,
+            }
+        )
+        st.success("Booking confirmed.")
+
+    st.rerun()
 
 
-# ------------------- BOOKING TABLE -------------------
-def _draw_booking_table():
+# ------------ TABLE OF BOOKINGS ------------
+def _draw_bookings_table():
     if not st.session_state.bookings:
         st.info("No bookings yet.")
         return
 
-    for i, b in enumerate(st.session_state.bookings):
-        cols = st.columns([4, 2, 2, 1, 1])
-        with cols[0]:
-            st.write(f"**{b['purpose']}**  ({b['dept']})")
-        with cols[1]:
-            st.write(b["start"].strftime("%d-%m %H:%M"))
-        with cols[2]:
-            st.write(b["end"].strftime("%d-%m %H:%M"))
-        with cols[3]:
+    # Simple list with Edit / Cancel buttons
+    for i, b in enumerate(sorted(st.session_state.bookings, key=lambda x: x["start"])):
+        c1, c2, c3, c4 = st.columns([4, 3, 2, 2])
+
+        with c1:
+            st.write(f"**{b['purpose']}**  · {b['dept']}")
+        with c2:
+            st.write(
+                f"{b['start'].strftime('%d-%m-%Y %I:%M %p')} → {b['end'].strftime('%I:%M %p')}"
+            )
+        with c3:
             if st.button("Edit", key=f"edit_{i}"):
                 st.session_state.edit_index = i
                 st.rerun()
-        with cols[4]:
-            if st.button("❌", key=f"del_{i}"):
+        with c4:
+            if st.button("Cancel", key=f"del_{i}"):
                 st.session_state.bookings.pop(i)
+                st.success("Booking cancelled.")
                 st.rerun()
