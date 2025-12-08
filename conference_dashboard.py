@@ -5,7 +5,6 @@ import mysql.connector
 from datetime import datetime
 import pandas as pd
 
-
 # -------------------------------------------------------
 # AWS & DB CONFIG
 # -------------------------------------------------------
@@ -47,83 +46,64 @@ def render_header():
     company = st.session_state.get("company", "")
 
     st.markdown(f"""
-    <style>
-        header[data-testid="stHeader"]{{display:none!important;}}
-        .block-container{{padding-top:0;}}
+        <style>
+            header[data-testid="stHeader"]{{display:none!important;}}
+            .block-container{{padding-top:0;}}
 
-        .header-box {{
-            background:{HEADER_GRADIENT};
-            padding:24px 36px;
-            margin:-1rem -1rem 2rem -1rem;
-            border-radius:18px;
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            box-shadow:0 6px 16px rgba(0,0,0,0.18);
-        }}
-        .header-left {{
-            display:flex;
-            flex-direction:column;
-        }}
-        .header-username {{
-            font-size:30px;
-            font-weight:800;
-            color:white;
-            margin-bottom:3px;
-        }}
-        .header-company {{
-            font-size:17px;
-            font-weight:500;
-            color:white;
-            opacity:0.9;
-        }}
-        .header-right {{
-            display:flex;
-            align-items:center;
-            gap:18px;
-        }}
-        .header-logo {{
-            height:48px;
-        }}
-        .logout-btn {{
-            background:transparent;
-            border:none;
-            cursor:pointer;
-        }}
-        .logout-icon {{
-            width:30px;
-            filter:brightness(98%);
-        }}
-        .logout-btn:hover .logout-icon {{
-            filter:brightness(160%);
-        }}
-    </style>
+            .header-box {{
+                background:{HEADER_GRADIENT};
+                padding:24px 36px;
+                margin:-1rem -1rem 2rem -1rem;
+                border-radius:18px;
+                display:flex;
+                justify-content:space-between;
+                align-items:center;
+                box-shadow:0 6px 16px rgba(0,0,0,0.18);
+            }}
+            .header-left {{
+                display:flex;
+                flex-direction:column;
+            }}
+            .header-username {{
+                font-size:30px;
+                font-weight:800;
+                color:white;
+                margin-bottom:3px;
+            }}
+            .header-company {{
+                font-size:17px;
+                font-weight:500;
+                color:white;
+                opacity:0.9;
+            }}
+            .header-right {{
+                display:flex;
+                align-items:center;
+                gap:18px;
+            }}
+            .header-logo {{
+                height:48px;
+            }}
+        </style>
     """, unsafe_allow_html=True)
 
-    # Header HTML
-    st.markdown(f"""
-    <div class="header-box">
-        <div class="header-left">
-            <div class="header-username">Welcome, {username}</div>
-            <div class="header-company">{company}</div>
-        </div>
+    col1, col2 = st.columns([6, 1])
 
-        <div class="header-right">
-            <img class="header-logo" src="{LOGO_URL}">
-            <form action="" method="post">
-                <button class="logout-btn" name="logout">
-                    <img class="logout-icon" src="https://cdn-icons-png.flaticon.com/512/1828/1828490.png"/>
-                </button>
-            </form>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    with col1:
+        st.markdown(
+            f"<div class='header-box'>"
+            f"<div class='header-left'>"
+            f"<div class='header-username'>Welcome, {username}</div>"
+            f"<div class='header-company'>{company}</div>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
-    # Logout Handler
-    if "logout" in st.session_state.get('form_submitter', {}):
-        st.session_state.clear()
-        st.session_state['current_page'] = 'conference_login'
-        st.rerun()
+    with col2:
+        if st.button("Logout"):
+            st.session_state.clear()
+            st.session_state['current_page'] = 'conference_login'
+            st.rerun()
 
 
 # -------------------------------------------------------
@@ -151,45 +131,38 @@ def render_dashboard():
     company = st.session_state.get("company")
     bookings = load_company_bookings(company)
 
-    # ------------------------------
-    # ACTION BUTTON
-    # ------------------------------
     if st.button("New Booking Registration", use_container_width=True):
         st.session_state['current_page'] = "conference_bookings"
         st.rerun()
 
     st.write("")
 
-    # ------------------------------
-    # TWO COLUMN LAYOUT
-    # ------------------------------
     col_left, col_right = st.columns([2, 1])
 
-    # LEFT SIDE TABLE
     with col_left:
         st.subheader("Booking List")
+
         if not bookings:
             st.info("No bookings added yet.")
         else:
             df = pd.DataFrame(bookings)
-            df["Date"] = df["start_time"].dt.date
-            df["Time"] = df["start_time"].dt.strftime("%I:%M %p") + " - " + df["end_time"].dt.strftime("%I:%M %p")
+            df["Date"] = pd.to_datetime(df["start_time"]).dt.date
+            df["Time"] = (
+                pd.to_datetime(df["start_time"]).dt.strftime("%I:%M %p")
+                + " - " +
+                pd.to_datetime(df["end_time"]).dt.strftime("%I:%M %p")
+            )
 
             df = df[["employee_name", "department", "Date", "Time", "purpose"]]
             df.columns = ["Booked By", "Department", "Date", "Time", "Purpose"]
 
-            st.dataframe(
-                df,
-                use_container_width=True,
-                height=400
-            )
+            st.dataframe(df, use_container_width=True, height=400)
 
-    # RIGHT SIDE METRICS
     with col_right:
         st.subheader("Summary")
 
         today = datetime.today().date()
-        today_count = len([b for b in bookings if b["booking_date"] == today])
+        today_count = len([b for b in bookings if b.get("booking_date") == today])
         total_count = len(bookings)
 
         st.metric("Today", today_count)
@@ -197,10 +170,11 @@ def render_dashboard():
 
         st.write("---")
 
+        # Department-wise counts
         by_dept = {}
         for b in bookings:
-            d = b["department"]
-            by_dept[d] = by_dept.get(d, 0) + 1
+            dept = b.get("department")
+            by_dept[dept] = by_dept.get(dept, 0) + 1
 
         for dept, count in by_dept.items():
             st.metric(dept, count)
