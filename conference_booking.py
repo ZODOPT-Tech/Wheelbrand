@@ -18,13 +18,11 @@ DEPARTMENTS = ["Select", "Sales", "HR", "Finance", "Delivery/Tech", "Digital Mar
 PURPOSES = ["Select", "Client Visit", "Internal Meeting", "HOD Meeting", "Inductions", "Training"]
 
 
-# ======================= DB CONNECTION =======================
+# ========================= DB =========================
 @st.cache_resource
 def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
-    return json.loads(
-        client.get_secret_value(SecretId=AWS_SECRET_NAME)["SecretString"]
-    )
+    return json.loads(client.get_secret_value(SecretId=AWS_SECRET_NAME)["SecretString"])
 
 
 @st.cache_resource
@@ -39,7 +37,6 @@ def get_conn():
     )
 
 
-# ========================= DB HELPERS =========================
 def get_my_bookings(user_id):
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
@@ -74,35 +71,27 @@ def update_booking_time(bid, user_id, start_dt, end_dt):
 def delete_booking(bid, user_id):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute(
-        "DELETE FROM conference_bookings WHERE id=%s AND user_id=%s",
-        (bid, user_id)
-    )
+    cur.execute("DELETE FROM conference_bookings WHERE id=%s AND user_id=%s", (bid, user_id))
 
 
-# ========================= TIME FILTER =========================
+# ========================= SLOT FILTER =========================
 def generate_slots(selected_date: date):
-    """Return available times removing past times of today"""
+    """
+    Always remove past time slots for the same day.
+    If selected date > today → show full list.
+    """
+    now = datetime.now()
     slots = ["Select"]
 
-    # Full range for future dates
-    if selected_date > date.today():
-        cur = datetime.combine(selected_date, WORK_START)
-        end = datetime.combine(selected_date, WORK_END)
-        while cur <= end:
-            slots.append(cur.strftime("%I:%M %p"))
-            cur += timedelta(minutes=30)
-        return slots
+    start_dt = datetime.combine(selected_date, WORK_START)
+    end_dt = datetime.combine(selected_date, WORK_END)
 
-    # Date is today → remove past slots
-    now = datetime.now()
-    cur = datetime.combine(date.today(), WORK_START)
-    end = datetime.combine(date.today(), WORK_END)
-
-    while cur <= end:
-        if cur > now + timedelta(minutes=1):  # ensure safety after seconds
-            slots.append(cur.strftime("%I:%M %p"))
-        cur += timedelta(minutes=30)
+    current = start_dt
+    while current <= end_dt:
+        # future slots only when today
+        if selected_date > date.today() or current > now + timedelta(minutes=1):
+            slots.append(current.strftime("%I:%M %p"))
+        current += timedelta(minutes=30)
 
     return slots
 
@@ -167,7 +156,7 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 
-# ========================= MAIN PAGE =========================
+# ========================= MAIN =========================
 def render_booking_page():
     inject_css()
 
@@ -176,7 +165,7 @@ def render_booking_page():
 
     user_id = st.session_state.get("user_id")
 
-    # ================= HEADER ==================
+    # ========== HEADER ==========
     st.markdown(f"""
         <div class="header-box">
             <div class="header-title">Conference Booking</div>
@@ -185,11 +174,11 @@ def render_booking_page():
     """, unsafe_allow_html=True)
 
 
-    # ================= LAYOUT ==================
+    # ========== LAYOUT ==========
     col_cal, col_create = st.columns([2, 1])
 
 
-    # ============== CALENDAR ==============
+    # ======= CALENDAR =======
     with col_cal:
         books = get_my_bookings(user_id)
         events = prepare_events(books)
@@ -210,7 +199,7 @@ def render_booking_page():
             st.rerun()
 
 
-    # ============== CREATE BOOKING ==============
+    # ======= CREATE =======
     with col_create:
         st.subheader("Create Booking")
 
@@ -242,62 +231,63 @@ def render_booking_page():
                     st.rerun()
 
 
-        # ============== MY BOOKINGS ==============
-        st.subheader("My Bookings")
+    # ======= MY BOOKINGS =======
+    st.subheader("My Bookings")
 
-        my = get_my_bookings(user_id)
-        if not my:
-            st.info("No bookings yet.")
-            return
+    my = get_my_bookings(user_id)
+    if not my:
+        st.info("No bookings yet.")
+        return
 
-        for b in my:
-            st.markdown("<div class='booking-card'>", unsafe_allow_html=True)
+    # No container around all bookings → each card independent
+    for b in my:
+        st.markdown("<div class='booking-card'>", unsafe_allow_html=True)
 
-            st.write(
-                f"**{b['booking_date'].strftime('%d %b %Y')}**\n"
-                f"{b['start_time'].strftime('%I:%M %p')} - {b['end_time'].strftime('%I:%M %p')}\n"
-                f"{b['purpose']} | {b['department']}"
-            )
+        st.write(
+            f"**{b['booking_date'].strftime('%d %b %Y')}**\n"
+            f"{b['start_time'].strftime('%I:%M %p')} - {b['end_time'].strftime('%I:%M %p')}\n"
+            f"{b['purpose']} | {b['department']}"
+        )
 
-            c1, c2 = st.columns(2)
-            with c1:
-                if st.button("Edit", key=f"e{b['id']}"):
-                    st.session_state.edit_id = b["id"]
+        c1, c2 = st.columns(2)
+        with c1:
+            if st.button("Edit", key=f"e{b['id']}"):
+                st.session_state.edit_id = b["id"]
+                st.rerun()
+        with c2:
+            if st.button("Cancel", key=f"c{b['id']}"):
+                delete_booking(b["id"], user_id)
+                st.success("Booking Cancelled")
+                st.rerun()
+
+
+        # ========== EDIT INLINE ==========
+        if st.session_state.edit_id == b["id"]:
+            st.write("---")
+            with st.form(f"edit{b['id']}"):
+                slot_date = b['booking_date']
+                slot_opts = generate_slots(slot_date)
+
+                s_str = b['start_time'].strftime("%I:%M %p")
+                e_str = b['end_time'].strftime("%I:%M %p")
+
+                s_idx = slot_opts.index(s_str) if s_str in slot_opts else 0
+                e_idx = slot_opts.index(e_str) if e_str in slot_opts else 0
+
+                ns = st.selectbox("Start", slot_opts, index=s_idx)
+                ne = st.selectbox("End", slot_opts, index=e_idx)
+
+                if st.form_submit_button("Save"):
+                    new_s = datetime.strptime(ns, "%I:%M %p").time()
+                    new_e = datetime.strptime(ne, "%I:%M %p").time()
+
+                    update_booking_time(
+                        b["id"], user_id,
+                        datetime.combine(slot_date, new_s),
+                        datetime.combine(slot_date, new_e)
+                    )
+                    st.success("Updated")
+                    st.session_state.edit_id = None
                     st.rerun()
-            with c2:
-                if st.button("Cancel", key=f"c{b['id']}"):
-                    delete_booking(b["id"], user_id)
-                    st.success("Booking Cancelled")
-                    st.rerun()
 
-
-            # INLINE EDIT MODE
-            if st.session_state.edit_id == b["id"]:
-                st.write("---")
-                with st.form(f"edit_{b['id']}"):
-                    slot_date = b['booking_date']
-                    slot_opts = generate_slots(slot_date)
-
-                    s_str = b['start_time'].strftime("%I:%M %p")
-                    e_str = b['end_time'].strftime("%I:%M %p")
-
-                    s_idx = slot_opts.index(s_str) if s_str in slot_opts else 0
-                    e_idx = slot_opts.index(e_str) if e_str in slot_opts else 0
-
-                    ns = st.selectbox("Start", slot_opts, index=s_idx)
-                    ne = st.selectbox("End", slot_opts, index=e_idx)
-
-                    if st.form_submit_button("Save"):
-                        new_s = datetime.strptime(ns, "%I:%M %p").time()
-                        new_e = datetime.strptime(ne, "%I:%M %p").time()
-
-                        update_booking_time(
-                            b["id"], user_id,
-                            datetime.combine(slot_date, new_s),
-                            datetime.combine(slot_date, new_e)
-                        )
-                        st.success("Updated")
-                        st.session_state.edit_id = None
-                        st.rerun()
-
-            st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
