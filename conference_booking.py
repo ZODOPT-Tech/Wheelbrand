@@ -76,22 +76,23 @@ def delete_booking(bid, user_id):
 
 # ========================= SLOT FILTER =========================
 def generate_slots(selected_date: date):
-    """
-    Always remove past time slots for the same day.
-    If selected date > today → show full list.
-    """
     now = datetime.now()
     slots = ["Select"]
 
     start_dt = datetime.combine(selected_date, WORK_START)
     end_dt = datetime.combine(selected_date, WORK_END)
+    cur = start_dt
 
-    current = start_dt
-    while current <= end_dt:
-        # future slots only when today
-        if selected_date > date.today() or current > now + timedelta(minutes=1):
-            slots.append(current.strftime("%I:%M %p"))
-        current += timedelta(minutes=30)
+    while cur <= end_dt:
+        # TODAY => only future real time
+        if selected_date == date.today():
+            if cur > now + timedelta(minutes=1):
+                slots.append(cur.strftime("%I:%M %p"))
+        # FUTURE => show all
+        elif selected_date > date.today():
+            slots.append(cur.strftime("%I:%M %p"))
+
+        cur += timedelta(minutes=30)
 
     return slots
 
@@ -165,7 +166,6 @@ def render_booking_page():
 
     user_id = st.session_state.get("user_id")
 
-    # ========== HEADER ==========
     st.markdown(f"""
         <div class="header-box">
             <div class="header-title">Conference Booking</div>
@@ -174,7 +174,6 @@ def render_booking_page():
     """, unsafe_allow_html=True)
 
 
-    # ========== LAYOUT ==========
     col_cal, col_create = st.columns([2, 1])
 
 
@@ -205,6 +204,10 @@ def render_booking_page():
 
         sel_date = st.date_input("Date", date.today())
         time_opts = generate_slots(sel_date)
+
+        # FORCE refresh if today → filter again
+        if sel_date == date.today():
+            st.experimental_rerun()
 
         with st.form("create_form"):
             start = st.selectbox("Start Time", time_opts)
@@ -239,13 +242,13 @@ def render_booking_page():
         st.info("No bookings yet.")
         return
 
-    # No container around all bookings → each card independent
+    # NO OUTER CONTAINER
     for b in my:
         st.markdown("<div class='booking-card'>", unsafe_allow_html=True)
 
         st.write(
-            f"**{b['booking_date'].strftime('%d %b %Y')}**\n"
-            f"{b['start_time'].strftime('%I:%M %p')} - {b['end_time'].strftime('%I:%M %p')}\n"
+            f"**{b['booking_date'].strftime('%d %b %Y')}**  "
+            f"{b['start_time'].strftime('%I:%M %p')} - {b['end_time'].strftime('%I:%M %p')}  "
             f"{b['purpose']} | {b['department']}"
         )
 
@@ -261,21 +264,21 @@ def render_booking_page():
                 st.rerun()
 
 
-        # ========== EDIT INLINE ==========
+        # ======= EDIT INLINE =======
         if st.session_state.edit_id == b["id"]:
             st.write("---")
             with st.form(f"edit{b['id']}"):
                 slot_date = b['booking_date']
-                slot_opts = generate_slots(slot_date)
+                opts = generate_slots(slot_date)
 
                 s_str = b['start_time'].strftime("%I:%M %p")
                 e_str = b['end_time'].strftime("%I:%M %p")
 
-                s_idx = slot_opts.index(s_str) if s_str in slot_opts else 0
-                e_idx = slot_opts.index(e_str) if e_str in slot_opts else 0
+                s_idx = opts.index(s_str) if s_str in opts else 0
+                e_idx = opts.index(e_str) if e_str in opts else 0
 
-                ns = st.selectbox("Start", slot_opts, index=s_idx)
-                ne = st.selectbox("End", slot_opts, index=e_idx)
+                ns = st.selectbox("Start", opts, index=s_idx)
+                ne = st.selectbox("End", opts, index=e_idx)
 
                 if st.form_submit_button("Save"):
                     new_s = datetime.strptime(ns, "%I:%M %p").time()
