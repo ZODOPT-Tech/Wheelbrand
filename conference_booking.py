@@ -9,7 +9,6 @@ from streamlit_calendar import calendar
 # ======================================================
 # CONFIG
 # ======================================================
-
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
@@ -26,7 +25,6 @@ PURPOSES = ["Select", "Client Visit", "Internal Meeting", "HOD Meeting", "Traini
 # ======================================================
 # DB HELPERS
 # ======================================================
-
 @st.cache_resource
 def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
@@ -61,12 +59,16 @@ def get_user_bookings():
 # ======================================================
 # HEADER
 # ======================================================
-
 def header():
     st.markdown(f"""
     <style>
-        header[data-testid="stHeader"] {{ display:none !important; }}
-        .block-container {{ padding-top:0rem !important; }}
+
+        header[data-testid="stHeader"] {{
+            display:none !important;
+        }}
+        .block-container {{
+            padding-top:0 !important;
+        }}
 
         .header-box {{
             background:{HEADER_GRADIENT};
@@ -83,7 +85,7 @@ def header():
             font-size:26px;
             font-weight:700;
             color:white;
-            font-family:Inter, sans-serif;
+            font-family:Inter,sans-serif;
         }}
 
         .logo-img {{
@@ -91,19 +93,28 @@ def header():
             border-radius:6px;
         }}
 
-        .purple > button {{
+        .purple-btn > button {{
             background:{HEADER_GRADIENT} !important;
             color:white !important;
             border:none !important;
-            font-weight:600 !important;
             border-radius:8px !important;
-            height:45px !important;
-            font-size:15px;
+            font-size:15px !important;
+            font-weight:600 !important;
+            height:44px !important;
         }}
 
-        .purple > button:hover {{
-            opacity:0.92;
+        .purple-btn > button:hover {{
+            opacity:0.90;
         }}
+
+        .container-box {{
+            background:white;
+            border-radius:14px;
+            padding:18px 20px;
+            box-shadow:0px 3px 12px rgba(0,0,0,0.08);
+            margin-top:12px;
+        }}
+
     </style>
     """, unsafe_allow_html=True)
 
@@ -118,7 +129,6 @@ def header():
 # ======================================================
 # CALENDAR EVENTS
 # ======================================================
-
 def fetch_events():
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
@@ -138,7 +148,6 @@ def fetch_events():
 # ======================================================
 # TIME SLOTS
 # ======================================================
-
 def future_slots(dt):
     now = datetime.now()
     slots = ["Select"]
@@ -154,14 +163,13 @@ def future_slots(dt):
 # ======================================================
 # SAVE / UPDATE / DELETE
 # ======================================================
-
 def save_booking(meeting_date, start_str, end_str, dept, purpose):
     conn = get_conn()
     cur = conn.cursor()
+
     start_dt = datetime.combine(meeting_date, datetime.strptime(start_str, "%I:%M %p").time())
     end_dt = datetime.combine(meeting_date, datetime.strptime(end_str, "%I:%M %p").time())
 
-    # Overlap check
     cur.execute("""
         SELECT 1 FROM conference_bookings
         WHERE booking_date=%s
@@ -193,74 +201,15 @@ def delete_booking(booking_id):
                 (booking_id, st.session_state["user_id"]))
 
 
-def update_booking(booking_id, dt, new_start, new_end):
-    conn = get_conn()
-    cur = conn.cursor()
-
-    # overlap
-    cur.execute("""
-        SELECT 1 FROM conference_bookings
-        WHERE user_id=%s
-        AND id!=%s
-        AND booking_date=%s
-        AND (%s < end_time AND %s > start_time)
-    """, (st.session_state["user_id"], booking_id, dt, new_start, new_end))
-    if cur.fetchone():
-        st.error("Overlapping with another booking.")
-        return False
-
-    cur.execute("""
-        UPDATE conference_bookings
-        SET start_time=%s, end_time=%s
-        WHERE id=%s AND user_id=%s
-    """, (new_start, new_end, booking_id, st.session_state["user_id"]))
-    return True
-
-
-# ======================================================
-# EDIT UI
-# ======================================================
-
-def edit_ui(b):
-    st.subheader("Edit Booking")
-
-    dt = b["booking_date"]
-    slots = []
-    t = datetime.combine(dt, WORK_START)
-    end = datetime.combine(dt, WORK_END)
-    while t <= end:
-        slots.append(t.strftime("%I:%M %p"))
-        t += timedelta(minutes=30)
-
-    current_start = b["start_time"].strftime("%I:%M %p")
-    current_end = b["end_time"].strftime("%I:%M %p")
-
-    new_start = st.selectbox("Start Time", slots, index=slots.index(current_start))
-    new_end = st.selectbox("End Time", slots, index=slots.index(current_end))
-
-    st.markdown('<div class="purple">', unsafe_allow_html=True)
-    if st.button("Save Changes"):
-        ns = datetime.combine(dt, datetime.strptime(new_start, "%I:%M %p").time())
-        ne = datetime.combine(dt, datetime.strptime(new_end, "%I:%M %p").time())
-        if ne <= ns:
-            st.error("End time must be after start.")
-            return
-        if update_booking(b['id'], dt, ns, ne):
-            st.success("Updated successfully.")
-            st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
 # ======================================================
 # MAIN PAGE
 # ======================================================
-
 def render_booking_page():
     header()
 
     col1, col2 = st.columns([2.2, 1], gap="large")
 
-    # ------------- LEFT: Calendar -------------
+    # ---------------- LEFT: Calendar ----------------
     with col1:
         st.subheader("Schedule")
         calendar(
@@ -275,15 +224,14 @@ def render_booking_page():
             key="calendar",
         )
 
-    # ------------- RIGHT: Create Booking ------
+    # ---------------- RIGHT: Create Booking ----------
     with col2:
         st.subheader("Create Booking")
 
-        meeting_date = st.date_input("Meeting Date", date.today())
+        mdate = st.date_input("Meeting Date", date.today())
+        start_opts = future_slots(mdate)
 
-        start_opts = future_slots(meeting_date)
         start_time = st.selectbox("Start Time", start_opts)
-
         if start_time != "Select":
             end_opts = ["Select"] + [
                 t for t in start_opts if t != "Select" and
@@ -293,28 +241,28 @@ def render_booking_page():
             end_opts = ["Select"]
 
         end_time = st.selectbox("End Time", end_opts)
+
         dept = st.selectbox("Department", DEPARTMENTS)
         purpose = st.selectbox("Purpose", PURPOSES)
 
-        st.markdown('<div class="purple">', unsafe_allow_html=True)
+        st.markdown('<div class="purple-btn">', unsafe_allow_html=True)
         if st.button("Confirm Booking", use_container_width=True):
             if start_time == "Select" or end_time == "Select":
                 st.warning("Select valid time.")
             elif dept == "Select" or purpose == "Select":
-                st.warning("Fill all fields.")
-            else:
-                if save_booking(meeting_date, start_time, end_time, dept, purpose):
-                    st.success("Booking Successful.")
-                    st.rerun()
+                st.warning("Select all fields.")
+            elif save_booking(mdate, start_time, end_time, dept, purpose):
+                st.success("Booking Successful")
+                st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-        st.markdown('<div class="purple">', unsafe_allow_html=True)
+        st.markdown('<div class="purple-btn">', unsafe_allow_html=True)
         if st.button("Back to Dashboard", use_container_width=True):
             st.session_state["current_page"] = "conference_dashboard"
             st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # ---------------- MY BOOKINGS ----------------
+    # ---------------- MY BOOKINGS (Container) --------
     st.subheader("My Bookings")
 
     bookings = get_user_bookings()
@@ -322,26 +270,27 @@ def render_booking_page():
         st.info("No bookings created yet.")
         return
 
+    st.markdown('<div class="container-box">', unsafe_allow_html=True)
+
     for b in bookings:
-        with st.container():
-            colA, colB, colC = st.columns([3,3,2])
+        colA, colB, colC = st.columns([3,3,2])
 
-            with colA:
-                st.write(f"**Date:** {b['booking_date']}")
-                st.write(f"**Time:** {b['start_time'].strftime('%I:%M %p')} - {b['end_time'].strftime('%I:%M %p')}")
+        with colA:
+            st.write(f"**Date:** {b['booking_date']}")
+            st.write(f"**Time:** {b['start_time'].strftime('%I:%M %p')} - {b['end_time'].strftime('%I:%M %p')}")
 
-            with colB:
-                st.write(f"**Department:** {b['department']}")
-                st.write(f"**Purpose:** {b['purpose']}")
+        with colB:
+            st.write(f"**Department:** {b['department']}")
+            st.write(f"**Purpose:** {b['purpose']}")
 
-            with colC:
-                st.markdown('<div class="purple">', unsafe_allow_html=True)
-                if st.button("Edit", key=f"edit_{b['id']}"):
-                    edit_ui(b)
-                if st.button("Cancel", key=f"del_{b['id']}"):
-                    delete_booking(b['id'])
-                    st.success("Canceled.")
-                    st.rerun()
-                st.markdown('</div>', unsafe_allow_html=True)
+        with colC:
+            st.markdown('<div class="purple-btn">', unsafe_allow_html=True)
+            if st.button("Cancel", key=f"del_{b['id']}"):
+                delete_booking(b['id'])
+                st.success("Booking cancelled.")
+                st.rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
 
         st.divider()
+
+    st.markdown('</div>', unsafe_allow_html=True)
