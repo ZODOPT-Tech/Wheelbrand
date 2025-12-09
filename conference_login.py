@@ -1,239 +1,536 @@
 import streamlit as st
-import boto3
-import json
+import os
+import base64
 import mysql.connector
-import bcrypt
-# Note: pandas and datetime are not strictly needed for login but kept for completeness if you reuse this file structure.
+import bcrypt # Used for secure password hashing
+import boto3 # Used for AWS Secrets Manager
+import json # Used for parsing secret string
+import traceback # Used for detailed error logging
 
-# ==============================
-# CONFIG
-# ==============================
-AWS_REGION = "ap-south-1"
-# AWS_SECRET_NAME is used in the login app
-AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
+# --- AWS & DB Configuration ---
+# IMPORTANT: Replace these with your actual AWS region and secret name
+AWS_REGION = "ap-south-1" 
+AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
 
-LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
-# Renamed from HEADER_GRADIENT to GRADIENT for consistency with the provided code
-GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
+# --- Configuration (Shared Constants) ---
+# NOTE: Using a placeholder path for the logo. In a real environment, 
+# you'd need to ensure this path is accessible or use a hosted URL.
+LOGO_PATH = "zodopt.png" 
+LOGO_PLACEHOLDER_TEXT = "zodopt"
+HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)" # Primary Color for header and main buttons
 
-
-# ==============================
-# DB CONNECTION
-# ==============================
+# --- AWS SECRET MANAGER ----------------
 @st.cache_resource
 def get_db_credentials():
+    """
+    Loads DB credentials from AWS Secrets Manager.
+    Secret must be a JSON string with keys:
+    DB_HOST, DB_NAME, DB_USER, DB_PASSWORD
+    """
+    # 
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
-    resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
-    return json.loads(resp["SecretString"])
+    try:
+        # This function fetches the secret value. 
+        # Ensure your AWS environment is configured with the necessary permissions.
+        resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
+        # SecretsManager stores text in 'SecretString'
+        if "SecretString" not in resp:
+            raise RuntimeError("SecretString missing in AWS secrets response.")
+        creds = json.loads(resp["SecretString"])
+        required_keys = ["DB_HOST", "DB_NAME", "DB_USER", "DB_PASSWORD"]
+        for k in required_keys:
+            if k not in creds:
+                raise RuntimeError(f"Missing key in secret: {k}")
+        return creds
+    except Exception as e:
+        # Display a user-friendly error in Streamlit
+        st.error(f"Configuration Error: Could not retrieve database credentials from AWS Secrets Manager. Details: {e}")
+        # Log the full traceback for the developer in the console
+        st.write(traceback.format_exc())
+        st.stop()
 
 
+# ---------------- FAST DB CONNECTION ----------------
 @st.cache_resource
-def get_connection():
+def get_fast_connection():
+    """
+    Returns a persistent MySQL connection object (cached by Streamlit).
+    This function establishes the connection using credentials from Secrets Manager.
+    """
     c = get_db_credentials()
-    return mysql.connector.connect(
-        host=c["DB_HOST"],
-        user=c["DB_USER"],
-        password=c["DB_PASSWORD"],
-        database=c["DB_NAME"],
-        autocommit=True
-    )
+    try:
+        conn = mysql.connector.connect(
+            host=c["DB_HOST"],
+            user=c["DB_USER"],
+            password=c["DB_PASSWORD"],
+            database=c["DB_NAME"],
+            port=3306,
+            autocommit=True, # Ensure changes are saved immediately
+            connection_timeout=10,
+        )
+        return conn
+    except mysql.connector.Error as e:
+        st.error(f"Database Connection Error: Could not connect to MySQL. Please check credentials and network access. Details: {e}")
+        st.stop()
 
 
-# ==============================
-# PASSWORD SECURITY
-# ==============================
-def verify_password(input_password, db_hash):
-    return bcrypt.checkpw(input_password.encode(), db_hash.encode())
+# --- Security Helper Functions ---
+def hash_password(password):
+    """Hashes a plaintext password using bcrypt for secure storage."""
+    # Generate a salt and hash the password
+    # 12 is a secure default work factor
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt(rounds=12)).decode('utf-8')
+
+def check_password(password, hashed_password):
+    """Verifies a plaintext password against a stored bcrypt hash."""
+    try:
+        # bcrypt.checkpw handles both hashing the input and comparing the result
+        return bcrypt.checkpw(password.encode('utf-8'), hashed_password.encode('utf-8'))
+    except Exception:
+        # Handle cases where the hash might be malformed or password encoding fails
+        return False
+
+# --- Utility Function ---
+def _get_image_base64(path):
+    """Converts a local image file to a base64 string for embedding in HTML/CSS."""
+    # This is necessary for embedding local images directly into Streamlit's markdown/HTML
+    try:
+        with open(path, "rb") as img_file:
+            return base64.b64encode(img_file.read()).decode()
+    except Exception:
+        # Returns an empty string if the file is not found, preventing errors
+        return ""
+
+# --- State Management Helper ---
+def set_auth_view(view):
+    """Changes the current authentication view (login, register, forgot_password) and forces a re-render."""
+    st.session_state['conf_auth_view'] = view
+    st.rerun()
+
+# -----------------------------------------------------
+# --- VIEW RENDERING FUNCTIONS (DB INTEGRATED) ---
+# -----------------------------------------------------
+
+def render_login_view():
+    """Renders the standard login form and handles DB authentication."""
+    conn = get_fast_connection()
+    
+    with st.form("conf_login_form"):
+        email = st.text_input("Email ID", key="conf_login_email")
+        password = st.text_input("Password", type="password", key="conf_login_password")
+        
+        submitted = st.form_submit_button("Sign In →", type="primary")
+        
+        if submitted:
+            if not email or not password:
+                st.error("Please enter both email and password.")
+                return
+
+            cursor = conn.cursor(dictionary=True) # Use dictionary=True to get results as dicts
+            try:
+                # 1. Look up user by email in the conference_users table
+                query = "SELECT id, name, password_hash FROM conference_users WHERE email = %s AND is_active = TRUE"
+                cursor.execute(query, (email,))
+                user_record = cursor.fetchone()
+                
+                if user_record and check_password(password, user_record['password_hash']):
+                    # 2. Login successful: Set session state for the user
+                    st.success(f"Welcome, {user_record['name']}! Logged in successfully.")
+                    st.session_state['logged_in'] = True
+                    st.session_state['user_id'] = user_record['id']
+                    st.session_state['user_email'] = email
+                    st.session_state['user_name'] = user_record['name']
+                    # Redirect to the main dashboard or app page
+                    st.session_state['current_page'] = 'conference_dashboard' 
+                    st.rerun()
+                else:
+                    # 3. Login failed 
+                    st.error("Invalid Email ID or Password.")
+            except mysql.connector.Error as err:
+                st.error(f"Database error during login: {err}")
+            finally:
+                cursor.close()
+    
+    # Navigation Buttons 
+    st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("New Registration", key="conf_new_reg_btn", type="secondary", use_container_width=True):
+            set_auth_view('register')
+    with col2:
+        if st.button("Forgot Password?", key="conf_forgot_pass_btn", type="secondary", use_container_width=True):
+            set_auth_view('forgot_password')
+
+def render_register_view():
+    """Renders the new delegate registration form and inserts user into DB."""
+    conn = get_fast_connection()
+
+    # Define the department options for the select box
+    DEPARTMENT_OPTIONS = [
+        "SELECT",
+        "SALES",
+        "HR",
+        "FINANCE",
+        "DELIVERY/TECH",
+        "DIGITAL MARKETING",
+        "IT"
+    ]
+
+    with st.form("conf_register_form"):
+        name = st.text_input("Name", key="reg_name")
+        email = st.text_input("Email ID", key="reg_email")
+        company = st.text_input("Company", key="reg_company")
+        
+        # --- Department field changed to a select box (dropdown) ---
+        department = st.selectbox(
+            "Department", 
+            options=DEPARTMENT_OPTIONS, 
+            key="reg_department"
+        )
+        # -----------------------------------------------------------
+        password = st.text_input("Password (min 8 chars)", type="password", key="reg_password")
+        confirm_password = st.text_input("Confirm Password", type="password", key="reg_confirm_password")
+        
+        submitted = st.form_submit_button("Register Account", type="primary")
+
+        if submitted:
+            # Check if a valid department has been selected
+            is_department_selected = department != "SELECT"
+            
+            # --- VALIDATION UPDATED HERE ---
+            if not all([name, email, company, password, confirm_password]):
+                st.error("Please fill in all fields.")
+            elif not is_department_selected:
+                st.error("Please select a Department.")
+            # -------------------------------
+            elif password != confirm_password:
+                st.error("Passwords do not match.")
+            elif len(password) < 8:
+                st.error("Password must be at least 8 characters long.")
+            else:
+                cursor = conn.cursor()
+                try:
+                    # 1. Check if Email ID is already registered (unique constraint check)
+                    check_query = "SELECT COUNT(*) FROM conference_users WHERE email = %s"
+                    cursor.execute(check_query, (email,))
+                    if cursor.fetchone()[0] > 0:
+                        st.error("This Email ID is already registered. Please try logging in.")
+                        return
+
+                    # 2. Hash the password securely
+                    hashed_password = hash_password(password)
+
+                    # 3. Insert new user into the database
+                    insert_query = """
+                    INSERT INTO conference_users (name, email, company, department, password_hash)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """
+                    # The Department variable is now the selected value from the dropdown
+                    cursor.execute(insert_query, (name, email, company, department, hashed_password))
+                    
+                    st.success("Registration successful! You can now sign in.")
+                    set_auth_view('login')
+                except mysql.connector.Error as err:
+                    st.error(f"Database error during registration: {err}")
+                finally:
+                    cursor.close()
+    
+    st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
+    if st.button("← Back to Login", key="reg_back_login_btn", use_container_width=True):
+        set_auth_view('login')
+
+def render_forgot_password_view():
+    """
+    Renders the password reset flow. 
+    NOTE: This implementation focuses on the Streamlit UI and DB update.
+    The complex parts (token generation, email sending, token verification from the
+    'conference_reset_password' table) are simulated.
+    """
+    conn = get_fast_connection()
+    
+    # Initialize state variables for the two-step process
+    if 'reset_email' not in st.session_state:
+        st.session_state['reset_email'] = None
+        st.session_state['email_found'] = False
+        
+    with st.form("forgot_pass_email_form", clear_on_submit=False):
+        email_to_check = st.text_input("Enter your registered Email ID", key="forgot_email_input", value=st.session_state.get('reset_email', ''))
+        
+        if st.form_submit_button("Search Account", type="primary"):
+            if not email_to_check:
+                st.warning("Please enter an email address.")
+                return
+
+            cursor = conn.cursor()
+            try:
+                # Check if email exists to proceed
+                check_query = "SELECT id FROM conference_users WHERE email = %s"
+                cursor.execute(check_query, (email_to_check,))
+                user_id = cursor.fetchone()
+
+                if user_id:
+                    st.session_state['reset_email'] = email_to_check
+                    st.session_state['email_found'] = True
+                    st.success("Account found. (In a production app, a secure reset link would be sent to this email.) Please enter a new password below.")
+                    st.rerun() 
+                else:
+                    st.session_state['email_found'] = False
+                    st.error("Email ID not found in our records.")
+            except mysql.connector.Error as err:
+                st.error(f"Database error during email check: {err}")
+            finally:
+                cursor.close()
+
+    # --- Step 2: Password Reset (If Email Found) ---
+    if st.session_state.email_found:
+        st.markdown("---")
+        st.write(f"**Resetting password for:** `{st.session_state['reset_email']}`")
+        with st.form("forgot_pass_reset_form"):
+            new_password = st.text_input("New Password (min 8 chars)", type="password", key="reset_new_password")
+            confirm_password = st.text_input("Confirm New Password", type="password", key="reset_confirm_password")
+            
+            if st.form_submit_button("Change Password", type="primary"):
+                if new_password != confirm_password:
+                    st.error("Passwords do not match.")
+                elif len(new_password) < 8:
+                    st.error("Password must be at least 8 characters.")
+                else:
+                    # In a real app, this update would only happen after token validation.
+                    cursor = conn.cursor()
+                    try:
+                        new_hashed_password = hash_password(new_password)
+                        
+                        update_query = "UPDATE conference_users SET password_hash = %s, updated_at = CURRENT_TIMESTAMP WHERE email = %s"
+                        cursor.execute(update_query, (new_hashed_password, st.session_state['reset_email']))
+                        
+                        st.success("Password successfully changed! You can now log in.")
+                        
+                        # Clear state and redirect to login
+                        st.session_state.email_found = False
+                        st.session_state.reset_email = None
+                        set_auth_view('login')
+                    except mysql.connector.Error as err:
+                        st.error(f"Database error during password change: {err}")
+                    finally:
+                        cursor.close()
+
+    st.markdown('<div style="margin-top: 15px;"></div>', unsafe_allow_html=True)
+    if st.button("← Back to Login", key="forgot_back_login_btn", use_container_width=True):
+        st.session_state.email_found = False
+        st.session_state.reset_email = None
+        set_auth_view('login')
 
 
-# ==============================
-# CSS (Updated to match the Dashboard's style)
-# ==============================
-def inject_css():
+# -----------------------------------------------------
+# --- MAIN FUNCTION (Page Layout and Routing) ---
+# -----------------------------------------------------
+
+def render_conference_login_page():
+    # Initialize the view state
+    if 'conf_auth_view' not in st.session_state:
+        st.session_state['conf_auth_view'] = 'login'
+
+    # Determine the header title based on the current view state
+    view = st.session_state['conf_auth_view']
+    if view == 'login':
+        header_title = "CONFERENCE BOOKING - SIGN IN"
+    elif view == 'register':
+        header_title = "NEW REGISTRATION"
+    elif view == 'forgot_password':
+        header_title = "RESET PASSWORD"
+        
+    # 1. Inject Custom CSS for styling
     st.markdown(f"""
     <style>
+    /* CSS variables for consistency */
+    :root {{
+        --header-gradient: {HEADER_GRADIENT};
+        --primary-color: #50309D;
+        --secondary-color: #7A42FF;
+        --header-box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4);
+    }}
 
-    /* Layout reset (from Dashboard) */
-    header[data-testid="stHeader"] {{display:none;}}
-    .block-container {{padding-top:0;}}
-    .block-container {{
+    /* === REFINED CSS TO REMOVE ALL GAPS ABOVE THE HEADER === */
+    html, body {{
+        margin: 0 !important;
         padding: 0 !important;
-        max-width: 100% !important;
-    }}
-
-    /* Global Body Style */
-    body {{
-        background: #F6F8FF;
-        font-family: 'Inter', sans-serif;
-    }}
-
-    /* Header section (from Dashboard) */
-    .header-box {{
-        background:{GRADIENT};
-        /* Adjusted margins for the login page to occupy the full top width */
-        margin:-1rem -1rem 1.5rem -1rem; 
-        border-radius:0 0 20px 20px; /* Adjusted to look like a full header, keeping the bottom curve */
-        padding:28px 40px;
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-        box-shadow:0 6px 20px rgba(0,0,0,0.18);
-    }}
-
-    .welcome {{ /* Reusing Dashboard style for title */
-        font-size:32px;
-        font-weight:900;
-        color:white;
-        margin-bottom:5px;
-    }}
-    .header-logo {{ /* Reusing Dashboard style for logo */
-        height:60px;
-    }}
-
-    /* Login card box (Preserved from original login code) */
-    .login-card {{
-        width:440px;
-        margin:70px auto;
-        background:white;
-        border-radius:18px;
-        padding:34px 30px;
-        box-shadow:0 4px 18px rgba(0,0,0,0.08);
-    }}
-
-    /* Input Fields (Preserved from original login code) */
-    .stTextInput > div > div > input {{
-        background:#F2F4FA;
-        padding:14px;
-        border-radius:10px;
-        font-size:16px;
-    }}
-
-    /* Main button (Preserved from original login code) */
-    .primary-btn {{
-        background:{GRADIENT} !important;
-        color:white !important;
-        font-weight:700 !important;
-        border:none !important;
-        padding:14px !important;
-        width:100%;
-        border-radius:12px !important;
-        font-size:16px !important;
-        box-shadow:0 6px 22px rgba(80,48,157,0.4) !important;
-    }}
-
-    .primary-btn:hover {{
-        opacity:0.93;
-        transform:translateY(-1px);
+        height: 100%;
+        overflow: auto; 
     }}
     
-    /* Secondary buttons inside the card (For Register/Forgot) */
-    .stButton > button {{
-        margin-top: 10px;
-        font-size: 14px;
-        /* Ensure these buttons don't inherit the main button style */
-        background: none !important; 
-        color: #50309D !important;
+    /* Hide Streamlit's default header and set the main content area to align flush with the top */
+    .stApp > header {{ visibility: hidden; height: 0; }}
+    
+    /* Target the container that holds all Streamlit content (the "main" content area) */
+    .stApp .main {{
+        padding-top: 0px !important; 
+        margin-top: 0px !important;
+        min-height: 100vh;
+    }}
+
+    /* Target the block that contains the three "bots" elements, forcing it to be hidden and flush */
+    div[data-testid="stStatusWidget"] {{
+        visibility: hidden;
+        height: 0px !important;
+        margin-top: 0px !important;
+        margin-bottom: 0px !important;
+        overflow: hidden;
+    }}
+    
+    /* === FIX: INCREASED PADDING FOR CORNERS (block-container) === */
+    .stApp .main .block-container {{
+        padding-top: 4rem !important; /* Added more space below the gradient header */
+        padding-left: 5rem !important;  /* Increased side spacing */
+        padding-right: 5rem !important; /* Increased side spacing */
+        max-width: 100% !important; /* Ensure it respects the wide layout */
+    }}
+    /* === END OF PADDING FIX === */
+    
+    
+    /* Header Box - Full Width Design */
+    .header-box {{
+        background: var(--header-gradient);
+        padding: 20px 40px;
+        margin-top: 0px; 
+        margin-bottom: 40px;
+        border-radius: 0 0 15px 15px; 
+        box-shadow: 0 4px 15px rgba(0,0,0,0.25);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        /* Force full width across the entire page (viewport) */
+        width: 100vw;
+        /* Use negative margins to pull the container into the side gaps */
+        position: relative; 
+        left: 50%;
+        right: 50%;
+        margin-left: -50vw;
+        margin-right: -50vw;
+    }}
+    .header-title {{
+        font-family: 'Inter', sans-serif; 
+        font-size: 34px;
+        font-weight: 800;
+        color: #FFFFFF; 
+        letter-spacing: 1.5px;
+        margin: 0;
+    }}
+    .header-logo-container {{
+        font-size: 20px;
+        font-weight: bold;
+        color: #FFFFFF;
+    }}
+    
+    /* Streamlit selectbox styling */
+    .stSelectbox div[data-baseweb="select"] {{
+        background-color: #f0f2f6;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 0;
+        font-size: 16px;
+    }}
+    .stSelectbox div[data-baseweb="select"] input:focus {{
+        border-color: var(--secondary-color);
+        box-shadow: 0 0 0 2px rgba(122, 66, 255, 0.4);
+        outline: none;
+    }}
+    
+    /* Form and Input Styling for text inputs */
+    .stTextInput input {{
+        font-family: 'Inter', sans-serif;
+        background-color: #f0f2f6;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 12px 15px;
+        font-size: 16px;
+    }}
+    .stTextInput input:focus {{
+        border-color: var(--secondary-color);
+        box-shadow: 0 0 0 2px rgba(122, 66, 255, 0.4);
+        outline: none;
+    }}
+    
+    /* Primary Button Style (Used for all gradient buttons) */
+    .stForm button[kind="primary"],
+    .stButton > button:not([key*="back_login_btn"]):not([key*="conf_back_main_btn"]) {{
+        background: var(--header-gradient) !important;
+        color: white !important;
         border: none !important;
-        box-shadow: none !important;
+        border-radius: 8px !important;
+        padding: 12px 20px !important;
+        font-size: 16px !important;
+        font-weight: 600 !important;
+        box-shadow: var(--header-box-shadow) !important;
+        margin-top: 20px !important;
+        width: 100% !important;
+        transition: all 0.2s ease;
     }}
-
-    @media(max-width:600px) {{
-        .login-card {{
-            width:92%;
-        }}
-        .welcome {{
-            font-size:24px;
-        }}
-        .header-box {{
-            padding:20px;
-        }}
-        .header-logo {{
-            height:50px;
-        }}
+    .stForm button[kind="primary"]:hover,
+    .stButton > button:not([key*="back_login_btn"]):not([key*="conf_back_main_btn"]):hover {{
+        opacity: 0.95;
+        transform: translateY(-2px);
     }}
-
+    
+    /* Secondary (Back) Buttons */
+    .stButton > button[key*="back_login_btn"],
+    .stButton > button[key*="conf_back_main_btn"] {{
+        background: #FFFFFF !important; 
+        color: #555555 !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+        border: 1px solid #E0E0E0 !important;
+        font-weight: 500 !important;
+        padding: 8px 15px !important;
+        margin-top: 10px !important;
+        font-size: 14px !important;
+        width: 100%;
+    }}
+    .stButton > button[key*="back_login_btn"]:hover,
+    .stButton > button[key*="conf_back_main_btn"]:hover {{
+        background: #F0F2F6 !important;
+    }}
     </style>
     """, unsafe_allow_html=True)
 
 
-# ==============================
-# LOGIN FLOW
-# ==============================
-def render_login_view():
-    conn = get_connection()
-
-    with st.container():
-        st.markdown("<div class='login-card'>", unsafe_allow_html=True)
-        with st.form("login"):
-            email = st.text_input("Email")
-            pwd = st.text_input("Password", type="password")
-
-            if st.form_submit_button("Sign In →", type="primary", use_container_width=True):
-                if not email or not pwd:
-                    st.error("Enter email and password")
-                else:
-                    cur = conn.cursor(dictionary=True)
-                    cur.execute("SELECT id,name,password_hash FROM conference_users WHERE email=%s AND is_active=1", (email,))
-                    user = cur.fetchone()
-
-                    if user and verify_password(pwd, user['password_hash']):
-                        st.session_state['user_id'] = user['id']
-                        st.session_state['current_page'] = "conference_dashboard"
-                        st.rerun()
-                    else:
-                        st.error("Invalid login details")
-            
-            # Footer buttons moved inside the form/card as requested
-            st.markdown("<br>", unsafe_allow_html=True)
-            col1, col2 = st.columns(2)
-            with col1:
-                # Changed type to 'secondary' to distinguish from 'Sign In'
-                if st.button("New Registration", type="secondary", use_container_width=True):
-                    st.session_state['conf_auth_view'] = 'register'
-                    st.rerun()
-            with col2:
-                # Changed type to 'secondary' to distinguish from 'Sign In'
-                if st.button("Forgot Password?", type="secondary", use_container_width=True):
-                    st.session_state['conf_auth_view'] = 'forgot_password'
-                    st.rerun()
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-
-# ==============================
-# PLACEHOLDER PAGES
-# ==============================
-def render_register_view():
-    st.write("Registration Page")
-
-
-def render_forgot_view():
-    st.write("Forgot Password Page")
-
-
-# ==============================
-# ROUTER
-# ==============================
-def render_conference_login_page():
-    inject_css()
-
-    if 'conf_auth_view' not in st.session_state:
-        st.session_state['conf_auth_view'] = 'login'
-
-    # Header
-    st.markdown(f"""
-    <div class='header-box'>
-        <div>
-            <div class='welcome'>Conference Login</div>
-        </div>
-        <img src="{LOGO_URL}" class="header-logo">
-    </div>
-    """, unsafe_allow_html=True)
-
-    view = st.session_state['conf_auth_view']
-    if view == "login":
-        render_login_view()
-    elif view == "register":
-        render_register_view()
+    # 2. HEADER (Dynamic Title & Logo)
+    logo_base64 = _get_image_base64(LOGO_PATH)
+    if logo_base64:
+        logo_html = f'<img src="data:image/png;base64,{logo_base64}" class="header-logo-img" style="height: 50px; border-radius: 8px;">'
     else:
-        render_forgot_view()
+        logo_html = f'<div class="header-logo-container">**{LOGO_PLACEHOLDER_TEXT}**</div>'
+
+    st.markdown(
+        f"""
+        <div class="header-box">
+            <div class="header-title">{header_title}</div> 
+            {logo_html}
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # 3. Dynamic View Rendering (The central logic)
+    if view == 'login':
+        render_login_view()
+    elif view == 'register':
+        render_register_view()
+    elif view == 'forgot_password':
+        render_forgot_password_view()
+        
+# -----------------------------------------------------
+# --- APP ENTRY POINT ---
+# -----------------------------------------------------
+
+if __name__ == '__main__':
+    # Streamlit configuration to use the entire screen width
+    st.set_page_config(layout="wide")
+
+    if st.session_state.get('logged_in'):
+        # Placeholder for the main app content if already logged in
+        st.title("Conference Dashboard (Logged In)")
+        st.write(f"Welcome back, {st.session_state.get('user_name')}!")
+        if st.button("Logout"):
+            st.session_state.clear()
+            st.rerun()
+    else:
+        render_conference_login_page()
