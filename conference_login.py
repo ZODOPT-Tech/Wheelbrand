@@ -3,10 +3,9 @@ import boto3
 import json
 import mysql.connector
 import bcrypt
-from typing import Dict, Any, Optional
 
 # ==============================
-# CONFIGURATION
+# CONFIG
 # ==============================
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
@@ -14,20 +13,19 @@ AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbr
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
+
 # ==============================
-# DATABASE CONNECTION
+# DB CONNECTION
 # ==============================
 @st.cache_resource
-def get_db_credentials() -> Dict[str, str]:
-    """Retrieves database credentials from AWS Secrets Manager."""
+def get_db_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
     resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
     return json.loads(resp["SecretString"])
 
 
 @st.cache_resource
-def get_connection() -> mysql.connector.connection.MySQLConnection:
-    """Establishes and returns a persistent MySQL database connection."""
+def get_connection():
     c = get_db_credentials()
     return mysql.connector.connect(
         host=c["DB_HOST"],
@@ -37,31 +35,32 @@ def get_connection() -> mysql.connector.connection.MySQLConnection:
         autocommit=True
     )
 
-# ==============================
-# UTILITIES
-# ==============================
-def verify_password(input_password: str, db_hash: str) -> bool:
-    """Verifies a plain-text password against a hashed password."""
-    return bcrypt.checkpw(input_password.encode(), db_hash.encode())
 
 # ==============================
-# STYLING (CSS Injection)
+# PASSWORD HELPERS
 # ==============================
-def inject_css() -> None:
-    """Injects custom CSS for a professional look and feel."""
-    
-    # Using format() instead of f-string for complex multi-line CSS 
-    # to avoid conflicts with literal curly braces.
-    css_template = """
+def verify_password(plain: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except Exception:
+        return False
+
+
+# ==============================
+# CSS (NO CARDS, JUST CLEAN FORM)
+# ==============================
+def inject_css():
+    st.markdown(f"""
     <style>
-    
-    /* Hide Streamlit chrome */
+    /* Remove Streamlit chrome */
     header[data-testid="stHeader"],
     [data-testid="stToolbar"],
     [data-testid="baseMenuButton"],
     [data-testid="helpButton"],
-    [data-testid="collapsedControl"] {{
-        display: none !important;
+    [data-testid="collapsedControl"],
+    [data-testid="stStatusWidget"],
+    [data-testid="stActionButtons"] {{
+        display:none !important;
     }}
 
     .block-container {{
@@ -74,195 +73,196 @@ def inject_css() -> None:
         font-family:'Inter',sans-serif;
     }}
 
-    .header {{
+    /* Header */
+    .header-bar {{
         width:100%;
-        background:{header_gradient};
-        padding:40px 60px;
-        border-radius:0 0 30px 30px;
+        background:{HEADER_GRADIENT};
+        padding:34px 48px;
+        border-radius:0 0 26px 26px;
         display:flex;
         justify-content:space-between;
         align-items:center;
-        box-shadow:0 10px 35px rgba(0,0,0,0.12);
+        box-shadow:0 10px 32px rgba(0,0,0,0.18);
     }}
 
     .header-title {{
-        font-size:34px;
+        font-size:30px;
         font-weight:800;
         color:white;
     }}
 
-    .logo {{
-        height:60px;
+    .header-logo {{
+        height:56px;
     }}
 
+    /* Centered form – NO container background */
     .form-wrapper {{
         max-width:480px;
-        margin:60px auto;
-        text-align:center;
+        margin:60px auto 0 auto;
     }}
 
-    .stTextInput > div > div input {{
-        font-size:16px !important;
-        padding:14px !important;
+    .stTextInput > div > div > input {{
+        background:#F1F3FA !important;
         border-radius:10px !important;
-        background:#F2F4FA !important;
-    }}
-
-    /* SIGN IN BUTTON */
-    .primary-btn {{
-        background:{header_gradient} !important;
-        color:white !important;
         padding:14px !important;
-        font-size:17px !important;
-        font-weight:700 !important;
-        width:100%;
-        border-radius:11px !important;
-        border:none !important;
-        box-shadow:0 6px 22px rgba(80,48,157,0.35) !important;
-        margin-top:12px !important;
+        font-size:16px !important;
     }}
 
-    .primary-btn:hover {{
+    /* Style all buttons */
+    .stForm button {{
+        background:{HEADER_GRADIENT} !important;
+        color:white !important;
+        border:none !important;
+        border-radius:11px !important;
+        padding:14px !important;
+        font-size:16px !important;
+        font-weight:700 !important;
+        width:100% !important;
+        box-shadow:0 6px 22px rgba(80,48,157,0.35) !important;
+    }}
+
+    .stForm button:hover {{
         opacity:0.93;
-        transform:translateY(-2px);
+        transform:translateY(-1px);
     }}
 
     .footer-buttons {{
         max-width:480px;
-        margin:30px auto;
+        margin:26px auto 60px auto;
         display:flex;
-        justify-content:space-between;
-        gap:18px;
+        gap:16px;
     }}
 
-    .footer-btn {{
-        background:{header_gradient};
-        flex:1;
-        color:white;
-        text-align:center;
-        font-size:15px;
-        font-weight:700;
-        padding:12px;
-        border-radius:10px;
-        cursor:pointer;
-        box-shadow:0 6px 20px rgba(80,48,157,0.32);
+    .footer-buttons .stButton > button {{
+        background:{HEADER_GRADIENT} !important;
+        color:white !important;
+        border:none !important;
+        border-radius:11px !important;
+        padding:12px !important;
+        font-size:15px !important;
+        font-weight:700 !important;
+        width:100% !important;
+        box-shadow:0 5px 18px rgba(80,48,157,0.35) !important;
     }}
 
-    .footer-btn:hover {{
+    .footer-buttons .stButton > button:hover {{
         opacity:0.93;
+        transform:translateY(-1px);
     }}
 
-    @media(max-width:600px){{
+    @media (max-width: 600px) {{
+        .form-wrapper {{
+            margin-top:40px;
+            padding:0 14px;
+        }}
         .footer-buttons {{
             flex-direction:column;
+            padding:0 14px;
+        }}
+        .header-title {{
+            font-size:22px;
+        }}
+        .header-logo {{
+            height:46px;
         }}
     }}
-
     </style>
-    """
-    st.markdown(css_template.format(header_gradient=HEADER_GRADIENT), unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+
 
 # ==============================
-# PAGE VIEWS
+# LOGIN VIEW (ONLY UI YOU SEE NOW)
 # ==============================
-def render_login_view() -> None:
-    """Renders the conference login form and handles authentication logic."""
+def render_login_view():
     conn = get_connection()
 
     st.markdown("<div class='form-wrapper'>", unsafe_allow_html=True)
 
-    with st.form("login-form", clear_on_submit=False):
-        st.subheader("Sign In")
+    with st.form("conf-login-form"):
         email = st.text_input("Email")
         pwd = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Sign In →", type="primary", use_container_width=True)
+        submitted = st.form_submit_button("Sign In →")
 
-        if submit:
+        if submitted:
             if not email or not pwd:
                 st.error("Please enter both email and password.")
             else:
-                try:
-                    cur = conn.cursor(dictionary=True)
-                    # Using a parametrized query to prevent SQL injection
-                    cur.execute(
-                        "SELECT id, name, password_hash FROM conference_users WHERE email=%s AND is_active=1", 
-                        (email,)
-                    )
-                    user: Optional[Dict[str, Any]] = cur.fetchone()
-
-                    if user and verify_password(pwd, user['password_hash']):
-                        st.session_state['user_id'] = user['id']
-                        st.session_state['current_page'] = "conference_dashboard"
-                        st.success(f"Welcome, {user['name']}!")
-                        st.rerun()
-                    else:
-                        st.error("Invalid email or password.")
-                except Exception as e:
-                    st.error(f"An error occurred during login: {e}")
-
+                cur = conn.cursor(dictionary=True)
+                cur.execute(
+                    "SELECT id,name,password_hash FROM conference_users "
+                    "WHERE email=%s AND is_active=1",
+                    (email,),
+                )
+                user = cur.fetchone()
+                if user and verify_password(pwd, user["password_hash"]):
+                    st.session_state["user_id"] = user["id"]
+                    st.session_state["current_page"] = "conference_dashboard"
+                    st.session_state["conf_auth_view"] = "login"
+                    st.success("Login successful")
+                    st.rerun()
+                else:
+                    st.error("Invalid email or password.")
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # Footer buttons for navigation
+    # Footer actions
     st.markdown("<div class='footer-buttons'>", unsafe_allow_html=True)
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("New Registration", use_container_width=True):
-            st.session_state['conf_auth_view'] = "register"
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("New Registration"):
+            st.session_state["conf_auth_view"] = "register"
             st.rerun()
-
-    with col2:
-        if st.button("Forgot Password?", use_container_width=True):
-            st.session_state['conf_auth_view'] = "forgot"
+    with c2:
+        if st.button("Forgot Password?"):
+            st.session_state["conf_auth_view"] = "forgot"
             st.rerun()
-
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-def render_register_view() -> None:
-    """Renders the registration view (stub)."""
-    st.subheader("New Registration")
-    st.info("Registration feature coming soon.")
+# ==============================
+# SIMPLE PLACEHOLDER VIEWS
+# (You can replace with real forms later)
+# ==============================
+def render_register_view():
+    st.write("Registration screen (to be implemented).")
+    if st.button("← Back to Login"):
+        st.session_state["conf_auth_view"] = "login"
+        st.rerun()
 
 
-def render_forgot_view() -> None:
-    """Renders the password reset view (stub)."""
-    st.subheader("Password Reset")
-    st.info("Password reset feature coming soon.")
+def render_forgot_view():
+    st.write("Forgot password screen (to be implemented).")
+    if st.button("← Back to Login"):
+        st.session_state["conf_auth_view"] = "login"
+        st.rerun()
 
 
 # ==============================
-# MAIN ROUTER
+# PUBLIC ENTRYPOINT
 # ==============================
-def render_conference_login_page() -> None:
-    """Main function to render the conference authentication flow."""
+def render_conference_login_page():
     inject_css()
 
-    if 'conf_auth_view' not in st.session_state:
-        st.session_state['conf_auth_view'] = 'login'
+    # Initialize view state
+    if "conf_auth_view" not in st.session_state:
+        st.session_state["conf_auth_view"] = "login"
 
-    # Header section with logo and title
-    st.markdown(f"""
-    <div class="header">
-        <div class="header-title">Welcome Back</div>
-        <img src="{LOGO_URL}" class="logo">
-    </div>
-    """, unsafe_allow_html=True)
+    # Header
+    st.markdown(
+        f"""
+        <div class="header-bar">
+            <div class="header-title">Conference Booking Login</div>
+            <img src="{LOGO_URL}" class="header-logo">
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    # Routing logic
-    view = st.session_state['conf_auth_view']
+    view = st.session_state["conf_auth_view"]
+
     if view == "login":
         render_login_view()
     elif view == "register":
         render_register_view()
-    elif view == "forgot":
-        render_forgot_view()
     else:
-        # Default/Fallback view
-        st.session_state['conf_auth_view'] = 'login'
-        st.rerun()
-
-# Run the main function (assuming this is the entry point of the Streamlit app)
-# if __name__ == '__main__':
-#     render_conference_login_page()
+        render_forgot_view()
