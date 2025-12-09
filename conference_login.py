@@ -8,46 +8,35 @@ import json
 import traceback
 
 # =======================================================================
-# CONFIGURATION
+# CONFIG
 # =======================================================================
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
-
 LOGO_PATH = "zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
 
 # =======================================================================
-# AWS SECRET LOADER
+# SECRETS MANAGER
 # =======================================================================
 @st.cache_resource
 def get_db_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
-    try:
-        resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
-        creds = json.loads(resp["SecretString"])
-        return creds
-    except Exception as e:
-        st.error("Error fetching DB credentials")
-        st.write(traceback.format_exc())
-        st.stop()
+    resp = client.get_secret_value(SecretId=AWS_SECRET_NAME)
+    return json.loads(resp["SecretString"])
 
 
 @st.cache_resource
 def get_db_conn():
     c = get_db_credentials()
-    try:
-        conn = mysql.connector.connect(
-            host=c["DB_HOST"],
-            user=c["DB_USER"],
-            password=c["DB_PASSWORD"],
-            database=c["DB_NAME"],
-            autocommit=True
-        )
-        return conn
-    except Exception as e:
-        st.error("DB connection failed")
-        st.stop()
+    conn = mysql.connector.connect(
+        host=c["DB_HOST"],
+        user=c["DB_USER"],
+        password=c["DB_PASSWORD"],
+        database=c["DB_NAME"],
+        autocommit=True
+    )
+    return conn
 
 
 # =======================================================================
@@ -77,35 +66,33 @@ def switch_view(view):
 
 
 # =======================================================================
-# CSS - Unified Dashboard Style
+# GLOBAL CSS (DASHBOARD + HIDE TOOLBAR)
 # =======================================================================
 def inject_css():
     st.markdown(f"""
     <style>
-    :root {{
-        --gradient: {HEADER_GRADIENT};
-    }}
 
-    /* remove top gap */
+    /* ===== GLOBAL RESET ===== */
     .stApp > header {{
-        display:none;
+        display:none !important;
     }}
     .block-container {{
         padding-top:0 !important;
         margin-top:-2rem !important;
     }}
 
-    /* FULL-WIDTH HEADER */
+    /* ===== FULL-WIDTH HEADER ===== */
     .header-box {{
-        background: var(--gradient);
-        margin: 0 -2rem 2rem -2rem;
-        padding: 28px 40px;
+        background:{HEADER_GRADIENT};
+        margin:0 -2rem 2rem -2rem;
+        padding:28px 40px;
         border-radius:0 0 20px 20px;
         display:flex;
         justify-content:space-between;
         align-items:center;
         box-shadow:0 6px 20px rgba(0,0,0,0.18);
     }}
+
     .header-title {{
         font-size:32px;
         font-weight:900;
@@ -116,13 +103,13 @@ def inject_css():
         height:60px;
     }}
 
-    /* CENTER FORM */
+    /* ===== CENTER CONTAINER ===== */
     .form-container {{
         max-width:460px;
         margin:0 auto;
     }}
 
-    /* Inputs */
+    /* ===== INPUTS ===== */
     .stTextInput > div > input,
     .stSelectbox div[data-baseweb="select"] {{
         background:#f6f4ff;
@@ -132,10 +119,10 @@ def inject_css():
         font-size:15px;
     }}
 
-    /* PRIMARY BUTTON */
+    /* ===== BUTTONS ===== */
     .stForm button[kind="primary"],
     .stButton > button:not([key*="back"]) {{
-        background:var(--gradient) !important;
+        background:{HEADER_GRADIENT} !important;
         border:none !important;
         color:white !important;
         font-weight:700 !important;
@@ -146,7 +133,6 @@ def inject_css():
         box-shadow:0 3px 12px rgba(0,0,0,0.15) !important;
     }}
 
-    /* SECONDARY BUTTON */
     .stButton > button[key*="back"],
     .stButton > button[key*="forgot"],
     .stButton > button[key*="new_reg"] {{
@@ -154,11 +140,20 @@ def inject_css():
         color:#50309D !important;
         border:2px solid #50309D !important;
         border-radius:10px !important;
-        width:100%;
+        width:100% !important;
         font-weight:600 !important;
         font-size:14px !important;
         padding:9px 18px !important;
     }}
+
+    /* ===== HIDE STREAMLIT FLOATING TOOLBAR ===== */
+    [data-testid="stToolbar"] {{ display:none !important; }}
+    [data-testid="stActionButtons"] {{ display:none !important; }}
+    [data-testid="collapsedControl"] {{ display:none !important; }}
+    [data-testid="stStatusWidget"] {{ display:none !important; }}
+    [data-testid="baseMenuButton"] {{ display:none !important; }}
+    [title="View code"] {{ display:none !important; }}
+    [title="Manage app settings"] {{ display:none !important; }}
     </style>
     """, unsafe_allow_html=True)
 
@@ -180,24 +175,22 @@ def login_view():
             cur = conn.cursor(dictionary=True)
             cur.execute("SELECT id,name,password_hash FROM conference_users WHERE email=%s AND is_active=1", (email,))
             user = cur.fetchone()
-
             if user and check_password(password, user["password_hash"]):
                 st.session_state["logged_in"] = True
                 st.session_state["user_id"] = user["id"]
                 st.session_state["user_email"] = email
                 st.session_state["user_name"] = user["name"]
                 st.session_state["current_page"] = "conference_dashboard"
-                st.success("Login Successful")
                 st.rerun()
             else:
-                st.error("Invalid credentials")
+                st.error("Invalid Email or Password")
 
     st.write("")
-    col1, col2 = st.columns(2)
-    with col1:
+    c1, c2 = st.columns(2)
+    with c1:
         if st.button("New Registration", key="new_reg"):
             switch_view("register")
-    with col2:
+    with c2:
         if st.button("Forgot Password?", key="forgot"):
             switch_view("forgot")
 
@@ -209,7 +202,6 @@ def login_view():
 # =======================================================================
 def register_view():
     conn = get_db_conn()
-
     st.markdown("<div class='form-container'>", unsafe_allow_html=True)
 
     deps = ["SELECT","SALES","HR","FINANCE","DELIVERY/TECH","DIGITAL MARKETING","IT"]
@@ -219,27 +211,26 @@ def register_view():
         email = st.text_input("Email ID")
         company = st.text_input("Company")
         department = st.selectbox("Department", deps)
-        password = st.text_input("Password", type="password")
-        confirm = st.text_input("Confirm Password", type="password")
-
+        pw = st.text_input("Password", type="password")
+        cp = st.text_input("Confirm Password", type="password")
         submit = st.form_submit_button("Register")
 
         if submit:
-            if not all([name,email,company,password,confirm]):
-                st.error("All fields required")
-            elif department == "SELECT":
+            if not all([name,email,company,pw,cp]):
+                st.error("Fill all fields")
+            elif pw!=cp:
+                st.error("Password mismatch")
+            elif department=="SELECT":
                 st.error("Select department")
-            elif password != confirm:
-                st.error("Passwords don't match")
             else:
                 cur = conn.cursor()
                 cur.execute("SELECT count(*) FROM conference_users WHERE email=%s", (email,))
                 if cur.fetchone()[0]>0:
-                    st.error("Email already exists")
+                    st.error("Email exists")
                 else:
                     cur.execute(
                         "INSERT INTO conference_users(name,email,company,department,password_hash) VALUES(%s,%s,%s,%s,%s)",
-                        (name,email,company,department,hash_password(password))
+                        (name,email,company,department,hash_password(pw))
                     )
                     st.success("Registered Successfully")
                     switch_view("login")
@@ -252,11 +243,10 @@ def register_view():
 
 
 # =======================================================================
-# FORGOT PASSWORD
+# FORGOT VIEW
 # =======================================================================
 def forgot_view():
     conn = get_db_conn()
-
     st.markdown("<div class='form-container'>", unsafe_allow_html=True)
 
     if "reset_email" not in st.session_state:
@@ -272,7 +262,6 @@ def forgot_view():
                 cur.execute("SELECT id FROM conference_users WHERE email=%s", (email,))
                 if cur.fetchone():
                     st.session_state["reset_email"] = email
-                    st.success("Email Found. Reset password below.")
                     st.rerun()
                 else:
                     st.error("Email not found")
@@ -285,13 +274,12 @@ def forgot_view():
 
             if submit:
                 if pw!=cp:
-                    st.error("Password mismatch")
-                elif len(pw)<8:
-                    st.error("Min 8 chars")
+                    st.error("Mismatch")
                 else:
                     cur = conn.cursor()
-                    cur.execute("UPDATE conference_users SET password_hash=%s WHERE email=%s", (hash_password(pw), st.session_state["reset_email"]))
-                    st.success("Password Updated")
+                    cur.execute("UPDATE conference_users SET password_hash=%s WHERE email=%s",
+                                (hash_password(pw), st.session_state["reset_email"]))
+                    st.success("Updated")
                     st.session_state["reset_email"] = None
                     switch_view("login")
 
@@ -309,18 +297,20 @@ def forgot_view():
 def render_conference_login_page():
     inject_css()
 
-    view = st.session_state.get("conf_auth_view","login")
+    view = st.session_state.get("conf_auth_view", "login")
 
-    # HEADER
     logo_b64 = img_base64(LOGO_PATH)
-    logo_html = f'<img src="data:image/png;base64,{logo_b64}" class="header-logo-img">' if logo_b64 else '<div style="color:white;font-size:22px;font-weight:700">ZODOPT</div>'
+    logo_html = (
+        f'<img src="data:image/png;base64,{logo_b64}" class="header-logo-img">'
+        if logo_b64 else
+        '<div style="color:white;font-size:22px;font-weight:700">ZODOPT</div>'
+    )
 
-    if view=="login":
-        title = "CONFERENCE BOOKING - LOGIN"
-    elif view=="register":
-        title = "NEW REGISTRATION"
-    else:
-        title = "RESET PASSWORD"
+    title = (
+        "CONFERENCE BOOKING - LOGIN" if view=="login"
+        else "NEW REGISTRATION" if view=="register"
+        else "RESET PASSWORD"
+    )
 
     st.markdown(f"""
         <div class="header-box">
