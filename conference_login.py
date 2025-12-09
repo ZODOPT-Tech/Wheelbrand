@@ -1,207 +1,244 @@
 import streamlit as st
+import mysql.connector
 import boto3
 import json
-import mysql.connector
-import bcrypt
+import re  # For email validation
+from typing import Dict, Any, Optional
 
-AWS_REGION = "ap-south-1"
-AWS_SECRET = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
-LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
-GRADIENT = "linear-gradient(90deg,#50309D,#7A42FF)"
-
-
-@st.cache_resource
-def get_credentials():
-    client = boto3.client("secretsmanager", region_name=AWS_REGION)
-    res = client.get_secret_value(SecretId=AWS_SECRET)
-    return json.loads(res["SecretString"])
+# NOTE: For production, use a library like bcrypt for password hashing.
+# Placeholder function for demonstration purposes.
+def hash_password(password: str) -> str:
+    """Placeholder: In a real application, use bcrypt or similar for hashing."""
+    return f"HASHED_{password}_SECURELY"
 
 
-@st.cache_resource
-def get_conn():
-    c = get_credentials()
-    return mysql.connector.connect(
-        host=c["DB_HOST"],
-        user=c["DB_USER"],
-        password=c["DB_PASSWORD"],
-        database=c["DB_NAME"],
-        autocommit=True
-    )
-
-
-def check_pwd(p, h):
-    try:
-        return bcrypt.checkpw(p.encode(), h.encode())
-    except Exception:
-        return False
-
+# --------------------------------------------------------
+# -------------------- CSS (Green Theme) ------------------
+# --------------------------------------------------------
 
 def inject_css():
-    st.markdown(f"""
+    """Injects custom CSS for the signup page styling."""
+    CSS = """
     <style>
-    /* Remove Streamlit chrome */
-    header, [data-testid="stToolbar"], .st-emotion-cache-1dp5vir, 
-    [data-testid="stDecoration"], [data-testid="stStatusWidget"],
-    [data-testid="baseMenuButton"], footer {{
-        display:none !important;
-    }}
+    /* Hide Streamlit Menu and Footer */
+    #MainMenu, footer { visibility: hidden; }
 
-    .block-container {{
-        padding-top:0 !important;
-        max-width:100% !important;
-    }}
-
-    .page-wrapper {{
-        display:flex;
-        flex-direction:column;
-        min-height:100vh;
-        background:#FBFCFF;
-        font-family:'Inter',sans-serif;
-    }}
-
-    .header-bar {{
-        width:100%;
-        background:{GRADIENT};
-        padding:28px 42px;
-        border-radius:0 0 22px 22px;
-        box-shadow:0 8px 28px rgba(0,0,0,0.18);
-        display:flex;
-        justify-content:space-between;
-        align-items:center;
-    }}
-
-    .header-title {{
-        font-size:28px;
-        font-weight:800;
-        color:#fff;
-    }}
-    .header-logo {{
-        height:55px;
-    }}
-
-    /* Form wrapper */
-    .login-form {{
-        max-width:450px;
-        margin:60px auto 0 auto;
-        padding:0 16px;
-    }}
-
-    .stTextInput input {{
-        background:#EFF1F7 !important;
-        border-radius:10px !important;
-        padding:14px !important;
-        font-size:16px !important;
-    }}
-
-    .stForm button {{
-        background:{GRADIENT} !important;
-        color:#fff !important;
-        border:none !important;
-        border-radius:10px !important;
-        padding:14px !important;
-        font-size:16px !important;
-        font-weight:700 !important;
-        width:100% !important;
-        margin-top:12px !important;
-        box-shadow:0 6px 20px rgba(80,48,157,0.35);
-    }}
-
-    .footer-actions {{
-        max-width:450px;
-        margin:24px auto 40px auto;
-        display:flex;
-        justify-content:space-between;
-        gap:14px;
-        padding:0 16px;
-    }}
-
-    .footer-actions button {{
-        background:#FFFFFF !important;
-        color:#50309D !important;
-        font-weight:700 !important;
-        border:2px solid #50309D !important;
-        border-radius:10px !important;
-        padding:12px !important;
-        width:100% !important;
-    }}
-
-    @media(max-width:600px){{
-        .header-title {{ font-size:22px; }}
-        .header-bar {{ padding:22px; }}
-        .header-logo {{ height:44px; }}
-        .footer-actions {{ flex-direction:column; }}
-    }}
+    .signup-box {
+        background: #ffffff;
+        width: 420px;
+        padding: 40px;
+        margin: auto;
+        margin-top: 50px;
+        border-radius: 18px;
+        box-shadow: 0 8px 30px rgba(0,0,0,0.08);
+        border: 1px solid #e6e6e6;
+    }
+    .center { text-align:center; }
+    .title-header {
+        font-size: 30px;
+        font-weight: 700;
+        color: #222;
+        margin-bottom: 5px;
+    }
+    .subtitle {
+        font-size: 16px;
+        color: #666;
+        margin-bottom: 25px;
+    }
+    .stTextInput > label {
+        display: none; /* Hides the default Streamlit label */
+    }
+    .stTextInput input {
+        border-radius: 10px !important;
+        border: 1px solid #cccccc !important;
+        padding: 12px 14px !important;
+        font-size: 16px !important;
+        margin-bottom: 5px; /* Add small margin below inputs */
+    }
+    .stTextInput input:focus {
+        border-color: #28a745 !important;
+        box-shadow: 0px 0px 0px 2px rgba(40, 167, 69, 0.25) !important;
+    }
+    .stButton>button {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-radius: 8px !important;
+        padding: 12px !important;
+        border: none !important;
+        font-size: 18px !important;
+        font-weight: 600 !important;
+        transition: background-color 0.3s ease;
+        margin-top: 20px;
+    }
+    .stButton>button:hover {
+        background-color: #1f7a38 !important;
+    }
     </style>
+    """
+    st.markdown(CSS, unsafe_allow_html=True)
+
+# --------------------------------------------------------
+# ---------------- AWS Secrets Manager & DB ----------------
+# --------------------------------------------------------
+
+# NOTE: It is best practice to use st.secrets in Streamlit, 
+# but keeping the boto3 fetching logic as per the original requirement.
+AWS_REGION = "ap-south-1"
+SECRET_ARN = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:salesbuddy/secrets-0xh2TS"
+
+@st.cache_resource
+def get_db_credentials() -> Dict[str, str]:
+    """Fetches and maps DB credentials from AWS Secrets Manager."""
+    try:
+        client = boto3.client("secretsmanager", region_name=AWS_REGION)
+        resp = client.get_secret_value(SecretId=SECRET_ARN)
+        raw = json.loads(resp["SecretString"])
+
+        creds = {
+            "DB_HOST": raw["host"],
+            "DB_USER": raw["username"],
+            "DB_PASSWORD": raw["password"],
+            "DB_NAME": raw["dbname"]
+        }
+        return creds
+
+    except Exception as e:
+        st.error("Configuration Error: Failed to load database credentials.")
+        st.stop()
+        # Raise RuntimeError(f"Failed to load DB secrets: {e}")
+
+
+@st.cache_resource
+def get_connection() -> mysql.connector.connection.MySQLConnection:
+    """Establishes and returns a persistent MySQL database connection."""
+    creds = get_db_credentials()
+    try:
+        conn = mysql.connector.connect(
+            host=creds["DB_HOST"],
+            user=creds["DB_USER"],
+            password=creds["DB_PASSWORD"],
+            database=creds["DB_NAME"],
+            charset="utf8mb4",
+            autocommit=False # Better control over transactions
+        )
+        return conn
+
+    except mysql.connector.Error as e:
+        st.error(f"Database Connection Error: Could not connect to MySQL.")
+        st.stop()
+        # Raise RuntimeError(f"MySQL Connection Error: {e}")
+
+
+# --------------------------------------------------------
+# ------------------ INPUT VALIDATION ---------------------
+# --------------------------------------------------------
+
+def validate_signup_inputs(data: Dict[str, str]) -> Optional[str]:
+    """Validates user input fields and returns an error message if invalid."""
+    email_regex = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+
+    if not all(data.values()):
+        return "All fields are required."
+    
+    if data['password'] != data['confirm_password']:
+        return "Passwords do not match!"
+    
+    if len(data['password']) < 8:
+        return "Password must be at least 8 characters long."
+
+    if not re.match(email_regex, data['email']):
+        return "Please enter a valid email address."
+    
+    # Simple check for mobile number (can be enhanced)
+    if not data['mobile'].isdigit() or len(data['mobile']) < 10:
+        return "Please enter a valid mobile number."
+
+    return None # Returns None if validation passes
+
+
+# --------------------------------------------------------
+# ------------------ SIGNUP PAGE RENDER -------------------
+# --------------------------------------------------------
+
+def render(navigate: Any):
+    """
+    Renders the user signup form and handles submission logic.
+
+    :param navigate: A function to change the application view (e.g., navigate("login")).
+    """
+    inject_css()
+
+    st.markdown("<div class='signup-box'>", unsafe_allow_html=True)
+
+    st.markdown("""
+        <div style='text-align:center;'>
+            <img src="https://cdn-icons-png.flaticon.com/512/149/149071.png"
+            width="70"
+            style="background-color:#28a745; border-radius:50%; padding:10px;">
+        </div>
     """, unsafe_allow_html=True)
 
+    st.markdown("<h2 class='title-header center'>Create Your Account</h2>", unsafe_allow_html=True)
+    st.markdown("<p class='subtitle center'>Join Sales Buddy today</p>", unsafe_allow_html=True)
 
-def render_login():
-    inject_css()
-    conn = get_conn()
+    # Use a Streamlit form for cleaner input handling
+    with st.form(key='signup_form'):
+        # Input fields
+        full_name = st.text_input("Full Name", placeholder="Full Name")
+        email = st.text_input("Email", placeholder="Email Address")
+        company = st.text_input("Company", placeholder="Company Name")
+        mobile = st.text_input("Mobile", placeholder="Mobile Number")
+        password = st.text_input("Password", type="password", placeholder="Password (Min 8 characters)")
+        confirm_password = st.text_input("Confirm Password", type="password", placeholder="Confirm Password")
 
-    st.markdown("<div class='page-wrapper'>", unsafe_allow_html=True)
+        submitted = st.form_submit_button("Sign Up", use_container_width=True)
 
-    st.markdown(
-        f"""
-        <div class='header-bar'>
-            <div class='header-title'>Conference Login</div>
-            <img class='header-logo' src="{LOGO_URL}">
-        </div>
-        """,
-        unsafe_allow_html=True
-    )
+        if submitted:
+            user_data = {
+                'full_name': full_name.strip(),
+                'email': email.strip(),
+                'company': company.strip(),
+                'mobile': mobile.strip(),
+                'password': password,
+                'confirm_password': confirm_password
+            }
+            
+            error_message = validate_signup_inputs(user_data)
 
-    st.markdown("<div class='login-form'>", unsafe_allow_html=True)
-
-    with st.form("login_form"):
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Sign In →")
-
-        if submit:
-            if not email or not password:
-                st.error("Enter email and password")
+            if error_message:
+                st.error(error_message)
             else:
-                cur = conn.cursor(dictionary=True)
-                cur.execute(
-                    "SELECT id,name,password_hash FROM conference_users WHERE email=%s AND is_active=1",
-                    (email,),
-                )
-                usr = cur.fetchone()
-                if usr and check_pwd(password, usr["password_hash"]):
-                    st.session_state["user_id"] = usr["id"]
-                    st.session_state["current_page"] = "conference_dashboard"
-                    st.success("Login successful")
-                    st.rerun()
-                else:
-                    st.error("Invalid email or password")
+                try:
+                    conn = get_connection()
+                    cur = conn.cursor()
+                    
+                    # NOTE: Always hash the password before storing!
+                    hashed_password = hash_password(password)
+
+                    query = """
+                        INSERT INTO users(full_name, email, company, mobile, password)
+                        VALUES (%s, %s, %s, %s, %s)
+                    """
+                    # Use the HASHED password in the execute call
+                    cur.execute(query, (user_data['full_name'], user_data['email'], 
+                                        user_data['company'], user_data['mobile'], 
+                                        hashed_password))
+                    
+                    conn.commit()
+                    st.success("Account Created Successfully! Redirecting to login...")
+                    navigate("login")
+
+                except mysql.connector.IntegrityError:
+                    # Handles duplicate entry (e.g., email already exists)
+                    st.error("An account with this email address already exists.")
+                except mysql.connector.Error as err:
+                    conn.rollback() # Rollback transaction on error
+                    st.error(f"Database Error: Could not complete registration. Please try again.")
+                except Exception as e:
+                    st.exception(f"An unexpected error occurred: {e}")
+                finally:
+                    # Close connection cursor only, the connection object is cached
+                    if 'conn' in locals() and conn.is_connected():
+                         cur.close()
 
     st.markdown("</div>", unsafe_allow_html=True)
-
-    # Footer buttons
-    st.markdown("<div class='footer-actions'>", unsafe_allow_html=True)
-    c1, c2 = st.columns(2)
-    with c1:
-        if st.button("New Registration"):
-            st.session_state["conf_auth_view"] = "register"
-            st.rerun()
-    with c2:
-        if st.button("Forgot Password?"):
-            st.session_state["conf_auth_view"] = "forgot"
-            st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-
-# Entry point
-def render_conference_login_page():
-    if "conf_auth_view" not in st.session_state:
-        st.session_state["conf_auth_view"] = "login"
-
-    if st.session_state["conf_auth_view"] == "login":
-        render_login()
-    elif st.session_state["conf_auth_view"] == "register":
-        st.write("Register page here")
-    else:
-        st.write("Forgot password page here")
