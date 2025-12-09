@@ -95,11 +95,10 @@ def render_login_view():
     
     # Start the form inside the card container
     with st.container(border=False):
-        # We need a custom container to apply the card styling, as st.form doesn't accept the 'container' styling readily.
         st.markdown('<div class="auth-card-wrapper">', unsafe_allow_html=True)
         
         with st.form("conf_login_form"):
-            st.markdown("### Sign In to Your Account")
+            # REMOVED: st.markdown("### Sign In to Your Account")
             email = st.text_input("Email ID", key="conf_login_email")
             password = st.text_input("Password", type="password", key="conf_login_password")
             
@@ -155,7 +154,7 @@ def render_register_view():
         st.markdown('<div class="auth-card-wrapper">', unsafe_allow_html=True)
         
         with st.form("conf_register_form"):
-            st.markdown("### Create New Account")
+            # REMOVED: st.markdown("### Create New Account")
             name = st.text_input("Name", key="reg_name")
             email = st.text_input("Email ID", key="reg_email")
             company = st.text_input("Company", key="reg_company")
@@ -224,7 +223,7 @@ def render_forgot_password_view():
         st.markdown('<div class="auth-card-wrapper">', unsafe_allow_html=True)
 
         with st.form("forgot_pass_email_form", clear_on_submit=False):
-            st.markdown("### Find Your Account")
+            # REMOVED: st.markdown("### Find Your Account")
             email_to_check = st.text_input("Enter your registered Email ID", key="forgot_email_input", value=st.session_state.get('reset_email', ''))
             
             if st.form_submit_button("Search Account", type="primary"):
@@ -357,10 +356,10 @@ def render_conference_login_page():
     .auth-card-wrapper {{
         background: #FFFFFF;
         border-radius: 12px;
-        box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1); /* Subtle shadow for 3D look */
-        padding: 30px 40px; /* Internal padding */
-        width: 100%; /* Take full width of its column */
-        max-width: 450px; /* Keeps the form from getting too wide on large screens */
+        box-shadow: 0 6px 15px rgba(0, 0, 0, 0.1); 
+        padding: 30px 40px; 
+        width: 100%; 
+        max-width: 450px; 
         margin-bottom: 20px;
     }}
     
@@ -404,6 +403,11 @@ def render_conference_login_page():
     }}
     
     /* Input and Button Styling (Kept the same) */
+    .stTextInput label, .stSelectbox label {{
+        font-weight: 600;
+        color: #333;
+    }}
+    
     .stTextInput input,
     .stSelectbox div[data-baseweb="select"] {{
         background-color: #f0f2f6;
@@ -432,20 +436,18 @@ def render_conference_login_page():
     /* Secondary (Navigation) Buttons */
     .stButton > button[key*="conf_new_reg_btn"],
     .stButton > button[key*="conf_forgot_pass_btn"] {{
-        /* Use the secondary styling (white/grey) for navigational buttons */
         background: #FFFFFF !important; 
         color: #555555 !important;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
         border: 1px solid #E0E0E0 !important;
         font-weight: 500 !important;
-        padding: 12px 15px !important; /* Slightly larger padding */
+        padding: 12px 15px !important; 
         margin-top: 10px !important; 
         font-size: 14px !important;
         width: 100%;
         border-radius: 8px !important;
     }}
     .stButton > button[key*="back_login_btn"] {{
-        /* Back to login button styling */
         background: #FFFFFF !important; 
         color: #555555 !important;
         box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
@@ -479,7 +481,6 @@ def render_conference_login_page():
     )
 
     # 3. Dynamic View Rendering (The central logic)
-    # The content is now centered using the CSS on .block-container
     if view == 'login':
         render_login_view()
     elif view == 'register':
