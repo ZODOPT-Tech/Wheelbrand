@@ -7,7 +7,7 @@ from datetime import datetime
 
 
 # ==============================
-# AWS + DB CONFIG
+# CONFIG
 # ==============================
 AWS_REGION = "ap-south-1"
 AWS_SECRET = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
@@ -16,6 +16,9 @@ LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images
 GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
 
+# ==============================
+# DB + SECRETS
+# ==============================
 @st.cache_resource
 def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
@@ -35,20 +38,20 @@ def get_conn():
     )
 
 
-# ==============================
-# DB HELPERS
-# ==============================
-def get_company_user(user_id):
+# Cache DB queries for 60s to reduce load
+@st.cache_data(ttl=60)
+def get_company_user(user_id: int):
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
     cur.execute(
-        "SELECT name, company FROM conference_users WHERE id=%s LIMIT 1;",
+        "SELECT name, company FROM conference_users WHERE id=%s LIMIT 1",
         (user_id,)
     )
     return cur.fetchone()
 
 
-def get_company_bookings(company):
+@st.cache_data(ttl=60)
+def get_company_bookings(company: str):
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
     cur.execute("""
@@ -103,30 +106,6 @@ def inject_css():
         height:60px;
     }}
 
-    .btn-primary {{
-        background:{GRADIENT};
-        color:white;
-        font-weight:700;
-        border:none;
-        padding:10px 26px;
-        border-radius:9px;
-        width:230px;
-        font-size:16px;
-    }}
-    .btn-outline {{
-        background:white;
-        font-weight:700;
-        color:#50309D;
-        border:2px solid #50309D;
-        padding:10px 26px;
-        border-radius:9px;
-        width:120px;
-        font-size:15px;
-    }}
-    .btn-outline:hover {{
-        background:#EFE7FF;
-    }}
-
     .summary-card {{
         background:white;
         padding:16px 22px;
@@ -165,10 +144,24 @@ def render_dashboard():
     user = get_company_user(user_id)
     company = user["company"]
 
-    # Load bookings
-    bookings = get_company_bookings(company)
+    # Load only today's bookings
+    all_bookings = get_company_bookings(company)
+    today = datetime.today().date()
 
-    # ---------------- HEADER
+    todays_bookings = [
+        b for b in all_bookings
+        if b["start_time"].date() == today
+    ]
+
+    # By department today
+    dept_count = {}
+    for b in todays_bookings:
+        dept = b["department"]
+        dept_count[dept] = dept_count.get(dept, 0) + 1
+
+    # ======================
+    # HEADER
+    # ======================
     st.markdown(
         f"""
         <div class="header-box">
@@ -182,7 +175,10 @@ def render_dashboard():
         unsafe_allow_html=True,
     )
 
-    # ---------------- ACTION BAR (same line)
+
+    # ======================
+    # ACTION BAR
+    # ======================
     left_action, right_action = st.columns([1, 1])
 
     with left_action:
@@ -196,69 +192,62 @@ def render_dashboard():
             st.session_state["current_page"] = "conference_login"
             st.rerun()
 
-    # spacing
     st.write("")
 
-    # ---------------- DASHBOARD BODY
+    # ======================
+    # BODY LAYOUT
+    # ======================
     col_left, col_right = st.columns([2, 1])
 
-    # ---- SUMMARY (RIGHT FIRST as per request)
+    # ---- SUMMARY
     with col_right:
-        st.subheader("Summary")
-
-        today = datetime.today().date()
-        today_count = sum(1 for b in bookings if b["start_time"].date() == today)
+        st.subheader("Summary (Today)")
 
         st.markdown(
             f"""
             <div class="summary-card">
                 <div class="summary-title">Today's Bookings</div>
-                <div class="summary-value">{today_count}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        st.markdown(
-            f"""
-            <div class="summary-card">
-                <div class="summary-title">Total Bookings</div>
-                <div class="summary-value">{len(bookings)}</div>
+                <div class="summary-value">{len(todays_bookings)}</div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
         st.subheader("By Department")
-        dept_count = {}
-        for b in bookings:
-            dept_count[b["department"]] = dept_count.get(b["department"], 0) + 1
 
-        for dept, count in dept_count.items():
-            st.markdown(
-                f"""
-                <div class="summary-card">
-                    <div class="summary-title">{dept}</div>
-                    <div class="summary-value">{count}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-    # ---- BOOKING LIST
-    with col_left:
-        st.subheader("Booking List")
-        if not bookings:
-            st.info("No bookings found.")
+        if not dept_count:
+            st.info("No bookings today.")
         else:
-            df = pd.DataFrame(bookings)
+            for dept, count in dept_count.items():
+                st.markdown(
+                    f"""
+                    <div class="summary-card">
+                        <div class="summary-title">{dept}</div>
+                        <div class="summary-value">{count}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+    # ======================
+    # BOOKING TABLE
+    # ======================
+    with col_left:
+        st.subheader("Today's Booking List")
+
+        if not todays_bookings:
+            st.info("No bookings today.")
+        else:
+            df = pd.DataFrame(todays_bookings)
             df["Date"] = pd.to_datetime(df["start_time"]).dt.date
             df["Time"] = (
                 pd.to_datetime(df["start_time"]).dt.strftime("%I:%M %p")
                 + " - "
                 + pd.to_datetime(df["end_time"]).dt.strftime("%I:%M %p")
             )
+
             df = df[["booked_by", "department", "Date", "Time", "purpose"]]
-            df.index = df.index + 1  # start at 1
+            df.index = df.index + 1
 
             st.dataframe(df, use_container_width=True, height=480)
+
