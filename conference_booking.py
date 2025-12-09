@@ -50,9 +50,10 @@ def get_my_bookings(uid):
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
     cur.execute("""
-        SELECT * FROM conference_bookings
+        SELECT *
+        FROM conference_bookings
         WHERE user_id=%s
-        ORDER BY booking_date DESC,start_time ASC
+        ORDER BY booking_date DESC, start_time ASC
     """, (uid,))
     return cur.fetchall()
 
@@ -62,15 +63,18 @@ def save_booking(uid, d, s, e, dept, purpose):
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO conference_bookings
-        (user_id,booking_date,start_time,end_time,department,purpose)
-        VALUES (%s,%s,%s,%s,%s,%s)
+            (user_id, booking_date, start_time, end_time, department, purpose)
+        VALUES (%s, %s, %s, %s, %s, %s)
     """, (uid, d, s, e, dept, purpose))
 
 
 def delete_booking(bid, uid):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("DELETE FROM conference_bookings WHERE id=%s AND user_id=%s", (bid, uid))
+    cur.execute("""
+        DELETE FROM conference_bookings
+        WHERE id=%s AND user_id=%s
+    """, (bid, uid))
 
 
 def update_booking_time(bid, uid, s, e):
@@ -78,7 +82,7 @@ def update_booking_time(bid, uid, s, e):
     cur = conn.cursor()
     cur.execute("""
         UPDATE conference_bookings 
-        SET start_time=%s,end_time=%s
+        SET start_time=%s, end_time=%s
         WHERE id=%s AND user_id=%s
     """, (s, e, bid, uid))
 
@@ -186,16 +190,23 @@ def render_booking_page():
     # ================= LEFT - CALENDAR =================
     with col_left:
         rows = get_my_bookings(uid)
-        events = prepare_events(rows)
+
+        # 🔥 filter to ONLY TODAY
+        today_rows = [
+            b for b in rows
+            if b["booking_date"] == date.today()
+        ]
+
+        events = prepare_events(today_rows)
 
         calendar(
             events=events,
             options={
-                "initialView":"timeGridWeek",
-                "slotMinTime":"09:30:00",
-                "slotMaxTime":"19:00:00",
-                "slotDuration":"00:30:00",
-                "height":700,
+                "initialView": "timeGridDay",   # 👈 Force today's view
+                "slotMinTime": "09:30:00",
+                "slotMaxTime": "19:00:00",
+                "slotDuration": "00:30:00",
+                "height": 700,
             }
         )
 
@@ -208,7 +219,9 @@ def render_booking_page():
 
         # -------- BOOKING FORM --------
         st.subheader("Book a Slot")
-        sel_d = st.date_input("Date", date.today())
+
+        # 👇 Only today allowed
+        sel_d = date.today()
         opts = generate_slots(sel_d)
 
         with st.form("book"):
@@ -229,13 +242,12 @@ def render_booking_page():
                     st.rerun()
 
         # -------- SLIDING PANEL --------
-        with st.expander("Manage Your Bookings", expanded=True):
+        with st.expander("Today's Bookings", expanded=True):
 
-            rows = get_my_bookings(uid)
-            if not rows:
-                st.info("No bookings yet")
+            if not today_rows:
+                st.info("No bookings today")
             else:
-                for b in rows:
+                for b in today_rows:
                     # Each booking item
                     st.markdown("<div class='booking-item'>", unsafe_allow_html=True)
 
