@@ -350,9 +350,41 @@ def render_conference_login_page():
         --header-box-shadow: 0 4px 10px rgba(80, 48, 157, 0.4);
     }}
 
-    /* Streamlit layout reset */
-    html, body, .stApp .main {{ padding-top: 0px !important; margin-top: 0px !important; }}
-    .stApp > header {{ visibility: hidden; }}
+    /* === REFINED CSS TO REMOVE ALL GAPS ABOVE THE HEADER === */
+    /* Target the main body and stApp container to remove any default top margins/padding */
+    html, body {{
+        margin: 0 !important;
+        padding: 0 !important;
+        height: 100%;
+        overflow: auto; /* Prevent double scrollbars if content is long */
+    }}
+    
+    /* Hide Streamlit's default header and set the main content area to align flush with the top */
+    .stApp > header {{ visibility: hidden; height: 0; }}
+    
+    /* Target the container that holds all Streamlit content (the "main" content area) */
+    .stApp .main {{
+        padding-top: 0px !important; 
+        margin-top: 0px !important;
+        min-height: 100vh;
+    }}
+
+    /* Target the block that contains the three "bots" elements, forcing it to be hidden and flush */
+    div[data-testid="stStatusWidget"] {{
+        visibility: hidden;
+        height: 0px !important;
+        margin-top: 0px !important;
+        margin-bottom: 0px !important;
+        overflow: hidden;
+    }}
+    
+    /* The block that wraps the main content and has default padding */
+    .stApp .main .block-container {{
+        padding-top: 0rem !important;
+        /* The horizontal padding (left/right) is kept at 1rem for the main content area to look good */
+    }}
+    /* === END OF REFINED GAP REMOVAL CSS === */
+    
     
     /* Header Box - Full Width Design */
     .header-box {{
@@ -365,10 +397,14 @@ def render_conference_login_page():
         display: flex;
         justify-content: space-between;
         align-items: center;
-        /* Force full width in Streamlit's main content area */
-        width: calc(100% + 4rem); 
-        margin-left: -2rem; 
-        margin-right: -2rem; 
+        /* Force full width across the entire page (viewport) */
+        width: 100vw;
+        /* Use negative margins to pull the container into the side gaps */
+        position: relative; /* Position relative to the main block-container */
+        left: 50%;
+        right: 50%;
+        margin-left: -50vw;
+        margin-right: -50vw;
     }}
     .header-title {{
         font-family: 'Inter', sans-serif; 
@@ -383,6 +419,7 @@ def render_conference_login_page():
         font-weight: bold;
         color: #FFFFFF;
     }}
+    
     /* Streamlit selectbox styling */
     .stSelectbox div[data-baseweb="select"] {{
         background-color: #f0f2f6;
@@ -455,6 +492,9 @@ def render_conference_login_page():
 
 
     # 2. HEADER (Dynamic Title & Logo)
+    # st.markdown is placed after the CSS, inside the main content block.
+    # The negative margin and full width (100vw) on .header-box ensure it stretches
+    # to the screen edges, regardless of Streamlit's internal column layout.
     logo_base64 = _get_image_base64(LOGO_PATH)
     if logo_base64:
         logo_html = f'<img src="data:image/png;base64,{logo_base64}" class="header-logo-img" style="height: 50px; border-radius: 8px;">'
@@ -479,4 +519,24 @@ def render_conference_login_page():
         render_register_view()
     elif view == 'forgot_password':
         render_forgot_password_view()
-    
+        
+# -----------------------------------------------------
+# --- APP ENTRY POINT ---
+# -----------------------------------------------------
+
+if __name__ == '__main__':
+    # Streamlit configuration to use the entire screen width
+    st.set_page_config(layout="wide")
+
+    # In a real app, you would check st.session_state['logged_in'] here
+    # and either show the dashboard or the login page.
+    # Assuming the user is NOT logged in for this login page file.
+    if st.session_state.get('logged_in'):
+        # Placeholder for the main app content if already logged in
+        st.title("Conference Dashboard (Logged In)")
+        st.write(f"Welcome back, {st.session_state.get('user_name')}!")
+        if st.button("Logout"):
+            st.session_state.clear()
+            st.rerun()
+    else:
+        render_conference_login_page()
