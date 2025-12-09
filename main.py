@@ -18,7 +18,8 @@ import conference_booking
 st.set_page_config(
     page_title="ZODOPT MEETEASE", 
     layout="wide",
-    # Initializing session state variables directly in set_page_config can sometimes be faster
+    # Set the browser tab icon (favicon) using a URL 
+    page_icon="https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png", 
     initial_sidebar_state="collapsed" 
 )
 
