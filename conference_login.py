@@ -37,7 +37,7 @@ def get_connection():
 
 
 # ==============================
-# PASSWORD SECURITY
+# PASSWORD VERIFY
 # ==============================
 def verify_password(input_password, db_hash):
     return bcrypt.checkpw(input_password.encode(), db_hash.encode())
@@ -49,178 +49,169 @@ def verify_password(input_password, db_hash):
 def inject_css():
     st.markdown(f"""
     <style>
+    
+    /* Hide Streamlit chrome */
+    header[data-testid="stHeader"],
+    [data-testid="stToolbar"],
+    [data-testid="baseMenuButton"],
+    [data-testid="helpButton"],
+    [data-testid="collapsedControl"] {{
+        display: none !important;
+    }}
 
-    /* Layout reset */
     .block-container {{
-        padding: 0 !important;
-        max-width: 100% !important;
+        padding-top:0 !important;
+        max-width:100% !important;
     }}
 
     body {{
-        background: #F6F8FF;
-        font-family: 'Inter', sans-serif;
+        background:#FBFCFF;
+        font-family:'Inter',sans-serif;
     }}
 
-    /* Remove Streamlit UI */
-    header[data-testid="stHeader"],
-    [data-testid="stToolbar"],
-    [data-testid="helpButton"],
-    [data-testid="collapsedControl"],
-    [data-testid="baseMenuButton"] {{
-        display:none !important;
-    }}
-
-    /* Header section */
-    .header-box {{
-        width: 100%;
+    .header {{
+        width:100%;
         background:{HEADER_GRADIENT};
-        padding: 30px 42px;
+        padding:40px 60px;
+        border-radius:0 0 30px 30px;
         display:flex;
         justify-content:space-between;
         align-items:center;
-        border-radius:0 0 26px 26px;
-        box-shadow:0 6px 22px rgba(0,0,0,0.18);
+        box-shadow:0 10px 35px rgba(0,0,0,0.12);
     }}
 
     .header-title {{
+        font-size:34px;
+        font-weight:800;
         color:white;
-        font-size:32px;
-        font-weight:900;
     }}
 
     .logo {{
-        height:55px;
+        height:60px;
     }}
 
-    /* Login card box */
-    .login-card {{
-        width:440px;
-        margin:70px auto;
-        background:white;
-        border-radius:18px;
-        padding:34px 30px;
-        box-shadow:0 4px 18px rgba(0,0,0,0.08);
+    .form-wrapper {{
+        max-width:480px;
+        margin:60px auto;
+        text-align:center;
     }}
 
-    .stTextInput > div > div > input {{
-        background:#F2F4FA;
-        padding:14px;
-        border-radius:10px;
-        font-size:16px;
+    .stTextInput > div > div input {{
+        font-size:16px !important;
+        padding:14px !important;
+        border-radius:10px !important;
+        background:#F2F4FA !important;
     }}
 
-    /* Main button */
+    /* SIGN IN BUTTON */
     .primary-btn {{
         background:{HEADER_GRADIENT} !important;
         color:white !important;
-        font-weight:700 !important;
-        border:none !important;
         padding:14px !important;
+        font-size:17px !important;
+        font-weight:700 !important;
         width:100%;
-        border-radius:12px !important;
-        font-size:16px !important;
-        margin-top:10px !important;
-        box-shadow:0 6px 22px rgba(80,48,157,0.4) !important;
+        border-radius:11px !important;
+        border:none !important;
+        box-shadow:0 6px 22px rgba(80,48,157,0.35) !important;
+        margin-top:12px !important;
     }}
 
     .primary-btn:hover {{
         opacity:0.93;
-        transform:translateY(-1px);
+        transform:translateY(-2px);
     }}
 
-    /* Footer buttons */
-    .footer-box {{
-        width:440px;
-        margin:0 auto 70px auto;
+    .footer-buttons {{
+        max-width:480px;
+        margin:30px auto;
         display:flex;
         justify-content:space-between;
-        gap:16px;
+        gap:18px;
     }}
 
     .footer-btn {{
         background:{HEADER_GRADIENT};
+        flex:1;
         color:white;
-        width:50%;
-        padding:12px;
-        border-radius:12px;
         text-align:center;
+        font-size:15px;
         font-weight:700;
-        box-shadow:0 6px 20px rgba(80,48,157,0.4);
+        padding:12px;
+        border-radius:10px;
+        cursor:pointer;
+        box-shadow:0 6px 20px rgba(80,48,157,0.32);
     }}
 
-    @media(max-width:600px) {{
-        .login-card {{
-            width:92%;
-        }}
-        .footer-box {{
-            width:92%;
+    .footer-btn:hover {{
+        opacity:0.93;
+    }}
+
+    @media(max-width:600px){
+        .footer-buttons {{
             flex-direction:column;
         }}
-        .footer-btn {{
-            width:100%;
-        }}
-        .header-title {{
-            font-size:24px;
-        }}
-    }}
+    }
 
     </style>
     """, unsafe_allow_html=True)
 
 
 # ==============================
-# LOGIN FLOW
+# LOGIN VIEW
 # ==============================
 def render_login_view():
     conn = get_connection()
 
-    with st.container():
-        st.markdown("<div class='login-card'>", unsafe_allow_html=True)
-        with st.form("login"):
-            email = st.text_input("Email")
-            pwd = st.text_input("Password", type="password")
+    st.markdown("<div class='form-wrapper'>", unsafe_allow_html=True)
 
-            if st.form_submit_button("Sign In →", type="primary", use_container_width=True):
-                if not email or not pwd:
-                    st.error("Enter email and password")
+    with st.form("login-form"):
+        email = st.text_input("Email")
+        pwd = st.text_input("Password", type="password")
+        submit = st.form_submit_button("Sign In →", type="primary", use_container_width=True)
+
+        if submit:
+            if not email or not pwd:
+                st.error("Enter login details")
+            else:
+                cur = conn.cursor(dictionary=True)
+                cur.execute("SELECT id,name,password_hash FROM conference_users WHERE email=%s AND is_active=1", (email,))
+                user = cur.fetchone()
+
+                if user and verify_password(pwd, user['password_hash']):
+                    st.session_state['user_id'] = user['id']
+                    st.session_state['current_page'] = "conference_dashboard"
+                    st.rerun()
                 else:
-                    cur = conn.cursor(dictionary=True)
-                    cur.execute("SELECT id,name,password_hash FROM conference_users WHERE email=%s AND is_active=1", (email,))
-                    user = cur.fetchone()
+                    st.error("Invalid email/password")
 
-                    if user and verify_password(pwd, user['password_hash']):
-                        st.session_state['user_id'] = user['id']
-                        st.session_state['current_page'] = "conference_dashboard"
-                        st.rerun()
-                    else:
-                        st.error("Invalid login details")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    # Footer buttons
-    st.markdown("<div class='footer-box'>", unsafe_allow_html=True)
+    st.markdown("<div class='footer-buttons'>", unsafe_allow_html=True)
     col1, col2 = st.columns(2)
+
     with col1:
         if st.button("New Registration", use_container_width=True):
-            st.session_state['conf_auth_view'] = 'register'
+            st.session_state['conf_auth_view'] = "register"
             st.rerun()
+
     with col2:
         if st.button("Forgot Password?", use_container_width=True):
-            st.session_state['conf_auth_view'] = 'forgot_password'
+            st.session_state['conf_auth_view'] = "forgot"
             st.rerun()
+
     st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ==============================
-# PLACEHOLDER PAGES
-# (You can style later)
+# STUB VIEWS
 # ==============================
 def render_register_view():
-    st.write("Registration Page")
+    st.write("Registration Coming Soon")
 
 
 def render_forgot_view():
-    st.write("Forgot Password Page")
+    st.write("Reset Coming Soon")
 
 
 # ==============================
@@ -232,10 +223,9 @@ def render_conference_login_page():
     if 'conf_auth_view' not in st.session_state:
         st.session_state['conf_auth_view'] = 'login'
 
-    # Header
     st.markdown(f"""
-    <div class='header-box'>
-        <div class='header-title'>Conference Login</div>
+    <div class="header">
+        <div class="header-title">Welcome Back</div>
         <img src="{LOGO_URL}" class="logo">
     </div>
     """, unsafe_allow_html=True)
