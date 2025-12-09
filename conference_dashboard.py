@@ -6,9 +6,9 @@ import pandas as pd
 from datetime import datetime
 
 
-# ==============================
+# ===================================
 # CONFIG
-# ==============================
+# ===================================
 AWS_REGION = "ap-south-1"
 AWS_SECRET = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
@@ -16,9 +16,9 @@ LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images
 GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
 
-# ==============================
+# ===================================
 # DB + SECRETS
-# ==============================
+# ===================================
 @st.cache_resource
 def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
@@ -28,6 +28,7 @@ def get_credentials():
 
 @st.cache_resource
 def get_conn():
+    """Persistent DB connection"""
     c = get_credentials()
     return mysql.connector.connect(
         host=c["DB_HOST"],
@@ -38,9 +39,8 @@ def get_conn():
     )
 
 
-# Cache DB queries for 60s to reduce load
-@st.cache_data(ttl=60)
 def get_company_user(user_id: int):
+    """No caching → reflects live changes"""
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
     cur.execute(
@@ -50,8 +50,8 @@ def get_company_user(user_id: int):
     return cur.fetchone()
 
 
-@st.cache_data(ttl=60)
 def get_company_bookings(company: str):
+    """No caching → reflects live bookings"""
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
     cur.execute("""
@@ -69,9 +69,9 @@ def get_company_bookings(company: str):
     return cur.fetchall()
 
 
-# ==============================
-# UI CSS
-# ==============================
+# ===================================
+# CUSTOM CSS
+# ===================================
 def inject_css():
     st.markdown(f"""
     <style>
@@ -127,24 +127,28 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 
-# ==============================
-# DASHBOARD RENDER
-# ==============================
+# ===================================
+# MAIN DASHBOARD
+# ===================================
 def render_dashboard():
 
     inject_css()
 
-    # Auth check
+    # -----------------------------------
+    # AUTH CHECK
+    # -----------------------------------
     user_id = st.session_state.get("user_id")
     if not user_id:
         st.error("Unauthorized. Login again.")
         st.stop()
 
-    # Load user data
+    # USER INFO
     user = get_company_user(user_id)
     company = user["company"]
 
-    # Load only today's bookings
+    # -----------------------------------
+    # LIVE BOOKINGS → ONLY TODAY
+    # -----------------------------------
     all_bookings = get_company_bookings(company)
     today = datetime.today().date()
 
@@ -153,15 +157,17 @@ def render_dashboard():
         if b["start_time"].date() == today
     ]
 
-    # By department today
+    # -----------------------------------
+    # DEPARTMENT COUNT
+    # -----------------------------------
     dept_count = {}
     for b in todays_bookings:
         dept = b["department"]
         dept_count[dept] = dept_count.get(dept, 0) + 1
 
-    # ======================
+    # -----------------------------------
     # HEADER
-    # ======================
+    # -----------------------------------
     st.markdown(
         f"""
         <div class="header-box">
@@ -175,10 +181,9 @@ def render_dashboard():
         unsafe_allow_html=True,
     )
 
-
-    # ======================
-    # ACTION BAR
-    # ======================
+    # -----------------------------------
+    # ACTIONS
+    # -----------------------------------
     left_action, right_action = st.columns([1, 1])
 
     with left_action:
@@ -194,12 +199,12 @@ def render_dashboard():
 
     st.write("")
 
-    # ======================
-    # BODY LAYOUT
-    # ======================
+    # -----------------------------------
+    # BODY
+    # -----------------------------------
     col_left, col_right = st.columns([2, 1])
 
-    # ---- SUMMARY
+    # SUMMARY
     with col_right:
         st.subheader("Summary (Today)")
 
@@ -229,9 +234,7 @@ def render_dashboard():
                     unsafe_allow_html=True,
                 )
 
-    # ======================
-    # BOOKING TABLE
-    # ======================
+    # TABLE
     with col_left:
         st.subheader("Today's Booking List")
 
@@ -250,4 +253,3 @@ def render_dashboard():
             df.index = df.index + 1
 
             st.dataframe(df, use_container_width=True, height=480)
-
