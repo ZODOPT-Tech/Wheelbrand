@@ -7,15 +7,19 @@ import boto3
 import json
 import traceback
 
-AWS_REGION = "ap-south-1" 
-AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS" 
+# ==============================
+# CONFIG
+# ==============================
+AWS_REGION = "ap-south-1"
+AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
-LOGO_PATH = "zodopt.png" 
-LOGO_PLACEHOLDER_TEXT = "zodopt"
+LOGO_PATH = "zodopt.png"
 HEADER_GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
 
-# ================= AWS SECRETS =================
+# ==============================
+# SECRETS & DB
+# ==============================
 @st.cache_resource
 def get_db_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
@@ -24,27 +28,27 @@ def get_db_credentials():
 
 
 @st.cache_resource
-def get_fast_connection():
+def get_conn():
     c = get_db_credentials()
     return mysql.connector.connect(
         host=c["DB_HOST"],
         user=c["DB_USER"],
         password=c["DB_PASSWORD"],
         database=c["DB_NAME"],
-        autocommit=True,
+        autocommit=True
     )
 
 
-# ================= PASSWORD =================
-def hash_password(password):
-    return bcrypt.hashpw(password.encode(), bcrypt.gensalt(12)).decode()
+# ==============================
+# PASSWORD
+# ==============================
+def check_password(password, hashed):
+    return bcrypt.checkpw(password.encode(), hashed.encode())
 
 
-def check_password(password, hashed_password):
-    return bcrypt.checkpw(password.encode(), hashed_password.encode())
-
-
-# ================= UTIL =================
+# ==============================
+# UTIL
+# ==============================
 def _get_image_base64(path):
     try:
         with open(path, "rb") as img_file:
@@ -58,142 +62,132 @@ def set_auth_view(view):
     st.rerun()
 
 
-# ================= CUSTOM CSS =================
+# ==============================
+# CSS
+# ==============================
 def inject_css():
     st.markdown(f"""
     <style>
 
-    /* ===== FULL WIDTH PAGE ===== */
+    /* Full-width layout (no page_config) */
     .block-container {{
-        padding: 0 !important;
-        margin: 0 auto !important;
-        max-width: 100% !important;
+        padding:0 !important;
+        max-width:100% !important;
     }}
 
-    /* Remove toolbar buttons */
-    [data-testid="stToolbar"] {{
-        display: none !important;
+    body {{
+        background:#F8F9FF;
+        font-family:'Inter',sans-serif;
     }}
 
-    /* Remove hamburger menu */
-    [data-testid="baseMenuButton"] {{
-        display: none !important;
-    }}
-
-    /* Remove help button */
-    [data-testid="helpButton"] {{
-        display:none !important;
-    }}
-
-    /* Remove floating debug controls */
-    [data-testid="collapsedControl"] {{
-        display: none !important;
-    }}
-    [data-testid="stActionButtons"] {{
-        display:none !important;
-    }}
-
+    /* Hide Streamlit UI elements */
+    [data-testid="stToolbar"],
+    [data-testid="helpButton"],
+    [data-testid="baseMenuButton"],
+    [data-testid="stActionButtons"],
+    [data-testid="collapsedControl"],
     header[data-testid="stHeader"] {{
         display:none !important;
     }}
 
-    body {{
-        background:#F7F7FD;
-    }}
 
-    /* ===== HEADER ===== */
+    /* HEADER */
     .header-box {{
         background:{HEADER_GRADIENT};
-        padding:40px 50px;
+        padding:32px 50px;
         border-radius:0 0 28px 28px;
-        box-shadow:0 15px 45px rgba(80,48,157,0.35);
+        box-shadow:0 8px 35px rgba(0,0,0,0.18);
         display:flex;
         justify-content:space-between;
         align-items:center;
         width:100%;
     }}
+
     .header-title {{
-        font-size:36px;
+        font-size:32px;
         font-weight:800;
         color:white;
     }}
 
-    .header-logo-img {{
+    .logo {{
         height:60px;
     }}
 
-    /* ===== FORM CONTAINER ===== */
+
+    /* CARD */
     .login-card {{
         background:white;
-        margin:40px auto;
-        width:85%;
-        padding:40px;
-        border-radius:16px;
-        box-shadow:0 6px 18px rgba(0,0,0,0.08);
+        width:420px;
+        margin:60px auto;
+        padding:40px 36px;
+        border-radius:18px;
+        box-shadow:0 4px 24px rgba(0,0,0,0.1);
     }}
 
-    /* ===== BUTTONS ===== */
-
-    /* Sign In */
-    .primary-btn {{
-        background:{HEADER_GRADIENT} !important;
-        color:white !important;
-        border:none;
-        padding:16px;
-        width:100%;
-        border-radius:12px;
-        font-size:18px;
-        font-weight:700;
-        box-shadow:0 6px 22px rgba(80,48,157,0.45);
-        transition:0.22s ease-in-out;
-    }}
-    .primary-btn:hover {{
-        opacity:0.90;
-        transform:translateY(-1px);
-    }}
-
-    /* Bottom buttons */
-    .footer-actions {{
-        display:flex;
-        gap:24px;
-        justify-content:center;
-        margin-top:30px;
-        margin-bottom:50px;
-    }}
-
-    .secondary-btn {{
-        background:{HEADER_GRADIENT} !important;
-        color:white !important;
-        border:none;
-        padding:14px 20px;
-        width:230px;
-        border-radius:12px;
+    .stTextInput > div > div > input {{
+        background:#F3F5FA;
+        border-radius:10px;
+        padding:14px;
         font-size:16px;
-        font-weight:700;
-        text-align:center;
-        box-shadow:0 6px 22px rgba(80,48,157,0.45);
-        transition:0.22s ease-in-out;
     }}
 
-    .secondary-btn:hover {{
+
+    /* BUTTONS */
+    .primary-btn {
+        background:{HEADER_GRADIENT} !important;
+        border:none !important;
+        color:white !important;
+        font-weight:700 !important;
+        padding:14px !important;
+        width:100%;
+        border-radius:12px !important;
+        font-size:16px !important;
+        box-shadow:0 6px 24px rgba(80,48,157,0.4);
+    }
+
+    .primary-btn:hover {{
         opacity:0.92;
         transform:translateY(-1px);
     }}
 
-    @media(max-width:650px){{
-        .footer-actions {{
-            flex-direction:column;
-            width:85%;
-            gap:14px;
+    .footer-btn {{
+        background:{HEADER_GRADIENT};
+        color:white;
+        border:none;
+        padding:12px 24px;
+        border-radius:12px;
+        font-size:15px;
+        font-weight:700;
+        box-shadow:0 6px 24px rgba(80,48,157,0.4);
+        width:48%;
+        text-align:center;
+    }}
+
+    .footer-section {{
+        display:flex;
+        justify-content:space-between;
+        width:420px;
+        margin:10px auto 60px auto;
+    }}
+
+    @media(max-width:600px){{
+        .login-card {{
+            width:90%;
+            padding:30px 24px;
         }}
-        .secondary-btn {{
+
+        .footer-section {{
+            flex-direction:column;
+            gap:14px;
+            width:90%;
+        }}
+
+        .footer-btn {{
             width:100%;
         }}
-        .login-card {{
-            width:92%;
-        }}
+
         .header-title {{
-            font-size:26px;
+            font-size:24px;
         }}
     }}
 
@@ -201,57 +195,63 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 
-# ================= LOGIN VIEW =================
+# ==============================
+# LOGIN VIEW
+# ==============================
 def render_login_view():
-    conn = get_fast_connection()
+    conn = get_conn()
 
     st.markdown("<div class='login-card'>", unsafe_allow_html=True)
-    with st.form("conf_login_form"):
+    with st.form("login_form"):
         email = st.text_input("Email")
         password = st.text_input("Password", type="password")
-        b = st.form_submit_button("Sign In →", type="primary")
-        if b:
+        submit = st.form_submit_button("Sign In →", help="", on_click=None)
+
+        if submit:
             cur = conn.cursor(dictionary=True)
             cur.execute("SELECT id,name,password_hash FROM conference_users WHERE email=%s",(email,))
             rec = cur.fetchone()
             if rec and check_password(password, rec["password_hash"]):
                 st.session_state['user_id'] = rec["id"]
-                st.session_state['logged_in'] = True
                 st.session_state['current_page'] = 'conference_dashboard'
                 st.rerun()
             else:
-                st.error("Invalid credentials")
+                st.error("Incorrect Email or Password")
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("""
-    <div class='footer-actions'>
-        <button class='secondary-btn' id='reg-btn'>New Registration</button>
-        <button class='secondary-btn' id='fp-btn'>Forgot Password?</button>
+    <div class="footer-section">
+        <button onclick="window.parent.location.reload()" class="footer-btn" id="new-reg">New Registration</button>
+        <button onclick="window.parent.location.reload()" class="footer-btn" id="forgot-pass">Forgot Password?</button>
     </div>
     """, unsafe_allow_html=True)
 
-    if st.button("Hidden_Register", key="reg", help="", on_click=lambda: set_auth_view("register")):
-        pass
-    if st.button("Hidden_FP", key="fp", help="", on_click=lambda: set_auth_view("forgot_password")):
-        pass
+    if st.button("New Registration", key="reg-btn"):
+        set_auth_view("register")
+
+    if st.button("Forgot Password?", key="fp-btn"):
+        set_auth_view("forgot_password")
 
 
-# ================= FORGOT + REGISTER (same) =================
+# ==============================
+# REGISTER & FP views
+# ==============================
 def render_register_view():
-    st.info("Registration Page Here → same logic")
+    st.info("Registration form coming...")
     if st.button("← Back"):
         set_auth_view("login")
 
 
 def render_forgot_password_view():
-    st.info("Forgot Password Page Here")
+    st.info("Password reset coming...")
     if st.button("← Back"):
         set_auth_view("login")
 
 
-# ================= MAIN =================
+# ==============================
+# MAIN RENDER
+# ==============================
 def render_conference_login_page():
-
     inject_css()
 
     if 'conf_auth_view' not in st.session_state:
@@ -259,29 +259,29 @@ def render_conference_login_page():
 
     view = st.session_state['conf_auth_view']
 
-    # ===== HEADER =====
-    logo_base64 = _get_image_base64(LOGO_PATH)
-    logo_html = f'<img src="data:image/png;base64,{logo_base64}" class="header-logo-img">' if logo_base64 else LOGO_PLACEHOLDER_TEXT
+    # HEADER
+    logo = _get_image_base64(LOGO_PATH)
+    logo_html = f'<img src="data:image/png;base64,{logo}" class="logo">' if logo else ""
 
-    header_title = {
+    titles = {
         "login": "CONFERENCE BOOKING",
         "register": "NEW REGISTRATION",
         "forgot_password": "RESET PASSWORD",
-    }[view]
+    }
 
     st.markdown(
         f"""
         <div class="header-box">
-            <div class="header-title">{header_title}</div>
+            <div class="header-title">{titles[view]}</div>
             <div>{logo_html}</div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-    if view == 'login':
+    if view == "login":
         render_login_view()
-    elif view == 'register':
+    elif view == "register":
         render_register_view()
-    elif view == 'forgot_password':
+    else:
         render_forgot_password_view()
