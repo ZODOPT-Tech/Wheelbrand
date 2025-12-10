@@ -25,7 +25,6 @@ def get_db_credentials():
 
 @st.cache_resource
 def get_fast_connection():
-    try:
         creds = get_db_credentials()
         return mysql.connector.connect(
             host=creds["DB_HOST"],
@@ -36,21 +35,17 @@ def get_fast_connection():
             autocommit=True,
             connection_timeout=10,
         )
-    except Exception as e:
-        st.error(f"Database connection failed: {e}")
-        st.stop()
 
 
 # ============================== DB INSERT ==============================
 def save_visitor_and_get_id(visitor):
     """
     Insert the visitor into 'visitors' table and return visitor_id.
-    Automatically adds company_id from session.
+    Automatically adds company_id and status='pending'
     """
     conn = get_fast_connection()
     cursor = conn.cursor()
 
-    # Add company_id from session
     visitor["company_id"] = st.session_state["company_id"]
 
     query = """
@@ -62,7 +57,8 @@ def save_visitor_and_get_id(visitor):
             gender, purpose, person_to_meet,
             has_bags, has_documents, has_electronic_items,
             has_laptop, has_charger, has_power_bank,
-            registration_timestamp
+            registration_timestamp,
+            status
         )
         VALUES (
             %(company_id)s,
@@ -72,7 +68,8 @@ def save_visitor_and_get_id(visitor):
             %(gender)s, %(purpose)s, %(person_to_meet)s,
             %(has_bags)s, %(has_documents)s, %(has_electronic_items)s,
             %(has_laptop)s, %(has_charger)s, %(has_power_bank)s,
-            NOW()
+            NOW(),
+            'pending'
         )
     """
 
@@ -258,11 +255,11 @@ def render_secondary_form():
             }
         )
 
-        # ---------------- INSERT INTO VISITORS TABLE ----------------
+        # Save visitor with status='pending'
         visitor_data = st.session_state["visitor_data"]
         visitor_id = save_visitor_and_get_id(visitor_data)
 
-        # ---------------- PASS visitor_id TO IDENTITY PAGE ----------------
+        # Move to identity capture page
         st.session_state["current_visitor_id"] = visitor_id
         st.session_state["current_page"] = "visitor_identity"
         st.rerun()
