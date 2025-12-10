@@ -28,7 +28,7 @@ def get_credentials():
 
 @st.cache_resource
 def get_conn():
-    """Persistent DB connection"""
+    """Persistent DB connection."""
     c = get_credentials()
     return mysql.connector.connect(
         host=c["DB_HOST"],
@@ -40,18 +40,18 @@ def get_conn():
 
 
 def get_company_user(user_id: int):
-    """No caching → reflects live changes"""
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
     cur.execute(
         "SELECT name, company FROM conference_users WHERE id=%s LIMIT 1",
         (user_id,)
     )
-    return cur.fetchone()
+    row = cur.fetchone()
+    cur.close()
+    return row
 
 
 def get_company_bookings(company: str):
-    """No caching → reflects live bookings"""
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
     cur.execute("""
@@ -66,7 +66,9 @@ def get_company_bookings(company: str):
         WHERE u.company=%s
         ORDER BY b.start_time DESC;
     """, (company,))
-    return cur.fetchall()
+    rows = cur.fetchall()
+    cur.close()
+    return rows
 
 
 # ===================================
@@ -75,7 +77,6 @@ def get_company_bookings(company: str):
 def inject_css():
     st.markdown(f"""
     <style>
-
     header[data-testid="stHeader"] {{display:none;}}
     .block-container {{padding-top:0;}}
 
@@ -89,7 +90,6 @@ def inject_css():
         align-items:center;
         box-shadow:0 6px 20px rgba(0,0,0,0.18);
     }}
-
     .welcome {{
         font-size:32px;
         font-weight:900;
@@ -122,7 +122,6 @@ def inject_css():
         font-weight:800;
         color:#50309D;
     }}
-
     </style>
     """, unsafe_allow_html=True)
 
@@ -131,7 +130,6 @@ def inject_css():
 # MAIN DASHBOARD
 # ===================================
 def render_dashboard():
-
     inject_css()
 
     # -----------------------------------
@@ -142,12 +140,11 @@ def render_dashboard():
         st.error("Unauthorized. Login again.")
         st.stop()
 
-    # USER INFO
     user = get_company_user(user_id)
     company = user["company"]
 
     # -----------------------------------
-    # LIVE BOOKINGS → ONLY TODAY
+    # LIVE BOOKINGS TODAY
     # -----------------------------------
     all_bookings = get_company_bookings(company)
     today = datetime.today().date()
@@ -184,7 +181,7 @@ def render_dashboard():
     # -----------------------------------
     # ACTIONS
     # -----------------------------------
-    left_action, right_action = st.columns([1, 1])
+    left_action, right_action = st.columns(2)
 
     with left_action:
         if st.button("New Booking", use_container_width=True):
@@ -204,7 +201,9 @@ def render_dashboard():
     # -----------------------------------
     col_left, col_right = st.columns([2, 1])
 
-    # SUMMARY
+    # -----------------------------------
+    # SUMMARY RIGHT
+    # -----------------------------------
     with col_right:
         st.subheader("Summary (Today)")
 
@@ -234,7 +233,9 @@ def render_dashboard():
                     unsafe_allow_html=True,
                 )
 
-    # TABLE
+    # -----------------------------------
+    # TABLE LEFT
+    # -----------------------------------
     with col_left:
         st.subheader("Today's Booking List")
 
