@@ -76,6 +76,28 @@ def get_company_bookings(company: str):
     return rows
 
 
+def get_today_visitors(company: str):
+    """Visitors whose pass is generated today."""
+    conn = get_conn()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("""
+        SELECT v.full_name,
+               v.from_company,
+               v.person_to_meet,
+               vi.created_at AS pass_time
+        FROM visitors v
+        JOIN visitor_identity vi ON vi.visitor_id=v.visitor_id
+        WHERE v.company=%s
+          AND DATE(vi.created_at)=CURDATE()
+          AND v.pass_generated=1
+        ORDER BY vi.created_at DESC;
+    """, (company,))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
+
+
 # =====================================================
 # CUSTOM CSS
 # =====================================================
@@ -146,13 +168,13 @@ def render_dashboard():
     user = get_company_user(user_id)
     company = user["company"]
 
-    # ------------------ FETCH TODAY DATA ------------------
+    # ------------------ FETCH DATA ------------------
     all_bookings = get_company_bookings(company)
-    today = datetime.today().date()
+    visitors_today = get_today_visitors(company)
 
+    today = datetime.today().date()
     todays_bookings = [
-        b for b in all_bookings
-        if b["start_time"].date() == today
+        b for b in all_bookings if b["start_time"].date() == today
     ]
 
     # ------------------ GROUP BY DEPARTMENT ------------------
@@ -191,13 +213,13 @@ def render_dashboard():
 
     st.write("")
 
-    # ------------------ BODY LAYOUT ------------------
-    col_left, col_right = st.columns([2, 1])
+    # ==================================================
+    # SUMMARY CARDS BELOW BUTTONS
+    # ==================================================
+    st.subheader("Summary (Today)")
+    col_s1, col_s2 = st.columns(2)
 
-    # ------------------ SUMMARY RIGHT ------------------
-    with col_right:
-        st.subheader("Summary (Today)")
-
+    with col_s1:
         st.markdown(
             f"""
             <div class="summary-card">
@@ -208,24 +230,25 @@ def render_dashboard():
             unsafe_allow_html=True,
         )
 
-        st.subheader("By Department")
+    with col_s2:
+        st.markdown(
+            f"""
+            <div class="summary-card">
+                <div class="summary-title">Visitors Arrived</div>
+                <div class="summary-value">{len(visitors_today)}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
-        if not dept_count:
-            st.info("No bookings today.")
-        else:
-            for dept, count in dept_count.items():
-                st.markdown(
-                    f"""
-                    <div class="summary-card">
-                        <div class="summary-title">{dept}</div>
-                        <div class="summary-value">{count}</div>
-                    </div>
-                    """,
-                    unsafe_allow_html=True,
-                )
+    st.write("")
+
+    # ------------------ BODY LAYOUT ------------------
+    col_left, col_right = st.columns([2, 1])
 
     # ------------------ TABLE LEFT ------------------
     with col_left:
+        # BOOKING TABLE
         st.subheader("Today's Booking List")
 
         if not todays_bookings:
@@ -242,4 +265,36 @@ def render_dashboard():
             df = df[["booked_by", "department", "Date", "Time", "purpose"]]
             df.index = df.index + 1
 
-            st.dataframe(df, use_container_width=True, height=480)
+            st.dataframe(df, use_container_width=True, height=350)
+
+        # VISITOR TABLE
+        st.subheader("Today's Visitors")
+
+        if not visitors_today:
+            st.info("No visitors arrived yet.")
+        else:
+            dfv = pd.DataFrame(visitors_today)
+            dfv["Time"] = pd.to_datetime(dfv["pass_time"]).dt.strftime("%I:%M %p")
+            dfv = dfv[["full_name", "from_company", "person_to_meet", "Time"]]
+            dfv.columns = ["Visitor Name", "Company", "Host", "Time"]
+            dfv.index = dfv.index + 1
+
+            st.dataframe(dfv, use_container_width=True, height=350)
+
+    # ------------------ RIGHT SIDE: DEPARTMENTS ------------------
+    with col_right:
+        st.subheader("By Department")
+
+        if not dept_count:
+            st.info("No bookings today.")
+        else:
+            for dept, count in dept_count.items():
+                st.markdown(
+                    f"""
+                    <div class="summary-card">
+                        <div class="summary-title">{dept}</div>
+                        <div class="summary-value">{count}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
