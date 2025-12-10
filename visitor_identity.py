@@ -2,213 +2,228 @@ import streamlit as st
 import mysql.connector
 import boto3
 import json
-from datetime import datetime
 import base64
+import io
 import smtplib
-from email.mime.text import MIMEText
+from email.message import EmailMessage
+from datetime import datetime
 
 
+# ======================================================
+# AWS + DB CONFIG
+# ======================================================
 AWS_REGION = "ap-south-1"
-SECRET_ID  = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
-BUCKET     = "zodoptvisiorsmanagement"
+AWS_SECRET_ARN = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
+S3_BUCKET = "zodoptvisiorsmanagement"
 
 
-# ==============================
-# SECRET LOADER
-# ==============================
 @st.cache_resource
-def get_secret():
+def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
-    sec = client.get_secret_value(SecretId=SECRET_ID)
-    return json.loads(sec["SecretString"])
+    raw = client.get_secret_value(SecretId=AWS_SECRET_ARN)
+    return json.loads(raw["SecretString"])
 
 
-# ==============================
-# DB CONNECTION
-# ==============================
 @st.cache_resource
-def get_db():
-    cfg = get_secret()
+def db_conn():
+    c = get_credentials()
     return mysql.connector.connect(
-        host=cfg["DB_HOST"],
-        user=cfg["DB_USER"],
-        password=cfg["DB_PASSWORD"],
-        database=cfg["DB_NAME"],
+        host=c["DB_HOST"],
+        user=c["DB_USER"],
+        password=c["DB_PASSWORD"],
+        database=c["DB_NAME"],
         autocommit=True
     )
 
 
-# ==============================
-# FETCH VISITOR
-# ==============================
-def fetch_visitor(visitor_id):
-    conn = get_db()
+# ======================================================
+# DB Fetch
+# ======================================================
+def get_visitor(visitor_id):
+    conn = db_conn()
     cur = conn.cursor(dictionary=True)
-    cur.execute("""
-        SELECT visitor_id, full_name, email,
-               from_company, person_to_meet
-        FROM visitors WHERE visitor_id = %s
-    """, (visitor_id,))
-    row = cur.fetchone()
+    cur.execute("SELECT * FROM visitors WHERE visitor_id=%s", (visitor_id,))
+    data = cur.fetchone()
     cur.close()
-    return row
+    return data
 
 
-# ==============================
-# SMTP EMAIL
-# ==============================
-def send_email(visitor):
-    sec = get_secret()
-
-    host = sec["SMTP_HOST"]
-    port = int(sec["SMTP_PORT"])
-    user = sec["SMTP_USER"]
-    pwd  = sec["SMTP_PASSWORD"]
-
-    body = f"""
-Hello {visitor['full_name']},
-
-Your Visitor Pass is generated and approved.
-
-Visitor ID: #{visitor['visitor_id']}
-Company: {visitor['from_company']}
-Meeting: {visitor['person_to_meet']}
-Date: {datetime.now().strftime("%d-%m-%Y %H:%M")}
-
-Thank you.
-    """
-
-    msg = MIMEText(body)
-    msg["Subject"] = "Visitor Pass Generated"
-    msg["From"] = user
-    msg["To"]   = visitor["email"]
-
-    with smtplib.SMTP(host, port) as s:
-        s.starttls()
-        s.login(user, pwd)
-        s.send_message(msg)
-
-
-# ==============================
-# SAVE PHOTO TO S3 + DB
-# ==============================
-def save_photo(visitor, photo_bytes):
-    folder = visitor["from_company"].lower()
-    filename = f"{visitor['full_name'].replace(' ', '_')}_{visitor['visitor_id']}.jpg"
-
+# ======================================================
+# Save Photo to S3 and DB
+# ======================================================
+def save_photo_and_update(visitor, photo_bytes):
     s3 = boto3.client("s3")
-    key = f"visitor_photos/{folder}/{filename}"
+
+    name = visitor["full_name"].replace(" ", "_").lower()
+    company = visitor["from_company"].replace(" ", "_").lower()
+    filename = f"visitor_photos/{company}/{name}_{int(datetime.now().timestamp())}.jpg"
 
     s3.put_object(
-        Bucket=BUCKET,
-        Key=key,
+        Bucket=S3_BUCKET,
+        Key=filename,
         Body=photo_bytes,
         ContentType="image/jpeg"
     )
 
-    url = f"https://{BUCKET}.s3.{AWS_REGION}.amazonaws.com/{key}"
+    photo_url = f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{filename}"
 
-    db = get_db()
-    cur = db.cursor()
-    cur.execute("""
-        INSERT INTO visitor_identity(visitor_id, photo_url)
-        VALUES(%s, %s)
-    """, (visitor["visitor_id"], url))
+    conn = db_conn()
+    cur = conn.cursor()
 
-    # update approved
-    cur.execute("""
-        UPDATE visitors
-        SET status='approved', pass_generated=1
-        WHERE visitor_id=%s
-    """, (visitor["visitor_id"],))
+    cur.execute(
+        "INSERT INTO visitor_identity (visitor_id, photo_url) VALUES (%s,%s)",
+        (visitor["visitor_id"], photo_url)
+    )
+
+    cur.execute(
+        "UPDATE visitors SET pass_generated=1 WHERE visitor_id=%s",
+        (visitor["visitor_id"],)
+    )
 
     cur.close()
-    return url
+    return photo_url
 
 
-# ==============================
-# PASS SCREEN
-# ==============================
-def render_pass_page():
+# ======================================================
+# Send Email
+# ======================================================
+def send_email(visitor):
+    c = get_credentials()
+    receiver = visitor.get("email")
+    if not receiver:
+        return False
 
-    v = st.session_state["visitor"]
-    st.title("Visitor Pass")
+    msg = EmailMessage()
+    msg["Subject"] = f"Visitor Pass - {visitor['full_name']}"
+    msg["From"] = c["SMTP_USER"]
+    msg["To"] = receiver
 
-    st.markdown("""
-    <div style="width:420px;margin:auto;background:white;
-    border-radius:15px;padding:25px;text-align:center;
-    box-shadow:0 3px 16px rgba(0,0,0,0.2);">
-    """, unsafe_allow_html=True)
+    msg.set_content(f"""
+Hello {visitor['full_name']},
 
+Welcome to {visitor['from_company']}!
+
+Your Visitor Pass has been generated.
+
+Visitor ID : {visitor['visitor_id']}
+To Meet    : {visitor['person_to_meet']}
+Date       : {datetime.now().strftime("%d-%m-%Y %H:%M")}
+
+Thank You,
+Reception
+""")
+
+    try:
+        server = smtplib.SMTP(c["SMTP_HOST"], int(c["SMTP_PORT"]))
+        server.starttls()
+        server.login(c["SMTP_USER"], c["SMTP_PASSWORD"])
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        st.error(f"Email failed: {str(e)}")
+        return False
+
+
+# ======================================================
+# UI – Pass Page
+# ======================================================
+def show_pass_screen(visitor, photo_bytes, sent):
+    st.markdown("<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>", unsafe_allow_html=True)
+
+    img_data = base64.b64encode(photo_bytes).decode()
     st.markdown(f"""
-        <img src="{st.session_state['photo']}"
-        style="width:130px;height:130px;border-radius:8px;
-               border:2px solid #4B2ECF;margin-bottom:15px;">
-
-        <p><b>Name:</b> {v['full_name']}</p>
-        <p><b>Company:</b> {v['from_company']}</p>
-        <p><b>To Meet:</b> {v['person_to_meet']}</p>
-        <p><b>Visitor ID:</b> #{v['visitor_id']}</p>
-        <p><b>Date:</b> {datetime.now().strftime("%d-%m-%Y %H:%M")}</p>
+    <div style="
+        width:420px;margin:auto;background:white;
+        border-radius:14px;padding:20px;
+        box-shadow:0 4px 18px rgba(0,0,0,0.12);
+    ">
+        <div style="text-align:center;">
+            <img src="data:image/jpeg;base64,{img_data}"
+            style="width:150px;height:150px;border-radius:12px;border:4px solid #4B2ECF;">
+        </div>
+        <div style="margin-top:15px;font-size:17px;">
+            <p><b>Name:</b> {visitor['full_name']}</p>
+            <p><b>Company:</b> {visitor['from_company']}</p>
+            <p><b>To Meet:</b> {visitor['person_to_meet']}</p>
+            <p><b>Visitor ID:</b> #{visitor['visitor_id']}</p>
+            <p><b>Date:</b> {datetime.now().strftime("%d-%m-%Y %H:%M")}</p>
+        </div>
+    </div>
     """, unsafe_allow_html=True)
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    if sent:
+        st.success(f"Pass sent to email: {visitor['email']}")
 
     st.write("")
-    
-    if st.button("➕ New Visitor"):
-        st.session_state.pop("visitor", None)
-        st.session_state.pop("photo", None)
+    st.write("")
+    st.write("")
+
+    # buttons in center vertical
+    c1, _, _ = st.columns([1,1,1])
+    if c1.button("➕ New Visitor"):
+        st.session_state.pop("current_visitor_id", None)
         st.session_state["current_page"] = "visitor_details"
         st.rerun()
 
-    if st.button("📊 Dashboard"):
+    c2, _, _ = st.columns([1,1,1])
+    if c2.button("📊 Dashboard"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
-    if st.button("🚪 Logout"):
+    c3, _, _ = st.columns([1,1,1])
+    if c3.button("🚪 Logout"):
         st.session_state.clear()
         st.session_state["current_page"] = "visitor_login"
         st.rerun()
 
 
-# ==============================
-# MAIN CAPTURE PAGE
-# ==============================
+# ======================================================
+# Page Entry
+# ======================================================
 def render_identity_page():
+    if not st.session_state.get("admin_logged_in", False):
+        st.session_state["current_page"] = "visitor_login"
+        st.rerun()
 
-    vid = st.session_state.get("current_visitor_id")
-    if not vid:
+    if "current_visitor_id" not in st.session_state:
         st.session_state["current_page"] = "visitor_details"
         st.rerun()
 
-    v = fetch_visitor(vid)
+    visitor = get_visitor(st.session_state["current_visitor_id"])
+    if not visitor:
+        st.error("Visitor not found")
+        return
 
-    st.title("Capture Identity")
+    st.title("Capture Visitor Photo")
 
-    st.write(f"**Name:** {v['full_name']}")
-    st.write(f"**Company:** {v['from_company']}")
-    st.write(f"**Meeting:** {v['person_to_meet']}")
+    st.write(f"**Name:** {visitor['full_name']}")
+    st.write(f"**Company:** {visitor['from_company']}")
+    st.write(f"**To Meet:** {visitor['person_to_meet']}")
 
     photo = st.camera_input("Capture Photo")
 
-    if st.button("Generate Pass"):
+    if st.button("Save & Generate Pass"):
         if not photo:
-            st.error("Please take a photo")
+            st.error("Please capture a photo first")
             return
 
-        bytes_photo = photo.getvalue()
+        photo_bytes = photo.getvalue()
+        save_photo_and_update(visitor, photo_bytes)
+        sent = send_email(visitor)
 
-        url = save_photo(v, bytes_photo)
-        st.session_state["photo"] = url
-        st.session_state["visitor"] = v
-
-        # send email
-        if v["email"]:
-            try:
-                send_email(v)
-            except Exception as e:
-                st.warning(f"Email error: {e}")
-
+        # go to pass screen
+        st.session_state["visitor_photo_bytes"] = photo_bytes
+        st.session_state["pass_email_sent"] = sent
         st.session_state["current_page"] = "visitor_pass"
         st.rerun()
+
+
+# ======================================================
+# Router Support
+# ======================================================
+def render_pass_page():
+    visitor = get_visitor(st.session_state["current_visitor_id"])
+    photo_bytes = st.session_state.get("visitor_photo_bytes")
+    sent = st.session_state.get("pass_email_sent", False)
+    show_pass_screen(visitor, photo_bytes, sent)
