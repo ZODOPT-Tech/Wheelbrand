@@ -41,16 +41,21 @@ def get_fast_connection():
         st.stop()
 
 
-# ============================== INSERT VISITOR ==============================
+# ============================== DB INSERT ==============================
 def save_visitor_and_get_id(visitor):
     """
-    Insert visitor into 'visitors' table and return visitor_id.
+    Insert the visitor into 'visitors' table and return visitor_id.
+    Automatically adds company_id from session.
     """
     conn = get_fast_connection()
     cursor = conn.cursor()
 
+    # Add company_id from session
+    visitor["company_id"] = st.session_state["company_id"]
+
     query = """
         INSERT INTO visitors (
+            company_id,
             full_name, phone_number, email,
             visit_type, from_company, department, designation,
             address_line_1, city, state, postal_code, country,
@@ -60,6 +65,7 @@ def save_visitor_and_get_id(visitor):
             registration_timestamp
         )
         VALUES (
+            %(company_id)s,
             %(name)s, %(phone)s, %(email)s,
             %(visit_type)s, %(from_company)s, %(department)s, %(designation)s,
             %(address_line_1)s, %(city)s, %(state)s, %(postal_code)s, %(country)s,
@@ -229,7 +235,6 @@ def render_secondary_form():
             st.error("Person to Meet is required.")
             return
 
-        # update data
         st.session_state["visitor_data"].update(
             {
                 "visit_type": visit_type,
@@ -253,11 +258,11 @@ def render_secondary_form():
             }
         )
 
-        # ---------------- INSERT INTO DB ----------------
+        # ---------------- INSERT INTO VISITORS TABLE ----------------
         visitor_data = st.session_state["visitor_data"]
         visitor_id = save_visitor_and_get_id(visitor_data)
 
-        # ---------------- PASS visitor_id TO NEXT PAGE ----------------
+        # ---------------- PASS visitor_id TO IDENTITY PAGE ----------------
         st.session_state["current_visitor_id"] = visitor_id
         st.session_state["current_page"] = "visitor_identity"
         st.rerun()
