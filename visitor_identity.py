@@ -5,15 +5,19 @@ import json
 from datetime import datetime
 import base64
 import io
-from PIL import Image as PILImage
 
-
+# ======================================================
+# AWS + DB CONFIG
+# ======================================================
 AWS_REGION = "ap-south-1"
 AWS_BUCKET = "zodoptvisiorsmanagement"
+FOLDER_NAME = "visitor_photos"
 AWS_SECRET_ARN = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
+HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
 
-# ============ Credentials ============
+
+# ---------------- AWS Secret ----------------
 @st.cache_resource
 def get_db_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
@@ -29,55 +33,38 @@ def get_db_conn():
         user=c["DB_USER"],
         password=c["DB_PASSWORD"],
         database=c["DB_NAME"],
-        autocommit=True
+        autocommit=True,
     )
 
 
-# ============ Visitor Fetch ============
-def get_visitor(visitor_id):
+# ======================================================
+# FETCH VISITOR DATA
+# ======================================================
+def get_visitor_data(visitor_id: int):
     conn = get_db_conn()
     cur = conn.cursor(dictionary=True)
     cur.execute("""
-        SELECT visitor_id, full_name, from_company, person_to_meet
-        FROM visitors
-        WHERE visitor_id=%s
+        SELECT visitor_id, full_name, from_company, person_to_meet, registration_timestamp
+        FROM visitors WHERE visitor_id=%s
     """, (visitor_id,))
     data = cur.fetchone()
     cur.close()
     return data
 
 
-# ============ DB Update ============
-
-def mark_pass_generated(visitor_id):
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE visitors SET pass_generated=1 WHERE visitor_id=%s",
-        (visitor_id,)
-    )
-    cur.close()
-
-
-def insert_identity_record(visitor_id, photo_url):
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO visitor_identity (visitor_id, photo_url)
-        VALUES (%s, %s)
-    """, (visitor_id, photo_url))
-    cur.close()
-
-
-# ============ S3 Upload ============
-def upload_photo(visitor, photo_bytes):
-    company = visitor["from_company"].strip().replace(" ", "_").lower()
-    name = visitor["full_name"].strip().replace(" ", "_").lower()
-    ts = int(datetime.now().timestamp())
-
-    filename = f"visitor_photos/{company}/{name}_{ts}.jpg"
-
+# ======================================================
+# SAVE PHOTO to S3 + DB FLAG
+# ======================================================
+def save_photo(visitor_id, visitor_name, company_name, photo_bytes):
     s3 = boto3.client("s3")
+
+    # normalize
+    folder = company_name.lower().replace(" ", "_")
+    name = visitor_name.lower().replace(" ", "_")
+
+    filename = f"{FOLDER_NAME}/{folder}/{name}_{int(datetime.now().timestamp())}.jpg"
+
+    # upload file
     s3.put_object(
         Bucket=AWS_BUCKET,
         Key=filename,
@@ -85,95 +72,159 @@ def upload_photo(visitor, photo_bytes):
         ContentType="image/jpeg"
     )
 
-    return f"https://{AWS_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{filename}"
+    # URL
+    url = f"https://{AWS_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{filename}"
+
+    # DB save
+    conn = get_db_conn()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO visitor_identity (visitor_id, photo_url) VALUES (%s,%s)", (visitor_id, url))
+    cursor.execute("UPDATE visitors SET status='approved', pass_generated=1 WHERE visitor_id=%s", (visitor_id,))
+    cursor.close()
+
+    return url
 
 
-# ============ Visitor Pass UI ============
-def render_pass(visitor, photo_bytes):
-    b64 = base64.b64encode(photo_bytes).decode()
-
+# ======================================================
+# HEADER
+# ======================================================
+def load_styles():
     st.markdown(f"""
-        <div style="
-            width:350px;
+    <style>
+        .title {{
+            text-align:center;
+            font-size:38px;
+            font-weight:900;
+            color:#4B2ECF;
+            margin-bottom:20px;
+        }}
+        .pass-card {{
+            width:550px;
+            margin:0 auto;
             background:white;
-            border-radius:14px;
-            padding:18px;
-            box-shadow:0 4px 16px rgba(0,0,0,0.18);
-        ">
-            <h2 style="text-align:center;color:#5036FF;margin-bottom:12px;">
-                Visitor Pass
-            </h2>
-
-            <div style="text-align:center;margin-bottom:14px;">
-                <img src="data:image/jpeg;base64,{b64}"
-                     style="width:120px;height:120px;
-                            border-radius:8px;border:2px solid #5036FF;">
-            </div>
-
-            <p><strong>Name:</strong> {visitor['full_name']}</p>
-            <p><strong>From:</strong> {visitor['from_company']}</p>
-            <p><strong>To Meet:</strong> {visitor['person_to_meet']}</p>
-            <p><strong>Visitor ID:</strong> #{visitor['visitor_id']}</p>
-            <p><strong>Date:</strong> {datetime.now().strftime("%d-%m-%Y %H:%M")}</p>
-        </div>
+            padding:30px;
+            border-radius:15px;
+            box-shadow:0 6px 18px rgba(0,0,0,0.15);
+            text-align:center;
+        }}
+        .visitor-img {{
+            width:150px;
+            height:150px;
+            border-radius:10px;
+            border:3px solid #4B2ECF;
+            margin-bottom:12px;
+        }}
+        .data-text {{
+            text-align:left;
+            margin-top:8px;
+            font-size:18px;
+        }}
+        .action-btn button {{
+            background:{HEADER_GRADIENT} !important;
+            color:white !important;
+            border:none !important;
+            border-radius:8px !important;
+            padding:12px !important;
+            font-size:18px !important;
+            margin-bottom:15px !important;
+            width:240px !important;
+        }}
+    </style>
     """, unsafe_allow_html=True)
 
 
-# ============ Page Renderer ============
+# ======================================================
+# PASS UI
+# ======================================================
+def show_pass(visitor, photo_bytes):
+    base64_img = base64.b64encode(photo_bytes).decode()
+
+    load_styles()
+    st.markdown("<div class='title'>Visitor Pass</div>", unsafe_allow_html=True)
+    st.markdown("<div class='pass-card'>", unsafe_allow_html=True)
+
+    st.markdown(
+        f"""
+        <div style="text-align:center;">
+            <img src="data:image/jpeg;base64,{base64_img}" class="visitor-img"/>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown(
+        f"""
+        <div class="data-text">
+            <p><strong>Name:</strong> {visitor['full_name']}</p>
+            <p><strong>Company:</strong> {visitor['from_company']}</p>
+            <p><strong>To Meet:</strong> {visitor['person_to_meet']}</p>
+            <p><strong>Visitor ID:</strong> #{visitor['visitor_id']}</p>
+            <p><strong>Date:</strong> {visitor['registration_timestamp'].strftime('%d-%m-%Y %H:%M')}</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.write("")
+    st.write("")
+
+    st.markdown("<div class='action-btn'>", unsafe_allow_html=True)
+
+    if st.button("New Visitor"):
+        st.session_state.pop("current_visitor_id", None)
+        st.session_state["current_page"] = "visitor_details"
+        st.session_state["show_pass"] = False
+        st.rerun()
+
+    if st.button("Dashboard"):
+        st.session_state["show_pass"] = False
+        st.session_state["current_page"] = "visitor_dashboard"
+        st.rerun()
+
+    if st.button("Logout"):
+        st.session_state.clear()
+        st.session_state["current_page"] = "visitor_login"
+        st.rerun()
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
+# ======================================================
+# MAIN
+# ======================================================
 def render_identity_page():
     if not st.session_state.get("admin_logged_in", False):
         st.session_state["current_page"] = "visitor_login"
         st.rerun()
 
-    if "current_visitor_id" not in st.session_state:
-        st.session_state["current_page"] = "visitor_details"
-        st.rerun()
+    # If pass generated → show the pass
+    if st.session_state.get("show_pass", False):
+        visitor = get_visitor_data(st.session_state["current_visitor_id"])
+        show_pass(visitor, st.session_state["pass_photo"])
+        return
 
-    visitor_id = st.session_state["current_visitor_id"]
-    visitor = get_visitor(visitor_id)
+    # else show camera page
+    visitor = get_visitor_data(st.session_state["current_visitor_id"])
 
     st.title("Capture Visitor Photo")
 
-    st.write(f"Name: {visitor['full_name']}")
-    st.write(f"From: {visitor['from_company']}")
-    st.write(f"To Meet: {visitor['person_to_meet']}")
-
-    photo = st.camera_input("Capture Photo", help="Ensure face is visible")
+    camera_photo = st.camera_input("Take a Photo")
 
     if st.button("Save & Generate Pass"):
-        if not photo:
-            st.error("Please capture the photo first")
+        if not camera_photo:
+            st.error("Please take a photo first")
             return
 
-        photo_bytes = photo.getvalue()
+        photo_bytes = camera_photo.getvalue()
 
-        with st.spinner("Saving visitor pass"):
-            # 1 Save to S3
-            url = upload_photo(visitor, photo_bytes)
+        save_photo(visitor["visitor_id"], visitor["full_name"], visitor["from_company"], photo_bytes)
 
-            # 2 Insert into visitor_identity
-            insert_identity_record(visitor_id, url)
+        st.session_state["pass_photo"] = photo_bytes
+        st.session_state["show_pass"] = True
+        st.rerun()
 
-            # 3 Mark pass generated
-            mark_pass_generated(visitor_id)
-
-        st.success("Visitor pass generated")
-        render_pass(visitor, photo_bytes)
-
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            if st.button("New Visitor"):
-                st.session_state.pop("current_visitor_id", None)
-                st.session_state["visitor_data"] = {}
-                st.session_state["registration_step"] = "primary"
-                st.session_state["current_page"] = "visitor_details"
-                st.rerun()
-        with c2:
-            if st.button("Dashboard"):
-                st.session_state["current_page"] = "visitor_dashboard"
-                st.rerun()
-        with c3:
-            if st.button("Logout"):
-                st.session_state.clear()
-                st.session_state["current_page"] = "visitor_login"
-                st.rerun()
+    if st.button("Back"):
+        st.session_state["current_page"] = "visitor_dashboard"
+        st.rerun()
