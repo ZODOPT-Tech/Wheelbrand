@@ -159,20 +159,19 @@ def show_pass_screen(visitor, photo_bytes, sent):
     st.write("")
     st.write("")
 
-    c1, c2, c3 = st.columns(3)
-    if c1.button("➕ New Visitor"):
-        st.session_state.pop("current_visitor_id", None)
-        st.session_state["current_page"] = "visitor_details"
-        st.rerun()
+    # CENTERED BUTTONS (only Dashboard & Logout)
+    left_space, col_dash, col_out, right_space = st.columns([1, 2, 2, 1])
 
-    if c2.button("📊 Dashboard"):
-        st.session_state["current_page"] = "visitor_dashboard"
-        st.rerun()
+    with col_dash:
+        if st.button("📊 Dashboard", use_container_width=True):
+            st.session_state["current_page"] = "visitor_dashboard"
+            st.rerun()
 
-    if c3.button("🚪 Logout"):
-        st.session_state.clear()
-        st.session_state["current_page"] = "visitor_login"
-        st.rerun()
+    with col_out:
+        if st.button("🚪 Logout", use_container_width=True):
+            st.session_state.clear()
+            st.session_state["current_page"] = "visitor_login"
+            st.rerun()
 
 
 # ======================================================
