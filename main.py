@@ -28,6 +28,7 @@ PAGE_MODULES = {
     'visitor_dashboard': visitor_dashboard.render_dashboard,
     'visitor_details': visitor_details.render_details_page,
     'visitor_identity': visitor_identity.render_identity_page,
+    'visitor_pass': visitor_identity.render_pass_page,
 
     # CONFERENCE FLOW
     'conference_login': conference_login.render_conference_login_page,
