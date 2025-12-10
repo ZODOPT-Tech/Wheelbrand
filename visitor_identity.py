@@ -4,23 +4,18 @@ import boto3
 import json
 from datetime import datetime
 import base64
-import io
-from PIL import Image as PILImage
-from openpyxl import load_workbook, Workbook
-from openpyxl.drawing.image import Image as XLImage
-
 
 # =============================
-# AWS Configuration
+# AWS Config
 # =============================
 AWS_REGION = "ap-south-1"
 AWS_BUCKET = "zodoptvisiorsmanagement"
-EXCEL_FILE = "visitorsphoto.xlsx"
 AWS_SECRET_ARN = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
+FOLDER_NAME = "visitor_photos"
 
 
 # =============================
-# DB Credentials from AWS
+# Secrets
 # =============================
 @st.cache_resource
 def get_db_credentials():
@@ -42,20 +37,7 @@ def get_db_conn():
 
 
 # =============================
-# APPROVE Visitor Once Pass Generated
-# =============================
-def approve_visitor(visitor_id):
-    conn = get_db_conn()
-    cur = conn.cursor()
-    cur.execute(
-        "UPDATE visitors SET status='approved' WHERE visitor_id=%s",
-        (visitor_id,)
-    )
-    cur.close()
-
-
-# =============================
-# Get Visitor Details from DB
+# DB Fetch
 # =============================
 def get_visitor_data(visitor_id: int):
     conn = get_db_conn()
@@ -79,112 +61,48 @@ def get_visitor_data(visitor_id: int):
 
 
 # =============================
-# Store Photo in S3 Excel File (Safe Version)
+# Save URL to DB
 # =============================
-def write_photo_to_excel(visitor, photo_bytes):
+def save_photo_url(visitor_id, photo_url):
+    conn = get_db_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        INSERT INTO visitor_identity (visitor_id, photo_url)
+        VALUES (%s, %s)
+    """, (visitor_id, photo_url))
+
+    cur.close()
+
+
+# =============================
+# S3 Upload
+# =============================
+def upload_photo(visitor, photo_bytes):
     s3 = boto3.client("s3")
 
-    # Step 1: Try to load existing Excel
-    try:
-        obj = s3.get_object(Bucket=AWS_BUCKET, Key=EXCEL_FILE)
-        xl_data = obj["Body"].read()
-        wb = load_workbook(io.BytesIO(xl_data))
-        ws = wb.active
+    # Sanitise
+    company = visitor["from_company"].replace(" ", "_")
+    name = visitor["full_name"].replace(" ", "_")
+    timestamp = int(datetime.now().timestamp())
 
-        # if sheet empty -> add headers
-        if ws.max_row == 1 and not ws["A1"].value:
-            ws["A1"] = "Visitor Name"
-            ws["B1"] = "Company"
-            ws["C1"] = "Photo"
-            ws["D1"] = "Timestamp"
+    key = f"{FOLDER_NAME}/{company}/{name}_{timestamp}.jpg"
 
-    except Exception:
-        # Step 2: Create new workbook if missing/invalid
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Visitors"
-        ws["A1"] = "Visitor Name"
-        ws["B1"] = "Company"
-        ws["C1"] = "Photo"
-        ws["D1"] = "Timestamp"
-
-    # Step 3: Append row
-    next_row = ws.max_row + 1
-    ws[f"A{next_row}"] = visitor["full_name"]
-    ws[f"B{next_row}"] = visitor["from_company"]
-    ws[f"D{next_row}"] = datetime.now().strftime("%Y-%m-%d %H:%M")
-
-    # Step 4: Add image in cell C
-    img = PILImage.open(io.BytesIO(photo_bytes))
-    img.thumbnail((120, 120))
-    xl_img = XLImage(img)
-    xl_img.anchor = f"C{next_row}"
-    ws.add_image(xl_img)
-
-    # Step 5: Save workbook to memory
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-
-    # Step 6: Upload back to S3
     s3.put_object(
         Bucket=AWS_BUCKET,
-        Key=EXCEL_FILE,
-        Body=output.getvalue(),
-        ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        Key=key,
+        Body=photo_bytes,
+        ContentType="image/jpeg"
     )
 
-
-# =============================
-# Header (Like visitor_details)
-# =============================
-def render_header(visitor):
-    st.markdown("""
-        <style>
-            .id-header {
-                background: linear-gradient(90deg, #5036FF, #9C2CFF);
-                padding: 24px;
-                border-radius: 14px;
-                color: white;
-                font-size: 26px;
-                font-weight: 700;
-                margin-bottom: 18px;
-            }
-            .id-sub {
-                font-size: 15px;
-                opacity: 0.92;
-                margin-top: 6px;
-            }
-            .profile-box {
-                background:white;
-                padding:16px;
-                border-radius:10px;
-                box-shadow:0px 3px 8px rgba(0,0,0,0.1);
-                margin-bottom:12px;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-
-    st.markdown(f"""
-        <div class="id-header">
-            Visitor Identity Capture
-            <div class="id-sub">Take photo & generate secure visitor pass</div>
-        </div>
-    """, unsafe_allow_html=True)
-
-    st.markdown(f"""
-        <div class="profile-box">
-            <b>Name:</b> {visitor['full_name']}<br>
-            <b>Company:</b> {visitor['from_company']}<br>
-            <b>Meeting:</b> {visitor['person_to_meet']}<br>
-        </div>
-    """, unsafe_allow_html=True)
+    url = f"https://{AWS_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{key}"
+    return url
 
 
 # =============================
-# HTML Visitor Pass
+# Digital Visitor Pass
 # =============================
-def show_pass(visitor, photo_bytes):
+def show_pass(visitor, photo_bytes, photo_url):
     b64 = base64.b64encode(photo_bytes).decode()
 
     st.markdown(f"""
@@ -195,7 +113,7 @@ def show_pass(visitor, photo_bytes):
                     padding:20px;
                     margin-top:20px;">
             <h2 style="text-align:center;color:#5036FF;">VISITOR PASS</h2>
-            
+
             <div style="text-align:center;margin-bottom:10px;">
                 <img src="data:image/jpeg;base64,{b64}"
                      style="width:140px;height:140px;
@@ -208,67 +126,77 @@ def show_pass(visitor, photo_bytes):
             <p><b>To Meet:</b> {visitor['person_to_meet']}</p>
             <p><b>Visitor ID:</b> #{visitor['visitor_id']}</p>
             <p><b>Date:</b> {datetime.now().strftime("%d-%m-%Y %H:%M")}</p>
+
+            <p><b>Photo URL:</b><br>{photo_url}</p>
         </div>
     """, unsafe_allow_html=True)
 
 
 # =============================
-# MAIN ENTRY EXPORT
+# MAIN Page
 # =============================
 def render_identity_page():
 
-    # Auth Check
+    # AUTH & SESSION CHECKS
     if not st.session_state.get("admin_logged_in", False):
+        st.warning("Unauthorized")
         st.session_state["current_page"] = "visitor_login"
         st.rerun()
 
-    # Ensure visitor selected
     if "current_visitor_id" not in st.session_state:
+        st.error("No visitor selected")
         st.session_state["current_page"] = "visitor_details"
         st.rerun()
 
     visitor_id = st.session_state["current_visitor_id"]
     visitor = get_visitor_data(visitor_id)
 
-    # Header
-    render_header(visitor)
+    # HEADER
+    st.markdown("""
+        <h2 style='color:#5036FF;
+                  font-weight:700;
+                  margin-bottom:10px;'>🆔 Identity Capture</h2>
+    """, unsafe_allow_html=True)
 
-    # Camera
+    st.write(f"**Name:** {visitor['full_name']}")
+    st.write(f"**Company:** {visitor['from_company']}")
+    st.write(f"**Meeting:** {visitor['person_to_meet']}")
+
     photo = st.camera_input("Capture Photo")
 
+    # ACTION
     if st.button("Save & Generate Pass"):
         if not photo:
-            st.error("Please capture the photo.")
+            st.error("Please capture the photo")
             return
 
         photo_bytes = photo.getvalue()
 
-        with st.spinner("Saving identity and generating pass..."):
-            write_photo_to_excel(visitor, photo_bytes)
-            approve_visitor(visitor_id)
+        with st.spinner("Uploading photo..."):
+            photo_url = upload_photo(visitor, photo_bytes)
+            save_photo_url(visitor_id, photo_url)
 
-        st.success("Visitor registered successfully!")
-        show_pass(visitor, photo_bytes)
+        st.success("Visitor profile saved successfully!")
+        show_pass(visitor, photo_bytes, photo_url)
 
-        col1, col2, col3 = st.columns(3)
-
-        with col1:
+        c1, c2, c3 = st.columns(3)
+        with c1:
             if st.button("New Visitor"):
                 st.session_state.pop("current_visitor_id", None)
                 st.session_state["current_page"] = "visitor_details"
                 st.rerun()
 
-        with col2:
+        with c2:
             if st.button("Dashboard"):
                 st.session_state["current_page"] = "visitor_dashboard"
                 st.rerun()
 
-        with col3:
+        with c3:
             if st.button("Logout"):
                 st.session_state.clear()
                 st.session_state["current_page"] = "visitor_login"
                 st.rerun()
 
-    if st.button("Back"):
+    if st.button("← Back"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
