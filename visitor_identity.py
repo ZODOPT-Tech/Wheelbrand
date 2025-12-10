@@ -3,29 +3,32 @@ import mysql.connector
 import boto3
 import json
 import base64
-import io
 import smtplib
 from email.message import EmailMessage
 from datetime import datetime
 
 
 # ======================================================
-# AWS + DB CONFIG
+# CONFIG
 # ======================================================
 AWS_REGION = "ap-south-1"
 AWS_SECRET_ARN = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 S3_BUCKET = "zodoptvisiorsmanagement"
 
 
+# ======================================================
+# SECRETS
+# ======================================================
 @st.cache_resource
 def get_credentials():
+    """Fetch Secrets Manager credentials (cached)."""
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
     raw = client.get_secret_value(SecretId=AWS_SECRET_ARN)
     return json.loads(raw["SecretString"])
 
 
-@st.cache_resource
 def db_conn():
+    """Get new DB connection every time (no caching)."""
     c = get_credentials()
     return mysql.connector.connect(
         host=c["DB_HOST"],
@@ -45,19 +48,22 @@ def get_visitor(visitor_id):
     cur.execute("SELECT * FROM visitors WHERE visitor_id=%s", (visitor_id,))
     data = cur.fetchone()
     cur.close()
+    conn.close()
     return data
 
 
 # ======================================================
-# Save Photo and DB Update
+# Save Photo & Update DB
 # ======================================================
 def save_photo_and_update(visitor, photo_bytes):
     s3 = boto3.client("s3")
 
+    # generate file name
     name = visitor["full_name"].replace(" ", "_").lower()
     company = visitor["from_company"].replace(" ", "_").lower()
     filename = f"visitor_photos/{company}/{name}_{int(datetime.now().timestamp())}.jpg"
 
+    # upload to S3
     s3.put_object(
         Bucket=S3_BUCKET,
         Key=filename,
@@ -67,6 +73,7 @@ def save_photo_and_update(visitor, photo_bytes):
 
     photo_url = f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{filename}"
 
+    # update DB
     conn = db_conn()
     cur = conn.cursor()
 
@@ -81,6 +88,7 @@ def save_photo_and_update(visitor, photo_bytes):
     )
 
     cur.close()
+    conn.close()
     return photo_url
 
 
@@ -90,7 +98,9 @@ def save_photo_and_update(visitor, photo_bytes):
 def send_email(visitor):
     c = get_credentials()
     receiver = visitor.get("email")
+
     if not receiver:
+        st.error("No email address found.")
         return False
 
     msg = EmailMessage()
@@ -110,7 +120,7 @@ To Meet    : {visitor['person_to_meet']}
 Date       : {datetime.now().strftime("%d-%m-%Y %H:%M")}
 
 Thank You,
-Reception
+Reception Team
 """)
 
     try:
@@ -120,13 +130,19 @@ Reception
         server.send_message(msg)
         server.quit()
         return True
+
+    except smtplib.SMTPAuthenticationError as e:
+        st.error("SMTP Authentication failed. Check App Password & User.")
+        st.error(str(e))
+        return False
+
     except Exception as e:
         st.error(f"Email failed: {str(e)}")
         return False
 
 
 # ======================================================
-# UI – Show Pass Page
+# UI – Pass Screen
 # ======================================================
 def show_pass_screen(visitor, photo_bytes, sent):
     st.markdown("<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>", unsafe_allow_html=True)
@@ -159,8 +175,8 @@ def show_pass_screen(visitor, photo_bytes, sent):
     st.write("")
     st.write("")
 
-    # CENTERED BUTTONS (only Dashboard & Logout)
-    left_space, col_dash, col_out, right_space = st.columns([1, 2, 2, 1])
+    # Centered buttons
+    _, col_dash, col_out, _ = st.columns([1, 2, 2, 1])
 
     with col_dash:
         if st.button("📊 Dashboard", use_container_width=True):
@@ -178,7 +194,7 @@ def show_pass_screen(visitor, photo_bytes, sent):
 # Identity Page
 # ======================================================
 def render_identity_page():
-    if not st.session_state.get("admin_logged_in", False):
+    if not st.session_state.get("admin_logged_in"):
         st.session_state["current_page"] = "visitor_login"
         st.rerun()
 
