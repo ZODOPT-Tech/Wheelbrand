@@ -8,6 +8,8 @@ from email.message import EmailMessage
 from datetime import datetime
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
+import pytz
+import requests
 
 
 # ======================================================
@@ -17,16 +19,17 @@ AWS_REGION = "ap-south-1"
 AWS_SECRET_ARN = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 S3_BUCKET = "zodoptvisiorsmanagement"
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
+IST = pytz.timezone("Asia/Kolkata")
 
 
 # ======================================================
-# SECRETS MANAGER
+# AWS Secrets
 # ======================================================
 @st.cache_resource
 def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
-    raw = client.get_secret_value(SecretId=AWS_SECRET_ARN)
-    return json.loads(raw["SecretString"])
+    res = client.get_secret_value(SecretId=AWS_SECRET_ARN)
+    return json.loads(res["SecretString"])
 
 
 # ======================================================
@@ -39,14 +42,14 @@ def db_conn():
         user=c["DB_USER"],
         password=c["DB_PASSWORD"],
         database=c["DB_NAME"],
-        autocommit=True
+        autocommit=True,
     )
 
 
 # ======================================================
-# Fetch Visitor Details
+# Fetch Visitor
 # ======================================================
-def get_visitor(visitor_id: int):
+def get_visitor(visitor_id):
     conn = db_conn()
     cur = conn.cursor(dictionary=True)
     cur.execute("SELECT * FROM visitors WHERE visitor_id=%s", (visitor_id,))
@@ -57,7 +60,7 @@ def get_visitor(visitor_id: int):
 
 
 # ======================================================
-# Save photo + DB update
+# Save Photo and Update DB
 # ======================================================
 def save_photo_and_update(visitor, photo_bytes):
     s3 = boto3.client("s3")
@@ -73,7 +76,7 @@ def save_photo_and_update(visitor, photo_bytes):
         Bucket=S3_BUCKET,
         Key=filename,
         Body=photo_bytes,
-        ContentType="image/jpeg"
+        ContentType="image/jpeg",
     )
 
     photo_url = f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{filename}"
@@ -82,11 +85,11 @@ def save_photo_and_update(visitor, photo_bytes):
     cur = conn.cursor()
     cur.execute(
         "INSERT INTO visitor_identity (visitor_id, photo_url) VALUES (%s,%s)",
-        (visitor["visitor_id"], photo_url)
+        (visitor["visitor_id"], photo_url),
     )
     cur.execute(
         "UPDATE visitors SET pass_generated=1, status='approved' WHERE visitor_id=%s",
-        (visitor["visitor_id"],)
+        (visitor["visitor_id"],),
     )
     cur.close()
     conn.close()
@@ -94,22 +97,17 @@ def save_photo_and_update(visitor, photo_bytes):
 
 
 # ======================================================
-# Visitor Pass Image Generation
+# Generate Visitor Pass Image
 # ======================================================
 def generate_pass_image(visitor, photo_bytes):
 
-    # Face image
-    face_img = Image.open(BytesIO(photo_bytes)).resize((230, 230))
-
-    # Card layout
-    W, H = 700, 1000
-    card = Image.new("RGB", (W, H), "white")
+    card = Image.new("RGB", (700, 900), "white")
     draw = ImageDraw.Draw(card)
 
-    # ---- Fonts ----
+    # Load fonts (system-safe)
     try:
         font_title = ImageFont.truetype(
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 50
         )
         font_text = ImageFont.truetype(
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32
@@ -118,45 +116,43 @@ def generate_pass_image(visitor, photo_bytes):
         font_title = ImageFont.load_default()
         font_text = ImageFont.load_default()
 
-    # ---- Logo ----
+    # Logo
     try:
-        # Load logo from URL
-        import requests
         logo_data = requests.get(LOGO_URL).content
-        logo = Image.open(BytesIO(logo_data)).resize((200, 60))
-        card.paste(logo, (250, 40))
+        logo = Image.open(BytesIO(logo_data)).resize((180, 55))
+        card.paste(logo, (260, 40))
     except:
         pass
 
-    # ---- Title ----
-    draw.text((230, 140), "Visitor Pass", fill="#4B2ECF", font=font_title)
+    # Title
+    draw.text((240, 120), "Visitor Pass", fill="#4B2ECF", font=font_title)
 
-    # ---- Photo ----
-    card.paste(face_img, (235, 220))
+    # Photo
+    face = Image.open(BytesIO(photo_bytes)).resize((280, 280))
+    card.paste(face, (210, 200))
 
-    # ---- Information ----
-    y = 500
+    # Info
+    y = 520
     info = [
         ("Name", visitor["full_name"]),
         ("Company", visitor["from_company"]),
         ("To Meet", visitor["person_to_meet"]),
         ("Visitor ID", f"#{visitor['visitor_id']}"),
         ("Email", visitor["email"]),
-        ("Date", datetime.now().strftime("%d-%m-%Y %H:%M")),
+        ("Date", datetime.now(IST).strftime("%d-%m-%Y %H:%M")),
     ]
 
     for key, val in info:
-        draw.text((140, y), f"{key}: {val}", font=font_text, fill="black")
-        y += 60
+        draw.text((160, y), f"{key}: {val}", fill="black", font=font_text)
+        y += 55
 
-    # ---- Export ----
     out = BytesIO()
     card.save(out, format="JPEG")
     return out.getvalue()
 
 
 # ======================================================
-# Email with Attachment
+# Email with pass
 # ======================================================
 def send_email(visitor, pass_image):
     creds = get_credentials()
@@ -169,47 +165,37 @@ def send_email(visitor, pass_image):
     msg.set_content(f"""
 Hello {visitor['full_name']},
 
-Welcome to {visitor['from_company']}!
-
-📌 Your Visitor Pass has been generated.
+Your Visitor Pass has been generated.
 
 Visitor ID : {visitor['visitor_id']}
 To Meet    : {visitor['person_to_meet']}
-Date       : {datetime.now().strftime("%d-%m-%Y %H:%M")}
+Date       : {datetime.now(IST).strftime("%d-%m-%Y %H:%M")}
 
-Your visitor pass is attached as an image.
+Visitor pass attached.
 
-Thank You,
+Regards,
 Reception
 """)
 
-    # attach pass image
-    msg.add_attachment(pass_image,
+    msg.add_attachment(
+        pass_image,
         maintype="image",
         subtype="jpeg",
-        filename="visitor_pass.jpg"
+        filename="visitor_pass.jpg",
     )
 
     try:
-        smtp_server = creds["SMTP_HOST"]
-        smtp_port = int(creds["SMTP_PORT"])
-        smtp_user = creds["SMTP_USER"]
-        smtp_pwd  = creds["SMTP_PASSWORD"]
-
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
+        with smtplib.SMTP(creds["SMTP_HOST"], int(creds["SMTP_PORT"])) as server:
             server.starttls()
-            server.login(smtp_user, smtp_pwd)
+            server.login(creds["SMTP_USER"], creds["SMTP_PASSWORD"])
             server.send_message(msg)
-
         return True
-
-    except Exception:
-        # Ignore failures for UI
+    except:
         return False
 
 
 # ======================================================
-# IDENTITY PAGE UI
+# Identity Page
 # ======================================================
 def render_identity_page():
     if not st.session_state.get("admin_logged_in"):
@@ -233,69 +219,78 @@ def render_identity_page():
 
         photo_bytes = photo.getvalue()
 
-        # 1. Save DB + upload S3
         save_photo_and_update(visitor, photo_bytes)
-
-        # 2. Generate pass image
         pass_image = generate_pass_image(visitor, photo_bytes)
-
-        # 3. Try to email (ignore failure)
         send_email(visitor, pass_image)
 
-        # 4. Store Visitor Data in Session
-        st.session_state["pass_data"] = {
-            "visitor_id": visitor["visitor_id"],
-            "full_name": visitor["full_name"],
-            "from_company": visitor["from_company"],
-            "person_to_meet": visitor["person_to_meet"],
-            "email": visitor["email"],
-            "photo_bytes": photo_bytes,
-        }
+        st.session_state["pass_data"] = visitor
         st.session_state["pass_image"] = pass_image
 
-        # 5. Move to pass page
         st.session_state["current_page"] = "visitor_pass"
         st.rerun()
 
 
 # ======================================================
-# PASS SCREEN UI
+# Pass Page
 # ======================================================
 def render_pass_page():
 
     visitor = st.session_state.get("pass_data")
-    pass_image = st.session_state.get("pass_image")
+    img = st.session_state.get("pass_image")
 
-    if not visitor or not pass_image:
-        st.error("Data not found.")
+    if not visitor or not img:
+        st.error("No pass data found.")
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
-    st.markdown("<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>",
-                unsafe_allow_html=True)
+    col_pass, col_btn = st.columns([3, 1.3])
 
-    img_data = base64.b64encode(pass_image).decode()
+    # ---------- Pass (Left)
+    with col_pass:
+        st.markdown("""
+        <style>
+        .pass-card {
+            background:white;
+            padding:16px;
+            border-radius:14px;
+            box-shadow:0 4px 15px rgba(0,0,0,0.12);
+            width:450px;
+            margin-left:auto;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
-    st.markdown(f"""
-    <div style="
-        width:480px;margin:auto;background:white;
-        border-radius:14px;padding:20px;
-        box-shadow:0 4px 18px rgba(0,0,0,0.12);
-    ">
-        <div style="text-align:center;">
-            <img src="data:image/jpeg;base64,{img_data}"
-                 style="width:330px;border-radius:12px;border:4px solid #4B2ECF;">
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+        b64 = base64.b64encode(img).decode()
 
-    _, col_dash, col_out, _ = st.columns([1, 2, 2, 1])
+        st.markdown("<div class='pass-card'>", unsafe_allow_html=True)
+        st.markdown(f"<img src='data:image/jpeg;base64,{b64}' style='width:100%;border-radius:12px;'>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    if col_dash.button("📊 Dashboard", use_container_width=True):
-        st.session_state["current_page"] = "visitor_dashboard"
-        st.rerun()
+    # ---------- Buttons (Right)
+    with col_btn:
+        st.markdown("""
+        <style>
+        .xbtn button {
+            background:linear-gradient(90deg,#4B2ECF,#7A42FF) !important;
+            color:white !important;
+            border:none !important;
+            font-weight:700 !important;
+            font-size:16px !important;
+            width:100% !important;
+            border-radius:8px !important;
+            margin-bottom:12px !important;
+            padding:12px !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
-    if col_out.button("🚪 Logout", use_container_width=True):
-        st.session_state.clear()
-        st.session_state["current_page"] = "visitor_login"
-        st.rerun()
+        st.markdown("<div class='xbtn'>", unsafe_allow_html=True)
+        if st.button("📊 Dashboard"):
+            st.session_state["current_page"] = "visitor_dashboard"
+            st.rerun()
+
+        if st.button("🚪 Logout"):
+            st.session_state.clear()
+            st.session_state["current_page"] = "visitor_login"
+            st.rerun()
+        st.markdown("</div>", unsafe_allow_html=True)
