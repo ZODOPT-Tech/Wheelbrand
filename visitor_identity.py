@@ -33,7 +33,7 @@ def get_connection():
 
 # ---------------- S3 UPLOAD ----------------
 def upload_to_s3(file_bytes, filename, content_type):
-    s3 = boto3.client("s3")  # IAM ROLE already attached
+    s3 = boto3.client("s3")
     s3.put_object(
         Bucket=AWS_BUCKET,
         Key=filename,
@@ -49,13 +49,9 @@ def save_identity(visitor_id, photo_url):
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO visitor_identity (visitor_id, photo_url, created_at)
-        VALUES (%s, %s, %s)
-    """, (
-        visitor_id,
-        photo_url,
-        datetime.now()
-    ))
+        INSERT INTO visitor_identity (visitor_id, photo_url)
+        VALUES (%s, %s)
+    """, (visitor_id, photo_url))
 
     cursor.close()
 
@@ -98,21 +94,22 @@ def render_identity_page():
         </div>
     """, unsafe_allow_html=True)
 
-    visitor_id = st.session_state.get("visitor_id")  # must exist
-    full_name = st.session_state.get("visitor_name", "")  # for filename only
+    # we expect visitor_id passed from previous page
+    visitor_id = st.session_state.get("current_visitor_id", None)
 
-    if not visitor_id:
-        st.error("❗ Visitor ID not found. Complete registration first.")
+    if visitor_id is None:
+        st.error("No visitor selected.")
         return
 
     st.subheader("📸 Capture Visitor Photo")
+
     camera_photo = st.camera_input("Take Photo", label_visibility="collapsed")
 
-    st.write("---")
+    st.write("")
 
     st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
 
-    if st.button("Generate Visitor Pass →", use_container_width=True):
+    if st.button("Save Identity →", use_container_width=True):
 
         if camera_photo is None:
             st.error("Photo is required.")
@@ -122,23 +119,23 @@ def render_identity_page():
 
             # Save photo to S3
             bytes_photo = camera_photo.read()
-            clean_name = full_name.replace(" ", "_") if full_name else f"visitor_{visitor_id}"
+            filename = f"visitorsphoto/{visitor_id}_{datetime.now().timestamp()}.jpg"
 
-            filename = f"visitorsphoto/{clean_name}_{datetime.now().timestamp()}.jpg"
             photo_url = upload_to_s3(bytes_photo, filename, "image/jpeg")
 
-            # Save record in DB (ONLY visitor_id + photo_url)
+            # Save record in DB
             save_identity(visitor_id, photo_url)
 
-        st.success("Visitor Pass Created Successfully!")
+        st.success("Visitor identity saved successfully!")
         st.balloons()
 
+        # Move back to dashboard
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    if st.button("⬅ Back to Dashboard"):
+    if st.button("⬅ Back"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
@@ -148,8 +145,7 @@ def render_identity():
     return render_identity_page()
 
 
-# For testing
 if __name__ == "__main__":
-    st.session_state["visitor_id"] = 1
-    st.session_state["visitor_name"] = "Test User"
+    # for local testing
+    st.session_state["current_visitor_id"] = 10
     render_identity_page()
