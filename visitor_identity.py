@@ -55,7 +55,6 @@ def get_visitor_info(visitor_id):
 def update_excel_with_photo(visitor_name, company_name, photo_bytes):
     s3 = boto3.client("s3")
 
-    # Step 1: Download Excel
     try:
         obj = s3.get_object(Bucket=AWS_BUCKET, Key=EXCEL_KEY)
         data = obj["Body"].read()
@@ -71,14 +70,12 @@ def update_excel_with_photo(visitor_name, company_name, photo_bytes):
     ws[f"B{next_row}"] = company_name
     ws[f"D{next_row}"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # Insert Photo
     img = PILImage.open(io.BytesIO(photo_bytes))
     img.thumbnail((120, 120))
     photo = XLImage(img)
     photo.anchor = f"C{next_row}"
     ws.add_image(photo)
 
-    # Save and Upload back
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -93,7 +90,7 @@ def update_excel_with_photo(visitor_name, company_name, photo_bytes):
     return True
 
 
-# ---------------- Digital Visitor Pass ----------------
+# ---------------- Digital Pass ----------------
 def render_pass(visitor, photo_bytes):
     base64_img = base64.b64encode(photo_bytes).decode()
 
@@ -113,7 +110,7 @@ def render_pass(visitor, photo_bytes):
                     style="width:120px;height:120px;border-radius:10px;border:2px solid #5036FF;"/>
             </div>
 
-            <hr style="margin:15px 0;"/>
+            <hr/>
 
             <p><b>Name:</b> {visitor["full_name"]}</p>
             <p><b>Company:</b> {visitor["from_company"]}</p>
@@ -125,15 +122,14 @@ def render_pass(visitor, photo_bytes):
     )
 
 
-# ---------------- Identity Page ----------------
+# ---------------- ENTRY POINT (main router uses this) ----------------
 def render_identity_page():
-    # Authentication check
+    # SESSION & ACCESS CHECK
     if not st.session_state.get("admin_logged_in", False):
         st.warning("Unauthorized access")
         st.session_state["current_page"] = "visitor_login"
         st.rerun()
 
-    # Visitor flow check
     if "current_visitor_id" not in st.session_state:
         st.error("No visitor selected.")
         st.session_state["current_page"] = "visitor_details"
@@ -148,18 +144,16 @@ def render_identity_page():
 
     camera_photo = st.camera_input("Capture Visitor Photo")
 
-    if st.button("Save & Generate Visitor Pass →"):
+    if st.button("💾 Save & Generate Pass"):
         if not camera_photo:
             st.error("Please capture a photo first.")
             return
 
         photo_bytes = camera_photo.read()
 
-        with st.spinner("Saving photo & updating visitor pass..."):
+        with st.spinner("Saving photo and creating pass..."):
             updated = update_excel_with_photo(
-                visitor["full_name"],
-                visitor["from_company"],
-                photo_bytes
+                visitor["full_name"], visitor["from_company"], photo_bytes
             )
 
         if updated:
@@ -167,10 +161,8 @@ def render_identity_page():
             render_pass(visitor, photo_bytes)
 
             st.markdown("### Actions")
-
             col1, col2, col3 = st.columns(3)
 
-            # NEW VISITOR
             with col1:
                 if st.button("➕ New Visitor"):
                     st.session_state["visitor_data"] = {}
@@ -179,23 +171,20 @@ def render_identity_page():
                     st.session_state["current_page"] = "visitor_details"
                     st.rerun()
 
-            # LOGOUT
             with col2:
                 if st.button("🚪 Logout"):
                     st.session_state.clear()
                     st.session_state["current_page"] = "visitor_login"
                     st.rerun()
 
-            # DASHBOARD
             with col3:
                 if st.button("📊 Dashboard"):
                     st.session_state["current_page"] = "visitor_dashboard"
                     st.rerun()
 
         else:
-            st.error("Failed to update Excel file.")
+            st.error("Failed to update Excel.")
 
-    st.write("")
     if st.button("← Back"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
