@@ -63,7 +63,7 @@ def save_photo_and_update(visitor, photo_bytes):
     s3 = boto3.client("s3")
 
     filename = (
-        f"visitor_phayes/"
+        f"visitor_photos/"
         f"{visitor['from_company'].replace(' ', '_').lower()}/"
         f"{visitor['full_name'].replace(' ', '_').lower()}_"
         f"{int(datetime.now().timestamp())}.jpg"
@@ -126,7 +126,6 @@ def generate_pass_image(visitor, photo_bytes):
         pass
 
     draw.text((230, 140), "Visitor Pass", fill="#4B2ECF", font=font_title)
-
     card.paste(face_img, (235, 220))
 
     y = 500
@@ -225,21 +224,23 @@ def render_identity_page():
 
         photo_bytes = photo.getvalue()
 
-        # Save DB + upload S3
+        # Save to DB
         save_photo_and_update(visitor, photo_bytes)
 
-        # Generate pass image
+        # Generate pass
         pass_image = generate_pass_image(visitor, photo_bytes)
 
-        # Send email and show result
+        # Send email
         sent, err = send_email(visitor, pass_image)
 
-        if sent:
-            st.success(f"Mail sent to: {visitor['email']}")
-        else:
-            st.error(f"Mail failed: {err}")
+        if not sent:
+            st.error(f"❌ Mail failed: {err}")
+            return  # <- STOP HERE, DO NOT NAVIGATE
 
-        # Store Visitor Data in Session
+        # If success
+        st.success(f"✔️ Mail sent to: {visitor['email']}")
+
+        # Store in session
         st.session_state["pass_data"] = {
             "visitor_id": visitor["visitor_id"],
             "full_name": visitor["full_name"],
@@ -250,7 +251,7 @@ def render_identity_page():
         }
         st.session_state["pass_image"] = pass_image
 
-        # Move to pass page
+        # Navigate only on success
         st.session_state["current_page"] = "visitor_pass"
         st.rerun()
 
