@@ -9,6 +9,7 @@ from PIL import Image as PILImage
 from openpyxl import load_workbook
 from openpyxl.drawing.image import Image as XLImage
 
+
 AWS_REGION = "ap-south-1"
 AWS_BUCKET = "zodoptvisiorsmanagement"
 EXCEL_KEY = "visitorsphoto.xlsx"
@@ -54,7 +55,7 @@ def get_visitor_info(visitor_id):
 def update_excel_with_photo(visitor_name, company_name, photo_bytes):
     s3 = boto3.client("s3")
 
-    # Download Excel
+    # Step 1: Download Excel
     try:
         obj = s3.get_object(Bucket=AWS_BUCKET, Key=EXCEL_KEY)
         data = obj["Body"].read()
@@ -70,12 +71,14 @@ def update_excel_with_photo(visitor_name, company_name, photo_bytes):
     ws[f"B{next_row}"] = company_name
     ws[f"D{next_row}"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
+    # Insert Photo
     img = PILImage.open(io.BytesIO(photo_bytes))
     img.thumbnail((120, 120))
     photo = XLImage(img)
     photo.anchor = f"C{next_row}"
     ws.add_image(photo)
 
+    # Save and Upload back
     output = io.BytesIO()
     wb.save(output)
     output.seek(0)
@@ -90,9 +93,8 @@ def update_excel_with_photo(visitor_name, company_name, photo_bytes):
     return True
 
 
-# ---------------- Visitor Pass Card ----------------
+# ---------------- Digital Visitor Pass ----------------
 def render_pass(visitor, photo_bytes):
-    # Photo Base64 for HTML
     base64_img = base64.b64encode(photo_bytes).decode()
 
     st.markdown(
@@ -123,73 +125,77 @@ def render_pass(visitor, photo_bytes):
     )
 
 
-# ---------------- Main Page ----------------
+# ---------------- Identity Page ----------------
 def render_identity_page():
+    # Authentication check
+    if not st.session_state.get("admin_logged_in", False):
+        st.warning("Unauthorized access")
+        st.session_state["current_page"] = "visitor_login"
+        st.rerun()
+
+    # Visitor flow check
     if "current_visitor_id" not in st.session_state:
         st.error("No visitor selected.")
-        return
+        st.session_state["current_page"] = "visitor_details"
+        st.rerun()
 
     visitor_id = st.session_state["current_visitor_id"]
     visitor = get_visitor_info(visitor_id)
 
-    st.title("🆔 Visitor Identity Capture")
-
+    st.title("🆔 Identity Capture & Visitor Pass")
     st.subheader(f"Visitor: {visitor['full_name']}")
     st.markdown(f"**Company:** {visitor['from_company']}")
 
-    st.write("### Capture Photo")
-    camera_photo = st.camera_input("Take photo for visitor pass")
+    camera_photo = st.camera_input("Capture Visitor Photo")
 
-    if st.button("Save & Generate Pass →"):
+    if st.button("Save & Generate Visitor Pass →"):
         if not camera_photo:
-            st.error("Please capture a photo.")
+            st.error("Please capture a photo first.")
             return
 
         photo_bytes = camera_photo.read()
 
-        with st.spinner("Updating Excel & generating pass..."):
+        with st.spinner("Saving photo & updating visitor pass..."):
             updated = update_excel_with_photo(
-                visitor["full_name"], visitor["from_company"], photo_bytes
+                visitor["full_name"],
+                visitor["from_company"],
+                photo_bytes
             )
 
         if updated:
-            st.success("Visitor identity saved successfully!")
-
-            # Render digital pass
+            st.success("Visitor identity saved!")
             render_pass(visitor, photo_bytes)
 
             st.markdown("### Actions")
 
             col1, col2, col3 = st.columns(3)
 
+            # NEW VISITOR
             with col1:
                 if st.button("➕ New Visitor"):
-                    st.session_state.pop("visitor_data", None)
-                    st.session_state.pop("current_visitor_id", None)
+                    st.session_state["visitor_data"] = {}
                     st.session_state["registration_step"] = "primary"
+                    st.session_state.pop("current_visitor_id", None)
                     st.session_state["current_page"] = "visitor_details"
                     st.rerun()
 
+            # LOGOUT
             with col2:
                 if st.button("🚪 Logout"):
-                    for key in list(st.session_state.keys()):
-                        del st.session_state[key]
+                    st.session_state.clear()
                     st.session_state["current_page"] = "visitor_login"
                     st.rerun()
 
+            # DASHBOARD
             with col3:
-                if st.button("Dashboard →"):
+                if st.button("📊 Dashboard"):
                     st.session_state["current_page"] = "visitor_dashboard"
                     st.rerun()
 
         else:
-            st.error("Could not update Excel")
+            st.error("Failed to update Excel file.")
 
     st.write("")
     if st.button("← Back"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
-
-
-def render_identity():
-    return render_identity_page()
