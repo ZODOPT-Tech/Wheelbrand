@@ -98,15 +98,13 @@ def save_photo_and_update(visitor, photo_bytes):
 # ======================================================
 def generate_pass_image(visitor, photo_bytes):
 
-    # Face image
     face_img = Image.open(BytesIO(photo_bytes)).resize((230, 230))
 
-    # Card layout
     W, H = 700, 1000
     card = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(card)
 
-    # ---- Fonts ----
+    # Fonts
     try:
         font_title = ImageFont.truetype(
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48
@@ -118,9 +116,8 @@ def generate_pass_image(visitor, photo_bytes):
         font_title = ImageFont.load_default()
         font_text = ImageFont.load_default()
 
-    # ---- Logo ----
+    # Logo
     try:
-        # Load logo from URL
         import requests
         logo_data = requests.get(LOGO_URL).content
         logo = Image.open(BytesIO(logo_data)).resize((200, 60))
@@ -128,13 +125,10 @@ def generate_pass_image(visitor, photo_bytes):
     except:
         pass
 
-    # ---- Title ----
     draw.text((230, 140), "Visitor Pass", fill="#4B2ECF", font=font_title)
 
-    # ---- Photo ----
     card.paste(face_img, (235, 220))
 
-    # ---- Information ----
     y = 500
     info = [
         ("Name", visitor["full_name"]),
@@ -149,14 +143,13 @@ def generate_pass_image(visitor, photo_bytes):
         draw.text((140, y), f"{key}: {val}", font=font_text, fill="black")
         y += 60
 
-    # ---- Export ----
     out = BytesIO()
     card.save(out, format="JPEG")
     return out.getvalue()
 
 
 # ======================================================
-# Email with Attachment
+# Email with Attachment (Gmail SMTP)
 # ======================================================
 def send_email(visitor, pass_image):
     creds = get_credentials()
@@ -169,9 +162,7 @@ def send_email(visitor, pass_image):
     msg.set_content(f"""
 Hello {visitor['full_name']},
 
-Welcome to {visitor['from_company']}!
-
-📌 Your Visitor Pass has been generated.
+Your Visitor Pass has been generated.
 
 Visitor ID : {visitor['visitor_id']}
 To Meet    : {visitor['person_to_meet']}
@@ -183,8 +174,8 @@ Thank You,
 Reception
 """)
 
-    # attach pass image
-    msg.add_attachment(pass_image,
+    msg.add_attachment(
+        pass_image,
         maintype="image",
         subtype="jpeg",
         filename="visitor_pass.jpg"
@@ -194,17 +185,20 @@ Reception
         smtp_server = creds["SMTP_HOST"]
         smtp_port = int(creds["SMTP_PORT"])
         smtp_user = creds["SMTP_USER"]
-        smtp_pwd  = creds["SMTP_PASSWORD"]
+        smtp_pwd = creds["SMTP_PASSWORD"]
 
+        # Gmail SMTP
         with smtplib.SMTP(smtp_server, smtp_port) as server:
+            server.ehlo()
             server.starttls()
+            server.ehlo()
             server.login(smtp_user, smtp_pwd)
             server.send_message(msg)
 
         return True
 
-    except Exception:
-        # Ignore failures for UI
+    except Exception as e:
+        print("Email send failed:", e)
         return False
 
 
@@ -233,16 +227,12 @@ def render_identity_page():
 
         photo_bytes = photo.getvalue()
 
-        # 1. Save DB + upload S3
         save_photo_and_update(visitor, photo_bytes)
 
-        # 2. Generate pass image
         pass_image = generate_pass_image(visitor, photo_bytes)
 
-        # 3. Try to email (ignore failure)
         send_email(visitor, pass_image)
 
-        # 4. Store Visitor Data in Session
         st.session_state["pass_data"] = {
             "visitor_id": visitor["visitor_id"],
             "full_name": visitor["full_name"],
@@ -253,7 +243,6 @@ def render_identity_page():
         }
         st.session_state["pass_image"] = pass_image
 
-        # 5. Move to pass page
         st.session_state["current_page"] = "visitor_pass"
         st.rerun()
 
@@ -271,12 +260,15 @@ def render_pass_page():
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
-    st.markdown("<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>",
-                unsafe_allow_html=True)
+    st.markdown(
+        "<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>",
+        unsafe_allow_html=True,
+    )
 
     img_data = base64.b64encode(pass_image).decode()
 
-    st.markdown(f"""
+    st.markdown(
+        f"""
     <div style="
         width:480px;margin:auto;background:white;
         border-radius:14px;padding:20px;
@@ -287,7 +279,9 @@ def render_pass_page():
                  style="width:330px;border-radius:12px;border:4px solid #4B2ECF;">
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     _, col_dash, col_out, _ = st.columns([1, 2, 2, 1])
 
