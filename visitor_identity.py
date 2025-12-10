@@ -42,6 +42,19 @@ def get_db_conn():
 
 
 # =============================
+# Update Visitor Status to Approved
+# =============================
+def approve_visitor(visitor_id):
+    conn = get_db_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE visitors SET status='approved' WHERE visitor_id=%s",
+        (visitor_id,)
+    )
+    cur.close()
+
+
+# =============================
 # Get Visitor Details from DB
 # =============================
 def get_visitor_data(visitor_id: int):
@@ -71,7 +84,6 @@ def get_visitor_data(visitor_id: int):
 def write_photo_to_excel(visitor, photo_bytes):
     s3 = boto3.client("s3")
 
-    # download existing xlxs
     obj = s3.get_object(Bucket=AWS_BUCKET, Key=EXCEL_FILE)
     xl_data = obj["Body"].read()
 
@@ -84,7 +96,6 @@ def write_photo_to_excel(visitor, photo_bytes):
     ws[f"B{row}"] = visitor["from_company"]
     ws[f"D{row}"] = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # insert image
     img = PILImage.open(io.BytesIO(photo_bytes))
     img.thumbnail((120, 120))
     xl_img = XLImage(img)
@@ -101,6 +112,42 @@ def write_photo_to_excel(visitor, photo_bytes):
         Body=out.getvalue(),
         ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+
+# =============================
+# Header
+# =============================
+def render_header(visitor):
+    st.markdown("""
+        <style>
+            .id-header {
+                background: linear-gradient(90deg, #5036FF, #9C2CFF);
+                padding: 24px;
+                border-radius: 14px;
+                color: white;
+                font-size: 26px;
+                font-weight: 700;
+                margin-bottom: 18px;
+            }
+            .id-sub {
+                font-size: 15px;
+                opacity: 0.92;
+                margin-top: 6px;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown(f"""
+        <div class="id-header">
+            Identity Capture
+            <div class="id-sub">Capture photo & generate visitor pass</div>
+        </div>
+    """, unsafe_allow_html=True)
+
+    st.write(f"**Name:** {visitor['full_name']}")
+    st.write(f"**Company:** {visitor['from_company']}")
+    st.write(f"**Meeting:** {visitor['person_to_meet']}")
+    st.write("---")
 
 
 # =============================
@@ -138,66 +185,58 @@ def show_pass(visitor, photo_bytes):
 # MAIN ENTRY EXPORT
 # =============================
 def render_identity_page():
-    """
-    THIS FUNCTION IS CALLED FROM main.py router:
-    PAGE_MODULES['visitor_identity']
-    """
 
-    # Authentication
+    # Auth
     if not st.session_state.get("admin_logged_in", False):
-        st.warning("Unauthorized access.")
         st.session_state["current_page"] = "visitor_login"
         st.rerun()
 
-    # Visitor selection
     if "current_visitor_id" not in st.session_state:
-        st.error("No visitor selected.")
         st.session_state["current_page"] = "visitor_details"
         st.rerun()
 
     visitor_id = st.session_state["current_visitor_id"]
     visitor = get_visitor_data(visitor_id)
 
-    st.title("🆔 Capture Visitor Photo & Generate Pass")
+    # Header
+    render_header(visitor)
 
-    st.write(f"**Name:** {visitor['full_name']}")
-    st.write(f"**Company:** {visitor['from_company']}")
-    st.write(f"**Meeting:** {visitor['person_to_meet']}")
-
+    # Capture Photo
     photo = st.camera_input("Capture Photo")
 
-    if st.button("💾 Save & Generate Pass"):
+    if st.button("Save & Generate Pass"):
         if not photo:
             st.error("Please capture the photo")
             return
-        
+
         photo_bytes = photo.getvalue()
 
         with st.spinner("Saving & Updating Excel..."):
             write_photo_to_excel(visitor, photo_bytes)
+            approve_visitor(visitor_id)
 
-        st.success("Visitor profile saved successfully!")
+        st.success("Visitor registered successfully!")
         show_pass(visitor, photo_bytes)
 
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            if st.button("➕ New Visitor"):
+        # ACTIONS
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            if st.button("New Visitor"):
                 st.session_state.pop("current_visitor_id", None)
                 st.session_state["current_page"] = "visitor_details"
                 st.rerun()
 
-        with c2:
-            if st.button("📊 Dashboard"):
+        with col2:
+            if st.button("Dashboard"):
                 st.session_state["current_page"] = "visitor_dashboard"
                 st.rerun()
 
-        with c3:
-            if st.button("🚪 Logout"):
+        with col3:
+            if st.button("Logout"):
                 st.session_state.clear()
                 st.session_state["current_page"] = "visitor_login"
                 st.rerun()
 
-    # Back button
-    if st.button("← Back"):
+    if st.button("Back"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
