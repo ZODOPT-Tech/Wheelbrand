@@ -1,27 +1,31 @@
 import streamlit as st
 from datetime import datetime
-import mysql.connector
 import boto3
+import base64
+import io
+import mysql.connector
 import json
-
+from PIL import Image as PILImage
+from openpyxl import load_workbook
+from openpyxl.drawing.image import Image as XLImage
 
 AWS_REGION = "ap-south-1"
 AWS_BUCKET = "zodoptvisiorsmanagement"
+EXCEL_KEY = "visitorsphoto.xlsx"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
 
-# ---------------- AWS CREDENTIALS ----------------
+# ---------------- AWS Secret ----------------
 @st.cache_resource
-def get_aws_credentials():
+def get_db_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
-    sec = client.get_secret_value(SecretId=AWS_SECRET_NAME)
-    return json.loads(sec["SecretString"])
+    secret = client.get_secret_value(SecretId=AWS_SECRET_NAME)
+    return json.loads(secret["SecretString"])
 
 
-# ---------------- MYSQL CONNECTION ----------------
 @st.cache_resource
 def get_connection():
-    creds = get_aws_credentials()
+    creds = get_db_credentials()
     return mysql.connector.connect(
         host=creds["DB_HOST"],
         user=creds["DB_USER"],
@@ -31,121 +35,115 @@ def get_connection():
     )
 
 
-# ---------------- S3 UPLOAD ----------------
-def upload_to_s3(file_bytes, filename, content_type):
+# ---------------- Fetch Visitor Info for Excel ----------------
+def get_visitor_info(visitor_id):
+    conn = get_connection()
+    cursor = conn.cursor(dictionary=True)
+    cursor.execute(
+        """
+        SELECT full_name, from_company
+        FROM visitors
+        WHERE visitor_id=%s
+        """,
+        (visitor_id,),
+    )
+    return cursor.fetchone()
+
+
+# ---------------- Excel Update Logic ----------------
+def update_excel_with_photo(visitor_name, company_name, photo_bytes):
     s3 = boto3.client("s3")
+
+    # Step 1: Download the existing Excel file
+    try:
+        obj = s3.get_object(Bucket=AWS_BUCKET, Key=EXCEL_KEY)
+        data = obj["Body"].read()
+    except Exception:
+        st.error("Excel file not found in S3. Please upload visitorsphoto.xlsx first.")
+        return False
+
+    # Step 2: Load workbook
+    wb = load_workbook(io.BytesIO(data))
+    ws = wb.active
+
+    # Step 3: Find next row
+    next_row = ws.max_row + 1
+
+    # Step 4: Add text columns
+    ws[f"A{next_row}"] = visitor_name
+    ws[f"B{next_row}"] = company_name
+    ws[f"D{next_row}"] = datetime.now().strftime("%Y-%m-%d %H:%M")
+
+    # Step 5: Insert image
+    img = PILImage.open(io.BytesIO(photo_bytes))
+    img.thumbnail((120, 120))
+    photo = XLImage(img)
+
+    photo.anchor = f"C{next_row}"
+    ws.add_image(photo)
+
+    # Step 6: Save workbook to memory
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    # Step 7: Upload back to S3
     s3.put_object(
         Bucket=AWS_BUCKET,
-        Key=filename,
-        Body=file_bytes,
-        ContentType=content_type
+        Key=EXCEL_KEY,
+        Body=output.getvalue(),
+        ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
-    return f"https://{AWS_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{filename}"
+
+    return True
 
 
-# ---------------- SAVE TO DB ----------------
-def save_identity(visitor_id, photo_url):
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        INSERT INTO visitor_identity (visitor_id, photo_url)
-        VALUES (%s, %s)
-    """, (visitor_id, photo_url))
-
-    cursor.close()
-
-
-# ---------------- HEADER UI ----------------
-def load_styles():
-    st.markdown("""
-        <style>
-            .header-box {
-                background: linear-gradient(90deg, #5036FF, #9C2CFF);
-                padding: 22px;
-                color: white;
-                font-size: 26px;
-                font-weight: 700;
-                border-radius: 10px;
-                margin-bottom: 25px;
-            }
-            
-            .btn-primary button {
-                background: linear-gradient(90deg, #5036FF, #9C2CFF) !important;
-                color: white !important;
-                border: none !important;
-                padding: 12px !important;
-                border-radius: 8px !important;
-                font-size: 17px !important;
-                font-weight: 600 !important;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-
-
-# ---------------- MAIN PAGE ----------------
+# ---------------- UI ----------------
 def render_identity_page():
-
-    load_styles()
-
-    st.markdown("""
-        <div class="header-box">
-            Visitor Identity Capture
-        </div>
-    """, unsafe_allow_html=True)
-
-    # we expect visitor_id passed from previous page
-    visitor_id = st.session_state.get("current_visitor_id", None)
-
-    if visitor_id is None:
+    if "current_visitor_id" not in st.session_state:
         st.error("No visitor selected.")
         return
 
-    st.subheader("📸 Capture Visitor Photo")
+    visitor_id = st.session_state["current_visitor_id"]
+    info = get_visitor_info(visitor_id)
 
-    camera_photo = st.camera_input("Take Photo", label_visibility="collapsed")
+    st.title("🆔 Visitor Identity Capture")
+
+    st.subheader(f"Visitor: {info['full_name']}")
+    st.markdown(f"**Company:** {info['from_company']}")
 
     st.write("")
+    st.write("### Capture Photo")
+    camera_photo = st.camera_input("Take photo for identity record")
 
-    st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
-
-    if st.button("Save Identity →", use_container_width=True):
-
-        if camera_photo is None:
-            st.error("Photo is required.")
+    st.write("")
+    if st.button("Save Identity →"):
+        if not camera_photo:
+            st.error("Please capture a photo.")
             return
 
-        with st.spinner("Saving visitor identity..."):
+        photo_bytes = camera_photo.read()
 
-            # Save photo to S3
-            bytes_photo = camera_photo.read()
-            filename = f"visitorsphoto/{visitor_id}_{datetime.now().timestamp()}.jpg"
+        with st.spinner("Updating Excel..."):
+            status = update_excel_with_photo(
+                info["full_name"],
+                info["from_company"],
+                photo_bytes
+            )
 
-            photo_url = upload_to_s3(bytes_photo, filename, "image/jpeg")
+        if status:
+            st.success("Visitor identity saved successfully!")
+            st.balloons()
+            st.session_state["current_page"] = "visitor_dashboard"
+            st.rerun()
+        else:
+            st.error("Failed to update Excel")
 
-            # Save record in DB
-            save_identity(visitor_id, photo_url)
 
-        st.success("Visitor identity saved successfully!")
-        st.balloons()
-
-        # Move back to dashboard
+    if st.button("← Back to Dashboard"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    if st.button("⬅ Back"):
-        st.session_state["current_page"] = "visitor_dashboard"
-        st.rerun()
-
-
-# EXPORT FOR ROUTER
 def render_identity():
     return render_identity_page()
-
-
-if __name__ == "__main__":
-    # for local testing
-    st.session_state["current_visitor_id"] = 10
-    render_identity_page()
