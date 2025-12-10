@@ -75,14 +75,13 @@ def load_pass_css():
 def render_pass_page():
 
     # ------------ SECURITY CHECKS ------------
-    # Email must be sent before opening pass page
     if not st.session_state.get("email_sent", False):
-        st.error("Invalid access. Visitor email not sent.")
+        st.error("Invalid access. Email not sent.")
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
     if "pass_data" not in st.session_state:
-        st.error("Visitor details missing.")
+        st.error("Visitor data not found.")
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
@@ -110,8 +109,8 @@ def render_pass_page():
         <div class="pass-field"><span class="label">Company:</span> {visitor['from_company']}</div>
         <div class="pass-field"><span class="label">To Meet:</span> {visitor['person_to_meet']}</div>
         <div class="pass-field"><span class="label">Visitor ID:</span> #{visitor['visitor_id']}</div>
-        <div class="pass-field"><span class="label">Date:</span> {datetime.now().strftime('%d-%m-%Y %H:%M')}</div>
         <div class="pass-field"><span class="label">Email:</span> {visitor['email']}</div>
+        <div class="pass-field"><span class="label">Date:</span> {datetime.now().strftime('%d-%m-%Y %H:%M')}</div>
     """, unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
@@ -125,7 +124,7 @@ def render_pass_page():
     st.write("")
     st.write("")
 
-    # ================= ACTION BUTTONS =================
+    # ================= ACTION BUTTONS (ONLY TWO) =================
     col1, col2 = st.columns(2)
 
     # Back to identity
