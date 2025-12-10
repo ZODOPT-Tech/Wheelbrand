@@ -74,7 +74,7 @@ def load_pass_css():
 # ==============================
 def render_pass_page():
 
-    # ------------ SECURITY CHECKS ------------
+    # ------------- SECURITY CHECKS -------------
     if not st.session_state.get("email_sent", False):
         st.error("Invalid access. Email not sent.")
         st.session_state["current_page"] = "visitor_dashboard"
@@ -89,13 +89,11 @@ def render_pass_page():
 
     load_pass_css()
 
-    # ================= PASS CARD =================
+    # ------------- PASS CARD -------------
     st.markdown("<div class='pass-container'>", unsafe_allow_html=True)
-
-    # Title
     st.markdown("<div class='pass-title'>Visitor Pass</div>", unsafe_allow_html=True)
 
-    # Photo
+    # photo
     base64_img = base64.b64encode(visitor["photo_bytes"]).decode()
     st.markdown(f"""
         <div class="pass-photo">
@@ -103,19 +101,19 @@ def render_pass_page():
         </div>
     """, unsafe_allow_html=True)
 
-    # Visitor Details
+    # visitor details
     st.markdown(f"""
         <div class="pass-field"><span class="label">Name:</span> {visitor['full_name']}</div>
         <div class="pass-field"><span class="label">Company:</span> {visitor['from_company']}</div>
         <div class="pass-field"><span class="label">To Meet:</span> {visitor['person_to_meet']}</div>
         <div class="pass-field"><span class="label">Visitor ID:</span> #{visitor['visitor_id']}</div>
-        <div class="pass-field"><span class="label">Email:</span> {visitor['email']}</div>
+        <div class="pass-field"><span class="label">Email Sent To:</span> {visitor['email']}</div>
         <div class="pass-field"><span class="label">Date:</span> {datetime.now().strftime('%d-%m-%Y %H:%M')}</div>
     """, unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ================= EMAIL SENT CONFIRMATION =================
+    # email confirmation text
     st.markdown(
         f"<div class='email-note'>Pass sent to: <b>{visitor['email']}</b></div>",
         unsafe_allow_html=True
@@ -124,21 +122,22 @@ def render_pass_page():
     st.write("")
     st.write("")
 
-    # ================= ACTION BUTTONS (ONLY TWO) =================
-    col1, col2 = st.columns(2)
+    # ------------- CENTERED ACTION BUTTONS -------------
+    col_spacer_left, col_dashboard, col_logout, col_spacer_right = st.columns([1, 2, 2, 1])
 
-    # Back to identity
-    with col1:
+    # Dashboard
+    with col_dashboard:
         st.markdown("<div class='action-btn'>", unsafe_allow_html=True)
-        if st.button("⬅ Back"):
-            st.session_state["current_page"] = "visitor_identity"
+        if st.button("📊 Dashboard", use_container_width=True):
+            st.session_state["current_page"] = "visitor_dashboard"
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Dashboard
-    with col2:
+    # Logout
+    with col_logout:
         st.markdown("<div class='action-btn'>", unsafe_allow_html=True)
-        if st.button("🏢 Dashboard"):
-            st.session_state["current_page"] = "visitor_dashboard"
+        if st.button("🚪 Logout", use_container_width=True):
+            st.session_state.clear()
+            st.session_state["current_page"] = "visitor_login"
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
