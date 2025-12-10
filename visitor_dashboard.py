@@ -140,7 +140,7 @@ def render_header():
 
 
 # ======================================================
-# FETCH VISITORS — TODAY ONLY + APPROVED ONLY
+# FETCH VISITORS — ONLY APPROVED + PASS GENERATED
 # ======================================================
 
 def get_visitors(company_id):
@@ -152,6 +152,7 @@ def get_visitors(company_id):
         FROM visitors
         WHERE company_id = %s
           AND status = 'approved'
+          AND pass_generated = 1
           AND DATE(registration_timestamp) = CURDATE()
         ORDER BY registration_timestamp DESC
     """, (company_id,))
@@ -159,7 +160,7 @@ def get_visitors(company_id):
 
 
 # ======================================================
-# DASHBOARD SUMMARY (APPROVED ONLY)
+# DASHBOARD STATS — APPROVED + PASS GENERATED
 # ======================================================
 
 def dashboard_stats(company_id):
@@ -171,6 +172,7 @@ def dashboard_stats(company_id):
         FROM visitors 
         WHERE company_id=%s 
           AND status='approved'
+          AND pass_generated = 1
           AND DATE(registration_timestamp)=CURDATE()
     """, (company_id,))
     visitors_today = cursor.fetchone()['c']
@@ -180,6 +182,7 @@ def dashboard_stats(company_id):
         FROM visitors
         WHERE company_id=%s 
           AND status='approved'
+          AND pass_generated = 1
           AND checkout_time IS NULL
           AND DATE(registration_timestamp)=CURDATE()
     """, (company_id,))
@@ -190,20 +193,12 @@ def dashboard_stats(company_id):
         FROM visitors
         WHERE company_id=%s 
           AND status='approved'
+          AND pass_generated = 1
           AND DATE(checkout_time)=CURDATE()
     """, (company_id,))
     checked_out_today = cursor.fetchone()['c']
 
-    cursor.execute("""
-        SELECT COUNT(*) AS c 
-        FROM visitors
-        WHERE company_id=%s 
-          AND status='approved'
-          AND DATE(registration_timestamp)=CURDATE()
-    """, (company_id,))
-    total_visitors = cursor.fetchone()['c']
-
-    return visitors_today, inside_now, checked_out_today, total_visitors
+    return visitors_today, inside_now, checked_out_today, visitors_today
 
 
 # ======================================================
@@ -263,23 +258,17 @@ def render_visitor_dashboard():
             </div>
         """, unsafe_allow_html=True)
 
-        st.markdown(f"""
-            <div class="summary-card">
-                <div class="summary-title">Total Today</div>
-                <div class="summary-value">{total_visitors}</div>
-            </div>
-        """, unsafe_allow_html=True)
 
     # ================= LEFT LIST =================
     with left:
 
         st.markdown("<div class='new-btn'>", unsafe_allow_html=True)
-        if st.button("➕ NEW VISITOR REGISTRATION"):
+        if st.button("NEW VISITOR REGISTRATION"):
             st.session_state["current_page"] = "visitor_details"
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-        st.markdown("## 🧾 Visitor List")
+        st.markdown("## Visitor List")
 
         visitors = get_visitors(company_id)
 
@@ -287,6 +276,7 @@ def render_visitor_dashboard():
             st.info("No approved visitors today.")
             return
 
+        # Header
         header = st.columns([3, 2, 2, 3, 2, 2])
         header[0].markdown("### Name")
         header[1].markdown("### Phone")
@@ -297,6 +287,7 @@ def render_visitor_dashboard():
 
         st.markdown("---")
 
+        # Rows
         for v in visitors:
             vid = v["visitor_id"]
             checkout_val = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
