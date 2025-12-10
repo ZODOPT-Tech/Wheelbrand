@@ -3,19 +3,28 @@ from datetime import datetime
 import base64
 
 
-# ==============================
-# PASS PAGE UI STYLING
-# ==============================
+# ===========================
+# PASS PAGE UI CSS
+# ===========================
 def load_pass_css():
     st.markdown("""
         <style>
+
         .pass-container {
-            width: 420px;
+            width: 430px;
             margin: 0 auto;
             background: #FFFFFF;
             border-radius: 14px;
-            padding: 24px;
+            padding: 26px 24px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.12);
+        }
+
+        .pass-logo {
+            text-align: center;
+            margin-bottom: 12px;
+        }
+        .pass-logo img {
+            height: 60px;
         }
 
         .pass-title {
@@ -28,28 +37,28 @@ def load_pass_css():
 
         .pass-photo {
             text-align: center;
-            margin-bottom: 14px;
+            margin-bottom: 18px;
         }
         .pass-photo img {
-            width: 150px;
-            height: 150px;
+            width: 165px;
+            height: 165px;
             border-radius: 12px;
             border: 3px solid #4B2ECF;
             object-fit: cover;
         }
 
         .pass-field {
-            font-size: 16px;
+            font-size: 17px;
             margin: 6px 0;
         }
         .label {
             font-weight: 700;
-            color: #444;
+            color: #222;
         }
 
         .email-note {
             text-align: center;
-            margin-top: 15px;
+            margin-top: 14px;
             color: #4B2ECF;
             font-weight: 600;
             font-size: 15px;
@@ -65,35 +74,39 @@ def load_pass_css():
             font-weight: 600 !important;
             border: none !important;
         }
+
         </style>
     """, unsafe_allow_html=True)
 
 
-# ==============================
-# RENDER PASS PAGE
-# ==============================
+# ===========================
+# PASS PAGE
+# ===========================
 def render_pass_page():
-
-    # ------------- SECURITY CHECKS -------------
-    if not st.session_state.get("email_sent", False):
-        st.error("Invalid access. Email not sent.")
-        st.session_state["current_page"] = "visitor_dashboard"
-        st.rerun()
-
-    if "pass_data" not in st.session_state:
-        st.error("Visitor data not found.")
-        st.session_state["current_page"] = "visitor_dashboard"
-        st.rerun()
-
-    visitor = st.session_state["pass_data"]
-
     load_pass_css()
 
-    # ------------- PASS CARD -------------
+    visitor = st.session_state.get("pass_data")
+    if not visitor:
+        st.error("⚠️ Pass data not found.")
+        st.session_state["current_page"] = "visitor_dashboard"
+        st.rerun()
+
+    # ===========================
+    # PASS CARD
+    # ===========================
     st.markdown("<div class='pass-container'>", unsafe_allow_html=True)
+
+    # --- LOGO ---
+    st.markdown(f"""
+        <div class="pass-logo">
+            <img src="https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png">
+        </div>
+    """, unsafe_allow_html=True)
+
+    # --- TITLE ---
     st.markdown("<div class='pass-title'>Visitor Pass</div>", unsafe_allow_html=True)
 
-    # photo
+    # --- PHOTO ---
     base64_img = base64.b64encode(visitor["photo_bytes"]).decode()
     st.markdown(f"""
         <div class="pass-photo">
@@ -101,7 +114,7 @@ def render_pass_page():
         </div>
     """, unsafe_allow_html=True)
 
-    # visitor details
+    # --- DETAILS ---
     st.markdown(f"""
         <div class="pass-field"><span class="label">Name:</span> {visitor['full_name']}</div>
         <div class="pass-field"><span class="label">Company:</span> {visitor['from_company']}</div>
@@ -113,7 +126,9 @@ def render_pass_page():
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # email confirmation text
+    # ===========================
+    # STATUS TEXT
+    # ===========================
     st.markdown(
         f"<div class='email-note'>Pass sent to: <b>{visitor['email']}</b></div>",
         unsafe_allow_html=True
@@ -122,11 +137,13 @@ def render_pass_page():
     st.write("")
     st.write("")
 
-    # ------------- CENTERED ACTION BUTTONS -------------
-    col_spacer_left, col_dashboard, col_logout, col_spacer_right = st.columns([1, 2, 2, 1])
+    # ===========================
+    # ACTION BUTTONS
+    # ===========================
+    col_spacer_left, col_dash, col_log, col_spacer_right = st.columns([1, 2, 2, 1])
 
     # Dashboard
-    with col_dashboard:
+    with col_dash:
         st.markdown("<div class='action-btn'>", unsafe_allow_html=True)
         if st.button("📊 Dashboard", use_container_width=True):
             st.session_state["current_page"] = "visitor_dashboard"
@@ -134,7 +151,7 @@ def render_pass_page():
         st.markdown("</div>", unsafe_allow_html=True)
 
     # Logout
-    with col_logout:
+    with col_log:
         st.markdown("<div class='action-btn'>", unsafe_allow_html=True)
         if st.button("🚪 Logout", use_container_width=True):
             st.session_state.clear()
