@@ -6,7 +6,7 @@ import json
 
 
 AWS_REGION = "ap-south-1"
-AWS_BUCKET = "zodoptvisiorsmanagement"  # Updated Bucket Name
+AWS_BUCKET = "zodoptvisiorsmanagement"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
 
@@ -33,7 +33,7 @@ def get_connection():
 
 # ---------------- S3 UPLOAD ----------------
 def upload_to_s3(file_bytes, filename, content_type):
-    s3 = boto3.client("s3")  # IAM ROLE
+    s3 = boto3.client("s3")  # IAM ROLE already attached
     s3.put_object(
         Bucket=AWS_BUCKET,
         Key=filename,
@@ -44,22 +44,15 @@ def upload_to_s3(file_bytes, filename, content_type):
 
 
 # ---------------- SAVE TO DB ----------------
-def save_identity(company_id, full_name, company_name, id_type, id_number, photo_url):
+def save_identity(visitor_id, photo_url):
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO visitor_identity (
-            company_id, full_name, company_name,
-            id_type, id_number, photo_url, captured_at
-        )
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO visitor_identity (visitor_id, photo_url, created_at)
+        VALUES (%s, %s, %s)
     """, (
-        company_id,
-        full_name,
-        company_name,
-        id_type,
-        id_number,
+        visitor_id,
         photo_url,
         datetime.now()
     ))
@@ -105,51 +98,21 @@ def render_identity_page():
         </div>
     """, unsafe_allow_html=True)
 
-    company_id = st.session_state["company_id"]
-    company_name = st.session_state["company_name"]
+    visitor_id = st.session_state.get("visitor_id")  # must exist
+    full_name = st.session_state.get("visitor_name", "")  # for filename only
 
-    st.subheader("👤 Visitor Details")
+    if not visitor_id:
+        st.error("❗ Visitor ID not found. Complete registration first.")
+        return
 
-    full_name = st.text_input("Visitor Full Name")
-    
-    id_type = st.selectbox(
-        "Government ID Type",
-        [
-            "Aadhaar Card",
-            "PAN Card",
-            "Driving License",
-            "Voter ID",
-            "Passport",
-            "Ration Card"
-        ]
-    )
-
-    id_number = st.text_input("ID Number")
+    st.subheader("📸 Capture Visitor Photo")
+    camera_photo = st.camera_input("Take Photo", label_visibility="collapsed")
 
     st.write("---")
 
-    col1, col2 = st.columns([1, 1])
-
-    # --- PHOTO ---
-    with col1:
-        st.subheader("📸 Visitor Photo (Required)")
-        camera_photo = st.camera_input("Take Photo", label_visibility="collapsed")
-
-
-    st.write("")
-
-    # ---------------- SUBMIT BUTTON ----------------
     st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
 
     if st.button("Generate Visitor Pass →", use_container_width=True):
-
-        if not full_name:
-            st.error("Visitor name is required.")
-            return
-
-        if not id_number:
-            st.error("ID Number is required.")
-            return
 
         if camera_photo is None:
             st.error("Photo is required.")
@@ -159,20 +122,13 @@ def render_identity_page():
 
             # Save photo to S3
             bytes_photo = camera_photo.read()
-            clean_name = full_name.replace(" ", "_")
-            filename = f"visitorsphoto/{company_name}/{clean_name}_{datetime.now().timestamp()}.jpg"
+            clean_name = full_name.replace(" ", "_") if full_name else f"visitor_{visitor_id}"
 
+            filename = f"visitorsphoto/{clean_name}_{datetime.now().timestamp()}.jpg"
             photo_url = upload_to_s3(bytes_photo, filename, "image/jpeg")
 
-            # Save record in DB
-            save_identity(
-                company_id,
-                full_name,
-                company_name,
-                id_type,
-                id_number,
-                photo_url
-            )
+            # Save record in DB (ONLY visitor_id + photo_url)
+            save_identity(visitor_id, photo_url)
 
         st.success("Visitor Pass Created Successfully!")
         st.balloons()
@@ -192,7 +148,8 @@ def render_identity():
     return render_identity_page()
 
 
+# For testing
 if __name__ == "__main__":
-    st.session_state["company_id"] = 1
-    st.session_state["company_name"] = "Test Company"
+    st.session_state["visitor_id"] = 1
+    st.session_state["visitor_name"] = "Test User"
     render_identity_page()
