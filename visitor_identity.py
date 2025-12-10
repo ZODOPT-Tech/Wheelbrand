@@ -63,7 +63,7 @@ def save_photo_and_update(visitor, photo_bytes):
     s3 = boto3.client("s3")
 
     filename = (
-        f"visitor_photos/"
+        f"visitor_phayes/"
         f"{visitor['from_company'].replace(' ', '_').lower()}/"
         f"{visitor['full_name'].replace(' ', '_').lower()}_"
         f"{int(datetime.now().timestamp())}.jpg"
@@ -149,7 +149,7 @@ def generate_pass_image(visitor, photo_bytes):
 
 
 # ======================================================
-# Email with Attachment (Gmail SMTP)
+# Email with Attachment (Gmail SMTP + Error Handling)
 # ======================================================
 def send_email(visitor, pass_image):
     creds = get_credentials()
@@ -187,7 +187,6 @@ Reception
         smtp_user = creds["SMTP_USER"]
         smtp_pwd = creds["SMTP_PASSWORD"]
 
-        # Gmail SMTP
         with smtplib.SMTP(smtp_server, smtp_port) as server:
             server.ehlo()
             server.starttls()
@@ -195,11 +194,10 @@ Reception
             server.login(smtp_user, smtp_pwd)
             server.send_message(msg)
 
-        return True
+        return True, None
 
     except Exception as e:
-        print("Email send failed:", e)
-        return False
+        return False, str(e)
 
 
 # ======================================================
@@ -227,12 +225,21 @@ def render_identity_page():
 
         photo_bytes = photo.getvalue()
 
+        # Save DB + upload S3
         save_photo_and_update(visitor, photo_bytes)
 
+        # Generate pass image
         pass_image = generate_pass_image(visitor, photo_bytes)
 
-        send_email(visitor, pass_image)
+        # Send email and show result
+        sent, err = send_email(visitor, pass_image)
 
+        if sent:
+            st.success(f"Mail sent to: {visitor['email']}")
+        else:
+            st.error(f"Mail failed: {err}")
+
+        # Store Visitor Data in Session
         st.session_state["pass_data"] = {
             "visitor_id": visitor["visitor_id"],
             "full_name": visitor["full_name"],
@@ -243,6 +250,7 @@ def render_identity_page():
         }
         st.session_state["pass_image"] = pass_image
 
+        # Move to pass page
         st.session_state["current_page"] = "visitor_pass"
         st.rerun()
 
