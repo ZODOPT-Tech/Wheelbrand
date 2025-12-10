@@ -6,7 +6,6 @@ from mysql.connector import Error
 import boto3
 from botocore.exceptions import ClientError
 
-
 # ============================== AWS + DB ==============================
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
@@ -47,25 +46,20 @@ def load_styles():
     st.markdown(
         """
         <style>
-
-        /* Header */
         .header-box {
             background: linear-gradient(90deg, #5036FF, #9C2CFF);
-            padding: 26px 26px 18px 26px;
+            padding: 26px;
             border-radius: 14px;
             color: white;
             font-size: 26px;
             font-weight: 700;
             margin-bottom: 8px;
         }
-
         .header-sub {
             font-size: 15px;
             opacity: 0.92;
             margin-top: -6px;
         }
-
-        /* Tabs */
         .tab-row {
             display: flex;
             gap: 40px;
@@ -83,26 +77,21 @@ def load_styles():
             color: #4F49FF;
             border-bottom: 3px solid #4F49FF;
         }
-
-        /* Input styling */
         .stTextInput > div > div > input {
             background: #F3F5FB !important;
             border-radius: 8px !important;
             border: 1px solid #DDE2EE !important;
             padding: 10px 14px !important;
         }
-
-        /* Gradient Button – SAME COLOR AS HEADER */
         .primary-btn button {
             background: linear-gradient(90deg, #5036FF, #9C2CFF) !important;
-            border: none !important;
             color: white !important;
+            border: none !important;
             border-radius: 8px !important;
             padding: 11px !important;
             font-size: 17px !important;
             font-weight: 600 !important;
         }
-
         </style>
         """,
         unsafe_allow_html=True,
@@ -128,8 +117,8 @@ def render_header():
     st.markdown(
         f"""
         <div class="tab-row">
-            <div class="tab-item {'tab-active' if step=='primary' else ''}">PRIMARY DETAILS</div>
-            <div class="tab-item {'tab-active' if step=='secondary' else ''}">SECONDARY DETAILS</div>
+            <div class="tab-item {'tab-active' if step == 'primary' else ''}">PRIMARY DETAILS</div>
+            <div class="tab-item {'tab-active' if step == 'secondary' else ''}">SECONDARY DETAILS</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -140,12 +129,12 @@ def render_header():
 def render_primary_form():
     d = st.session_state["visitor_data"]
 
-    # Removed container – inputs directly on background
     name = st.text_input("Name *", d.get("name", ""), placeholder="Enter your full name")
     phone = st.text_input("Phone *", d.get("phone", ""), placeholder="81234 56789")
     email = st.text_input("Email *", d.get("email", ""), placeholder="mail@example.com")
 
     st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
+
     if st.button("Next →", use_container_width=True):
         if not name or not phone or not email:
             st.error("All fields are required.")
@@ -157,6 +146,7 @@ def render_primary_form():
 
         st.session_state["registration_step"] = "secondary"
         st.rerun()
+
     st.markdown("</div>", unsafe_allow_html=True)
 
 
@@ -164,7 +154,6 @@ def render_primary_form():
 def render_secondary_form():
     d = st.session_state["visitor_data"]
 
-    # NO container, plain background
     visit_type = st.text_input("Visit Type", d.get("visit_type", ""))
     from_company = st.text_input("From Company", d.get("from_company", ""))
     department = st.text_input("Department", d.get("department", ""))
@@ -185,18 +174,20 @@ def render_secondary_form():
     person_to_meet = st.text_input("Person to Meet *", d.get("person_to_meet", ""))
 
     st.markdown("### Belongings")
-
     colb1, colb2 = st.columns(2)
+
     with colb1:
         bags = st.checkbox("Bags", d.get("has_bags", False))
         electronics = st.checkbox("Electronic Items", d.get("has_electronic_items", False))
         charger = st.checkbox("Charger", d.get("has_charger", False))
+
     with colb2:
         documents = st.checkbox("Documents", d.get("has_documents", False))
         laptop = st.checkbox("Laptop", d.get("has_laptop", False))
         power_bank = st.checkbox("Power Bank", d.get("has_power_bank", False))
 
     st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
+
     if st.button("Continue → Identity Capture", use_container_width=True):
 
         if not person_to_meet:
@@ -232,7 +223,7 @@ def render_secondary_form():
     st.markdown("</div>", unsafe_allow_html=True)
 
 
-# ============================== ENTRY FOR main.py ==============================
+# ============================== MAIN ENTRY ==============================
 def render_details_page():
 
     if not st.session_state.get("admin_logged_in"):
@@ -251,3 +242,4 @@ def render_details_page():
         render_primary_form()
     else:
         render_secondary_form()
+
