@@ -9,7 +9,7 @@ from datetime import datetime
 
 
 # ======================================================
-# CONFIG
+# AWS + DB CONFIG
 # ======================================================
 AWS_REGION = "ap-south-1"
 AWS_SECRET_ARN = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
@@ -17,18 +17,17 @@ S3_BUCKET = "zodoptvisiorsmanagement"
 
 
 # ======================================================
-# SECRETS
+# SECRETS MANAGER
 # ======================================================
 @st.cache_resource
 def get_credentials():
-    """Fetch Secrets Manager credentials (cached)."""
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
     raw = client.get_secret_value(SecretId=AWS_SECRET_ARN)
     return json.loads(raw["SecretString"])
 
 
 def db_conn():
-    """Get new DB connection every time (no caching)."""
+    """Always return fresh DB connection."""
     c = get_credentials()
     return mysql.connector.connect(
         host=c["DB_HOST"],
@@ -58,7 +57,6 @@ def get_visitor(visitor_id):
 def save_photo_and_update(visitor, photo_bytes):
     s3 = boto3.client("s3")
 
-    # generate file name
     name = visitor["full_name"].replace(" ", "_").lower()
     company = visitor["from_company"].replace(" ", "_").lower()
     filename = f"visitor_photos/{company}/{name}_{int(datetime.now().timestamp())}.jpg"
@@ -76,19 +74,17 @@ def save_photo_and_update(visitor, photo_bytes):
     # update DB
     conn = db_conn()
     cur = conn.cursor()
-
     cur.execute(
         "INSERT INTO visitor_identity (visitor_id, photo_url) VALUES (%s,%s)",
         (visitor["visitor_id"], photo_url)
     )
-
     cur.execute(
         "UPDATE visitors SET pass_generated=1 WHERE visitor_id=%s",
         (visitor["visitor_id"],)
     )
-
     cur.close()
     conn.close()
+
     return photo_url
 
 
@@ -100,7 +96,6 @@ def send_email(visitor):
     receiver = visitor.get("email")
 
     if not receiver:
-        st.error("No email address found.")
         return False
 
     msg = EmailMessage()
@@ -120,7 +115,7 @@ To Meet    : {visitor['person_to_meet']}
 Date       : {datetime.now().strftime("%d-%m-%Y %H:%M")}
 
 Thank You,
-Reception Team
+Reception
 """)
 
     try:
@@ -131,20 +126,16 @@ Reception Team
         server.quit()
         return True
 
-    except smtplib.SMTPAuthenticationError as e:
-        st.error("SMTP Authentication failed. Check App Password & User.")
+    except Exception as e:
+        st.error("❌ Failed to send email. Pass not generated.")
         st.error(str(e))
         return False
 
-    except Exception as e:
-        st.error(f"Email failed: {str(e)}")
-        return False
-
 
 # ======================================================
-# UI – Pass Screen
+# UI – Visitor Pass Page
 # ======================================================
-def show_pass_screen(visitor, photo_bytes, sent):
+def show_pass_screen(visitor, photo_bytes):
     st.markdown("<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>", unsafe_allow_html=True)
 
     img_data = base64.b64encode(photo_bytes).decode()
@@ -169,13 +160,10 @@ def show_pass_screen(visitor, photo_bytes, sent):
     </div>
     """, unsafe_allow_html=True)
 
-    if sent:
-        st.success(f"Pass sent to email: {visitor['email']}")
-
     st.write("")
     st.write("")
 
-    # Centered buttons
+    # Center buttons
     _, col_dash, col_out, _ = st.columns([1, 2, 2, 1])
 
     with col_dash:
@@ -191,10 +179,10 @@ def show_pass_screen(visitor, photo_bytes, sent):
 
 
 # ======================================================
-# Identity Page
+# Identity Page (Capture Photo)
 # ======================================================
 def render_identity_page():
-    if not st.session_state.get("admin_logged_in"):
+    if not st.session_state.get("admin_logged_in", False):
         st.session_state["current_page"] = "visitor_login"
         st.rerun()
 
@@ -203,6 +191,7 @@ def render_identity_page():
         st.rerun()
 
     visitor = get_visitor(st.session_state["current_visitor_id"])
+
     if not visitor:
         st.error("Visitor not found")
         return
@@ -216,16 +205,26 @@ def render_identity_page():
     photo = st.camera_input("Capture Photo")
 
     if st.button("Save & Generate Pass"):
+
         if not photo:
             st.error("Please capture a photo first")
             return
 
+        # Read photo bytes
         photo_bytes = photo.getvalue()
+
+        # Save image + update DB
         save_photo_and_update(visitor, photo_bytes)
+
+        # Send email
         sent = send_email(visitor)
 
+        # If email failed → stop here
+        if not sent:
+            return   # do not redirect
+
+        # If email sent → Go to pass page
         st.session_state["visitor_photo_bytes"] = photo_bytes
-        st.session_state["pass_email_sent"] = sent
         st.session_state["current_page"] = "visitor_pass"
         st.rerun()
 
@@ -236,5 +235,4 @@ def render_identity_page():
 def render_pass_page():
     visitor = get_visitor(st.session_state["current_visitor_id"])
     photo_bytes = st.session_state.get("visitor_photo_bytes")
-    sent = st.session_state.get("pass_email_sent", False)
-    show_pass_screen(visitor, photo_bytes, sent)
+    show_pass_screen(visitor, photo_bytes)
