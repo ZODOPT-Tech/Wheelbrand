@@ -3,8 +3,11 @@ import mysql.connector
 import boto3
 import json
 import base64
+import logging
 import smtplib
-from email.message import EmailMessage
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
+from email.mime.text import MIMEText
 from datetime import datetime
 from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
@@ -148,17 +151,19 @@ def generate_pass_image(visitor, photo_bytes):
 
 
 # ======================================================
-# Email with Attachment (Gmail SMTP + Error Handling)
+# Email with Attachment (Google Workspace)
 # ======================================================
 def send_email(visitor, pass_image):
     creds = get_credentials()
 
-    msg = EmailMessage()
-    msg["Subject"] = f"Visitor Pass - {visitor['full_name']}"
-    msg["From"] = creds["SMTP_USER"]
-    msg["To"] = visitor["email"]
+    sender_email = creds["SMTP_USER"]
+    sender_password = creds["SMTP_PASSWORD"]
+    smtp_host = creds["SMTP_HOST"]
+    smtp_port = int(creds["SMTP_PORT"])     # 465 (SSL)
+    receiver_email = visitor["email"]
 
-    msg.set_content(f"""
+    subject = f"Visitor Pass - {visitor['full_name']}"
+    body = f"""
 Hello {visitor['full_name']},
 
 Your Visitor Pass has been generated.
@@ -171,32 +176,50 @@ Your visitor pass is attached as an image.
 
 Thank You,
 Reception
-""")
+"""
 
-    msg.add_attachment(
-        pass_image,
-        maintype="image",
-        subtype="jpeg",
-        filename="visitor_pass.jpg"
-    )
+    msg = MIMEMultipart()
+    msg["From"] = sender_email
+    msg["To"] = receiver_email
+    msg["Subject"] = subject
+    msg.attach(MIMEText(body, "plain"))
+
+    attach = MIMEApplication(pass_image, _subtype="jpeg")
+    attach.add_header("Content-Disposition", "attachment", filename="visitor_pass.jpg")
+    msg.attach(attach)
+
+    server = None
 
     try:
-        smtp_server = creds["SMTP_HOST"]
-        smtp_port = int(creds["SMTP_PORT"])
-        smtp_user = creds["SMTP_USER"]
-        smtp_pwd = creds["SMTP_PASSWORD"]
+        logging.debug(f"[VISITOR PASS] SMTP_SSL Connect: {smtp_host}:{smtp_port}")
+        server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
+        server.login(sender_email, sender_password)
+        server.sendmail(sender_email, receiver_email, msg.as_string())
 
-        with smtplib.SMTP(smtp_server, smtp_port) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(smtp_user, smtp_pwd)
-            server.send_message(msg)
-
+        logging.info(f"[VISITOR PASS] Email sent: {receiver_email}")
         return True, None
 
+    except smtplib.SMTPAuthenticationError:
+        err = "Invalid credentials (Check Google App Password)"
+        logging.exception(err)
+        return False, err
+
+    except smtplib.SMTPConnectError:
+        err = "Unable to connect to SMTP server"
+        logging.exception(err)
+        return False, err
+
     except Exception as e:
-        return False, str(e)
+        err = str(e)
+        logging.exception(err)
+        return False, err
+
+    finally:
+        if server:
+            try:
+                server.quit()
+            except:
+                pass
 
 
 # ======================================================
@@ -224,23 +247,16 @@ def render_identity_page():
 
         photo_bytes = photo.getvalue()
 
-        # Save to DB
         save_photo_and_update(visitor, photo_bytes)
-
-        # Generate pass
         pass_image = generate_pass_image(visitor, photo_bytes)
 
-        # Send email
         sent, err = send_email(visitor, pass_image)
 
-        if not sent:
-            st.error(f"❌ Mail failed: {err}")
-            return  # <- STOP HERE, DO NOT NAVIGATE
+        if sent:
+            st.success(f"Email sent to: {visitor['email']}")
+        else:
+            st.error(f"Mail failed: {err}")
 
-        # If success
-        st.success(f"✔️ Mail sent to: {visitor['email']}")
-
-        # Store in session
         st.session_state["pass_data"] = {
             "visitor_id": visitor["visitor_id"],
             "full_name": visitor["full_name"],
@@ -251,7 +267,6 @@ def render_identity_page():
         }
         st.session_state["pass_image"] = pass_image
 
-        # Navigate only on success
         st.session_state["current_page"] = "visitor_pass"
         st.rerun()
 
@@ -269,15 +284,13 @@ def render_pass_page():
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
-    st.markdown(
-        "<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>",
-        unsafe_allow_html=True,
-    )
+    st.markdown("<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>", unsafe_allow_html=True)
 
+    img_data = base64.b64.encode(pass_image).decode()
+    # Corrected base64
     img_data = base64.b64encode(pass_image).decode()
 
-    st.markdown(
-        f"""
+    st.markdown(f"""
     <div style="
         width:480px;margin:auto;background:white;
         border-radius:14px;padding:20px;
@@ -288,9 +301,7 @@ def render_pass_page():
                  style="width:330px;border-radius:12px;border:4px solid #4B2ECF;">
         </div>
     </div>
-    """,
-        unsafe_allow_html=True,
-    )
+    """, unsafe_allow_html=True)
 
     _, col_dash, col_out, _ = st.columns([1, 2, 2, 1])
 
