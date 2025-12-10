@@ -91,11 +91,6 @@ def load_css():
         color: #4B2ECF;
     }}
 
-    .visitor-row {{
-        padding: 12px 0;
-        border-bottom: 1px solid #EEE;
-    }}
-
     .completed {{
         background: #28a745;
         padding: 6px 12px;
@@ -145,7 +140,7 @@ def render_header():
 
 
 # ======================================================
-# FETCH VISITORS — TODAY ONLY
+# FETCH VISITORS — TODAY ONLY + APPROVED ONLY
 # ======================================================
 
 def get_visitors(company_id):
@@ -156,6 +151,7 @@ def get_visitors(company_id):
                registration_timestamp, checkout_time
         FROM visitors
         WHERE company_id = %s
+          AND status = 'approved'
           AND DATE(registration_timestamp) = CURDATE()
         ORDER BY registration_timestamp DESC
     """, (company_id,))
@@ -163,7 +159,7 @@ def get_visitors(company_id):
 
 
 # ======================================================
-# DASHBOARD SUMMARY
+# DASHBOARD SUMMARY (APPROVED ONLY)
 # ======================================================
 
 def dashboard_stats(company_id):
@@ -171,27 +167,39 @@ def dashboard_stats(company_id):
     cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
-        SELECT COUNT(*) AS c FROM visitors 
-        WHERE company_id=%s AND DATE(registration_timestamp)=CURDATE()
+        SELECT COUNT(*) AS c 
+        FROM visitors 
+        WHERE company_id=%s 
+          AND status='approved'
+          AND DATE(registration_timestamp)=CURDATE()
     """, (company_id,))
     visitors_today = cursor.fetchone()['c']
 
     cursor.execute("""
-        SELECT COUNT(*) AS c FROM visitors
-        WHERE company_id=%s AND checkout_time IS NULL
+        SELECT COUNT(*) AS c 
+        FROM visitors
+        WHERE company_id=%s 
+          AND status='approved'
+          AND checkout_time IS NULL
           AND DATE(registration_timestamp)=CURDATE()
     """, (company_id,))
     inside_now = cursor.fetchone()['c']
 
     cursor.execute("""
-        SELECT COUNT(*) AS c FROM visitors
-        WHERE company_id=%s AND DATE(checkout_time)=CURDATE()
+        SELECT COUNT(*) AS c 
+        FROM visitors
+        WHERE company_id=%s 
+          AND status='approved'
+          AND DATE(checkout_time)=CURDATE()
     """, (company_id,))
     checked_out_today = cursor.fetchone()['c']
 
     cursor.execute("""
-        SELECT COUNT(*) AS c FROM visitors
-        WHERE company_id=%s AND DATE(registration_timestamp)=CURDATE()
+        SELECT COUNT(*) AS c 
+        FROM visitors
+        WHERE company_id=%s 
+          AND status='approved'
+          AND DATE(registration_timestamp)=CURDATE()
     """, (company_id,))
     total_visitors = cursor.fetchone()['c']
 
@@ -230,7 +238,7 @@ def render_visitor_dashboard():
 
     left, right = st.columns([4, 1.4])
 
-    # ================= RIGHT SECTION =================
+    # ================= RIGHT SUMMARY =================
     with right:
         st.markdown("### 📊 Summary")
 
@@ -262,7 +270,7 @@ def render_visitor_dashboard():
             </div>
         """, unsafe_allow_html=True)
 
-    # ================= LEFT SECTION =================
+    # ================= LEFT LIST =================
     with left:
 
         st.markdown("<div class='new-btn'>", unsafe_allow_html=True)
@@ -276,10 +284,9 @@ def render_visitor_dashboard():
         visitors = get_visitors(company_id)
 
         if not visitors:
-            st.info("No visitors registered today.")
+            st.info("No approved visitors today.")
             return
 
-        # Table header
         header = st.columns([3, 2, 2, 3, 2, 2])
         header[0].markdown("### Name")
         header[1].markdown("### Phone")
@@ -290,7 +297,6 @@ def render_visitor_dashboard():
 
         st.markdown("---")
 
-        # Table rows
         for v in visitors:
             vid = v["visitor_id"]
             checkout_val = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
@@ -315,10 +321,3 @@ def render_visitor_dashboard():
 # EXPORT FOR ROUTER
 def render_dashboard():
     return render_visitor_dashboard()
-
-
-if __name__ == "__main__":
-    st.session_state["admin_logged_in"] = True
-    st.session_state["company_id"] = 1
-    st.session_state["company_name"] = "Test Company"
-    render_visitor_dashboard()
