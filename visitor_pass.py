@@ -56,6 +56,7 @@ def load_pass_css():
         }
 
         .action-btn button {
+            width: 100%;
             background: linear-gradient(90deg, #4B2ECF, #7A42FF) !important;
             color: white !important;
             border-radius: 8px !important;
@@ -72,28 +73,30 @@ def load_pass_css():
 # RENDER PASS PAGE
 # ==============================
 def render_pass_page():
-    
-    # --- Safety checks ---
-    if "email_sent" not in st.session_state or not st.session_state.get("email_sent", False):
-        st.error("Invalid Access. Email is not sent yet.")
+
+    # ------------ SECURITY CHECKS ------------
+    # Email must be sent before opening pass page
+    if not st.session_state.get("email_sent", False):
+        st.error("Invalid access. Visitor email not sent.")
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
     if "pass_data" not in st.session_state:
-        st.error("Visitor data missing.")
+        st.error("Visitor details missing.")
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
     visitor = st.session_state["pass_data"]
 
     load_pass_css()
-    
+
     # ================= PASS CARD =================
     st.markdown("<div class='pass-container'>", unsafe_allow_html=True)
 
+    # Title
     st.markdown("<div class='pass-title'>Visitor Pass</div>", unsafe_allow_html=True)
 
-    # --- Photo render ---
+    # Photo
     base64_img = base64.b64encode(visitor["photo_bytes"]).decode()
     st.markdown(f"""
         <div class="pass-photo">
@@ -101,27 +104,31 @@ def render_pass_page():
         </div>
     """, unsafe_allow_html=True)
 
-    # --- Details ---
+    # Visitor Details
     st.markdown(f"""
         <div class="pass-field"><span class="label">Name:</span> {visitor['full_name']}</div>
         <div class="pass-field"><span class="label">Company:</span> {visitor['from_company']}</div>
         <div class="pass-field"><span class="label">To Meet:</span> {visitor['person_to_meet']}</div>
         <div class="pass-field"><span class="label">Visitor ID:</span> #{visitor['visitor_id']}</div>
         <div class="pass-field"><span class="label">Date:</span> {datetime.now().strftime('%d-%m-%Y %H:%M')}</div>
+        <div class="pass-field"><span class="label">Email:</span> {visitor['email']}</div>
     """, unsafe_allow_html=True)
 
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # ================= Email Confirmation Text =================
-    email = visitor.get("email", "-")
-    st.markdown(f"<div class='email-note'>Pass sent to: {email}</div>", unsafe_allow_html=True)
+    # ================= EMAIL SENT CONFIRMATION =================
+    st.markdown(
+        f"<div class='email-note'>Pass sent to: <b>{visitor['email']}</b></div>",
+        unsafe_allow_html=True
+    )
 
     st.write("")
     st.write("")
 
-    # ================= Buttons =================
+    # ================= ACTION BUTTONS =================
     col1, col2 = st.columns(2)
 
+    # Back to identity
     with col1:
         st.markdown("<div class='action-btn'>", unsafe_allow_html=True)
         if st.button("⬅ Back"):
@@ -129,6 +136,7 @@ def render_pass_page():
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
+    # Dashboard
     with col2:
         st.markdown("<div class='action-btn'>", unsafe_allow_html=True)
         if st.button("🏢 Dashboard"):
