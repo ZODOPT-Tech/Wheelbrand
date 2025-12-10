@@ -11,7 +11,6 @@ import boto3
 AWS_REGION = "ap-south-1"
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
-
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 
 
@@ -126,7 +125,6 @@ def load_css():
         font-weight: 700 !important;
         width: 100% !important;
     }}
-
     </style>
     """, unsafe_allow_html=True)
 
@@ -147,7 +145,7 @@ def render_header():
 
 
 # ======================================================
-# FETCH VISITORS
+# FETCH VISITORS — TODAY ONLY
 # ======================================================
 
 def get_visitors(company_id):
@@ -158,6 +156,7 @@ def get_visitors(company_id):
                registration_timestamp, checkout_time
         FROM visitors
         WHERE company_id = %s
+          AND DATE(registration_timestamp) = CURDATE()
         ORDER BY registration_timestamp DESC
     """, (company_id,))
     return cursor.fetchall()
@@ -171,31 +170,28 @@ def dashboard_stats(company_id):
     conn = get_conn()
     cursor = conn.cursor(dictionary=True)
 
-    # Visitors today
     cursor.execute("""
         SELECT COUNT(*) AS c FROM visitors 
         WHERE company_id=%s AND DATE(registration_timestamp)=CURDATE()
     """, (company_id,))
     visitors_today = cursor.fetchone()['c']
 
-    # Inside now
     cursor.execute("""
         SELECT COUNT(*) AS c FROM visitors
         WHERE company_id=%s AND checkout_time IS NULL
+          AND DATE(registration_timestamp)=CURDATE()
     """, (company_id,))
     inside_now = cursor.fetchone()['c']
 
-    # Checked out today
     cursor.execute("""
         SELECT COUNT(*) AS c FROM visitors
         WHERE company_id=%s AND DATE(checkout_time)=CURDATE()
     """, (company_id,))
     checked_out_today = cursor.fetchone()['c']
 
-    # Total visitors
     cursor.execute("""
         SELECT COUNT(*) AS c FROM visitors
-        WHERE company_id=%s
+        WHERE company_id=%s AND DATE(registration_timestamp)=CURDATE()
     """, (company_id,))
     total_visitors = cursor.fetchone()['c']
 
@@ -209,8 +205,10 @@ def dashboard_stats(company_id):
 def mark_checkout(visitor_id):
     conn = get_conn()
     cursor = conn.cursor()
-    cursor.execute("UPDATE visitors SET checkout_time=%s WHERE visitor_id=%s",
-                   (datetime.now(), visitor_id))
+    cursor.execute(
+        "UPDATE visitors SET checkout_time=%s WHERE visitor_id=%s",
+        (datetime.now(), visitor_id)
+    )
 
 
 # ======================================================
@@ -228,12 +226,11 @@ def render_visitor_dashboard():
 
     company_id = st.session_state["company_id"]
 
-    # Get summary
     visitors_today, inside_now, checked_out_today, total_visitors = dashboard_stats(company_id)
 
     left, right = st.columns([4, 1.4])
 
-    # ===================== RIGHT SUMMARY =====================
+    # ================= RIGHT SECTION =================
     with right:
         st.markdown("### 📊 Summary")
 
@@ -260,12 +257,12 @@ def render_visitor_dashboard():
 
         st.markdown(f"""
             <div class="summary-card">
-                <div class="summary-title">Total Visitors</div>
+                <div class="summary-title">Total Today</div>
                 <div class="summary-value">{total_visitors}</div>
             </div>
         """, unsafe_allow_html=True)
 
-    # ===================== LEFT MAIN LIST =====================
+    # ================= LEFT SECTION =================
     with left:
 
         st.markdown("<div class='new-btn'>", unsafe_allow_html=True)
@@ -279,7 +276,7 @@ def render_visitor_dashboard():
         visitors = get_visitors(company_id)
 
         if not visitors:
-            st.info("No visitors found.")
+            st.info("No visitors registered today.")
             return
 
         # Table header
@@ -308,10 +305,9 @@ def render_visitor_dashboard():
 
             with row[5]:
                 if not v["checkout_time"]:
-                    with st.container():
-                        if st.button("Checkout", key=f"checkout_{vid}", help="Mark visitor as checked out"):
-                            mark_checkout(vid)
-                            st.rerun()
+                    if st.button("Checkout", key=f"checkout_{vid}"):
+                        mark_checkout(vid)
+                        st.rerun()
                 else:
                     st.markdown("<div class='completed'>Completed</div>", unsafe_allow_html=True)
 
