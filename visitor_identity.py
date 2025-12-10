@@ -3,12 +3,10 @@ from datetime import datetime
 import mysql.connector
 import boto3
 import json
-import base64
-from streamlit_drawable_canvas import st_canvas
 
 
 AWS_REGION = "ap-south-1"
-AWS_BUCKET = "zodopt-visitor-identity"
+AWS_BUCKET = "zodoptvisiorsmanagement"  # Updated Bucket Name
 AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 
 
@@ -33,29 +31,38 @@ def get_connection():
     )
 
 
-# ---------------- S3 UPLOAD (USING IAM ROLE) ----------------
+# ---------------- S3 UPLOAD ----------------
 def upload_to_s3(file_bytes, filename, content_type):
-    s3 = boto3.client("s3")  # No keys needed – uses EC2 IAM role
-
+    s3 = boto3.client("s3")  # IAM ROLE
     s3.put_object(
         Bucket=AWS_BUCKET,
         Key=filename,
         Body=file_bytes,
         ContentType=content_type
     )
-
     return f"https://{AWS_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{filename}"
 
 
 # ---------------- SAVE TO DB ----------------
-def save_identity(company_id, photo_url, signature_text):
+def save_identity(company_id, full_name, company_name, id_type, id_number, photo_url):
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT INTO visitor_identity (company_id, photo_url, signature_text, captured_at)
-        VALUES (%s, %s, %s, %s)
-    """, (company_id, photo_url, signature_text, datetime.now()))
+        INSERT INTO visitor_identity (
+            company_id, full_name, company_name,
+            id_type, id_number, photo_url, captured_at
+        )
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """, (
+        company_id,
+        full_name,
+        company_name,
+        id_type,
+        id_number,
+        photo_url,
+        datetime.now()
+    ))
 
     cursor.close()
 
@@ -73,6 +80,7 @@ def load_styles():
                 border-radius: 10px;
                 margin-bottom: 25px;
             }
+            
             .btn-primary button {
                 background: linear-gradient(90deg, #5036FF, #9C2CFF) !important;
                 color: white !important;
@@ -98,53 +106,73 @@ def render_identity_page():
     """, unsafe_allow_html=True)
 
     company_id = st.session_state["company_id"]
+    company_name = st.session_state["company_name"]
+
+    st.subheader("👤 Visitor Details")
+
+    full_name = st.text_input("Visitor Full Name")
+    
+    id_type = st.selectbox(
+        "Government ID Type",
+        [
+            "Aadhaar Card",
+            "PAN Card",
+            "Driving License",
+            "Voter ID",
+            "Passport",
+            "Ration Card"
+        ]
+    )
+
+    id_number = st.text_input("ID Number")
+
+    st.write("---")
 
     col1, col2 = st.columns([1, 1])
 
     # --- PHOTO ---
     with col1:
-        st.subheader("📸 Visitor Photo (Optional)")
+        st.subheader("📸 Visitor Photo (Required)")
         camera_photo = st.camera_input("Take Photo", label_visibility="collapsed")
 
-    # --- SIGNATURE ---
-    with col2:
-        st.subheader("✍️ Visitor Signature")
-        canvas = st_canvas(
-            stroke_width=3,
-            stroke_color="#000000",
-            background_color="#FFFFFF",
-            height=200,
-            width=480,
-            drawing_mode="freedraw",
-            key="signature",
-        )
 
     st.write("")
 
     # ---------------- SUBMIT BUTTON ----------------
     st.markdown('<div class="btn-primary">', unsafe_allow_html=True)
+
     if st.button("Generate Visitor Pass →", use_container_width=True):
 
-        if canvas.image_data is None:
-            st.error("Signature is required.")
+        if not full_name:
+            st.error("Visitor name is required.")
+            return
+
+        if not id_number:
+            st.error("ID Number is required.")
+            return
+
+        if camera_photo is None:
+            st.error("Photo is required.")
             return
 
         with st.spinner("Saving visitor identity..."):
 
-            # Photo upload only if captured
-            photo_url = None
-            if camera_photo:
-                bytes_photo = camera_photo.read()
-                filename = f"identity/company_{company_id}/{datetime.now().timestamp()}_photo.jpg"
-                photo_url = upload_to_s3(bytes_photo, filename, "image/jpeg")
+            # Save photo to S3
+            bytes_photo = camera_photo.read()
+            clean_name = full_name.replace(" ", "_")
+            filename = f"visitorsphoto/{company_name}/{clean_name}_{datetime.now().timestamp()}.jpg"
 
-            # Convert signature to Base64 text
-            signature_png = canvas.image_data
-            signature_bytes = signature_png.tobytes()
-            signature_text = base64.b64encode(signature_bytes).decode("utf-8")
+            photo_url = upload_to_s3(bytes_photo, filename, "image/jpeg")
 
             # Save record in DB
-            save_identity(company_id, photo_url, signature_text)
+            save_identity(
+                company_id,
+                full_name,
+                company_name,
+                id_type,
+                id_number,
+                photo_url
+            )
 
         st.success("Visitor Pass Created Successfully!")
         st.balloons()
@@ -157,3 +185,14 @@ def render_identity_page():
     if st.button("⬅ Back to Dashboard"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
+
+
+# EXPORT FOR ROUTER
+def render_identity():
+    return render_identity_page()
+
+
+if __name__ == "__main__":
+    st.session_state["company_id"] = 1
+    st.session_state["company_name"] = "Test Company"
+    render_identity_page()
