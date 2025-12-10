@@ -1,241 +1,256 @@
+
 import streamlit as st
 import boto3
 import json
 import mysql.connector
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime
 
 
-# =====================================================
+# ===================================
 # CONFIG
-# =====================================================
+# ===================================
 AWS_REGION = "ap-south-1"
 AWS_SECRET = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
+
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
+GRADIENT = "linear-gradient(90deg, #50309D, #7A42FF)"
 
 
-# =====================================================
-# SECRETS MANAGER
-# =====================================================
+# ===================================
+# DB + SECRETS
+# ===================================
 @st.cache_resource
 def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
-    response = client.get_secret_value(SecretId=AWS_SECRET)
-    return json.loads(response["SecretString"])
+    result = client.get_secret_value(SecretId=AWS_SECRET)
+    return json.loads(result["SecretString"])
 
 
+@st.cache_resource
 def get_conn():
-    creds = get_credentials()
+    """Persistent DB connection"""
+    c = get_credentials()
     return mysql.connector.connect(
-        host=creds["DB_HOST"],
-        user=creds["DB_USER"],
-        password=creds["DB_PASSWORD"],
-        database=creds["DB_NAME"],
+        host=c["DB_HOST"],
+        user=c["DB_USER"],
+        password=c["DB_PASSWORD"],
+        database=c["DB_NAME"],
         autocommit=True
     )
 
 
-# =====================================================
-# DB QUERY – TODAY’S VISITORS
-# =====================================================
-def get_today_visitors(company_id: int):
+def get_company_user(user_id: int):
+    """No caching → reflects live changes"""
     conn = get_conn()
     cur = conn.cursor(dictionary=True)
-
-    cur.execute("""
-        SELECT visitor_id,
-               full_name,
-               phone_number,
-               person_to_meet,
-               registration_timestamp,
-               checkout_time,
-               pass_generated
-        FROM visitors
-        WHERE company_id=%s
-          AND DATE(registration_timestamp)=CURDATE()
-          AND pass_generated=1
-        ORDER BY registration_timestamp DESC;
-    """, (company_id,))
-
-    rows = cur.fetchall()
-    cur.close()
-    conn.close()
-    return rows
-
-
-# =====================================================
-# CHECKOUT ACTION
-# =====================================================
-def checkout_visitor(visitor_id: int):
-    conn = get_conn()
-    cur = conn.cursor()
     cur.execute(
-        "UPDATE visitors SET checkout_time=NOW() WHERE visitor_id=%s",
-        (visitor_id,)
+        "SELECT name, company FROM conference_users WHERE id=%s LIMIT 1",
+        (user_id,)
     )
-    cur.close()
-    conn.close()
+    return cur.fetchone()
 
 
-# =====================================================
-# UI CSS
-# =====================================================
+def get_company_bookings(company: str):
+    """No caching → reflects live bookings"""
+    conn = get_conn()
+    cur = conn.cursor(dictionary=True)
+    cur.execute("""
+        SELECT b.id,
+               u.name AS booked_by,
+               u.department,
+               b.start_time,
+               b.end_time,
+               b.purpose
+        FROM conference_bookings b
+        JOIN conference_users u ON u.id=b.user_id
+        WHERE u.company=%s
+        ORDER BY b.start_time DESC;
+    """, (company,))
+    return cur.fetchall()
+
+
+# ===================================
+# CUSTOM CSS
+# ===================================
 def inject_css():
-    st.markdown("""
+    st.markdown(f"""
     <style>
-        .summary-card {
-            background:white;
-            padding:18px 22px;
-            border-radius:14px;
-            box-shadow:0 3px 12px rgba(0,0,0,0.08);
-            margin-bottom:14px;
-        }
-        .summary-title {
-            font-size:14px;
-            opacity:0.7;
-        }
-        .summary-value {
-            font-size:26px;
-            font-weight:800;
-            color:#50309D;
-        }
-        .visitor-table-header {
-            font-size:28px;
-            font-weight:800;
-            margin-bottom:14px;
-            margin-top:10px;
-        }
-        .new-btn {
-            display:inline-block;
-            padding:10px 18px;
-            border-radius:8px;
-            border:1px solid #50309D;
-            color:#50309D;
-            font-weight:600;
-        }
-        .summary-title-row {
-            display:flex;
-            align-items:center;
-            gap:8px;
-            font-size:22px;
-            font-weight:700;
-            margin-bottom:14px;
-        }
+
+    header[data-testid="stHeader"] {{display:none;}}
+    .block-container {{padding-top:0;}}
+
+    .header-box {{
+        background:{GRADIENT};
+        margin:-1rem -1rem 1.5rem -1rem;
+        border-radius:20px;
+        padding:28px 40px;
+        display:flex;
+        justify-content:space-between;
+        align-items:center;
+        box-shadow:0 6px 20px rgba(0,0,0,0.18);
+    }}
+
+    .welcome {{
+        font-size:32px;
+        font-weight:900;
+        color:white;
+        margin-bottom:5px;
+    }}
+    .company {{
+        font-size:20px;
+        font-weight:600;
+        color:white;
+        opacity:0.9;
+    }}
+    .header-logo {{
+        height:60px;
+    }}
+
+    .summary-card {{
+        background:white;
+        padding:16px 22px;
+        border-radius:14px;
+        box-shadow:0 3px 12px rgba(0,0,0,0.1);
+        margin-bottom:16px;
+    }}
+    .summary-title {{
+        font-size:14px;
+        opacity:0.7;
+    }}
+    .summary-value {{
+        font-size:26px;
+        font-weight:800;
+        color:#50309D;
+    }}
+
     </style>
     """, unsafe_allow_html=True)
 
 
-# =====================================================
-# MAIN PAGE
-# =====================================================
-def render_visitor_dashboard():
+# ===================================
+# MAIN DASHBOARD
+# ===================================
+def render_dashboard():
 
     inject_css()
 
-    # ---------------- AUTH ----------------
-    company_id = st.session_state.get("company_id")
-    if not company_id:
+    # -----------------------------------
+    # AUTH CHECK
+    # -----------------------------------
+    user_id = st.session_state.get("user_id")
+    if not user_id:
         st.error("Unauthorized. Login again.")
         st.stop()
 
-    # ---------------- DATA ----------------
-    visitors = get_today_visitors(company_id)
+    # USER INFO
+    user = get_company_user(user_id)
+    company = user["company"]
 
-    total_visitors = len(visitors)
-    currently_inside = sum(1 for v in visitors if v["checkout_time"] is None)
-    checked_out_today = sum(1 for v in visitors if v["checkout_time"] is not None)
+    # -----------------------------------
+    # LIVE BOOKINGS → ONLY TODAY
+    # -----------------------------------
+    all_bookings = get_company_bookings(company)
+    today = datetime.today().date()
 
-    # ---------------- HEADER ----------------
+    todays_bookings = [
+        b for b in all_bookings
+        if b["start_time"].date() == today
+    ]
+
+    # -----------------------------------
+    # DEPARTMENT COUNT
+    # -----------------------------------
+    dept_count = {}
+    for b in todays_bookings:
+        dept = b["department"]
+        dept_count[dept] = dept_count.get(dept, 0) + 1
+
+    # -----------------------------------
+    # HEADER
+    # -----------------------------------
     st.markdown(
         f"""
-        <div style="
-            display:flex;
-            justify-content:space-between;
-            align-items:center;
-            margin-bottom:20px;
-        ">
-            <a class="new-btn" href="#" onclick="window.location.reload()">NEW VISITOR REGISTRATION</a>
-            <img src="{LOGO_URL}" height="55">
+        <div class="header-box">
+            <div>
+                <div class="welcome">Welcome</div>
+                <div class="company">{company}</div>
+            </div>
+            <img class="header-logo" src="{LOGO_URL}">
         </div>
-        """, unsafe_allow_html=True
+        """,
+        unsafe_allow_html=True,
     )
 
-    # ---------------- BODY LAYOUT ----------------
-    col_left, col_right = st.columns([2.2, 0.8])
+    # -----------------------------------
+    # ACTIONS
+    # -----------------------------------
+    left_action, right_action = st.columns([1, 1])
 
-    # ---------------- LEFT : TABLE ----------------
-    with col_left:
+    with left_action:
+        if st.button("New Booking", use_container_width=True):
+            st.session_state["current_page"] = "conference_bookings"
+            st.rerun()
 
-        st.markdown('<div class="visitor-table-header">Visitor List</div>', unsafe_allow_html=True)
+    with right_action:
+        if st.button("Logout", use_container_width=True):
+            st.session_state.clear()
+            st.session_state["current_page"] = "conference_login"
+            st.rerun()
 
-        if not visitors:
-            st.info("No visitors today.")
-        else:
-            df = pd.DataFrame(visitors)
+    st.write("")
 
-            df["Visited"] = (
-                pd.to_datetime(df["registration_timestamp"])
-                  .dt.strftime("%d-%m-%Y %H:%M")
-            )
-            df["Checkout"] = df["checkout_time"].apply(
-                lambda x: "-" if x is None else pd.to_datetime(x).strftime("%H:%M")
-            )
+    # -----------------------------------
+    # BODY
+    # -----------------------------------
+    col_left, col_right = st.columns([2, 1])
 
-            df_display = df[["full_name", "phone_number", "person_to_meet", "Visited", "Checkout"]]
-            df_display.columns = ["Name", "Phone", "Meeting", "Visited", "Checkout"]
-
-            st.table(df_display)
-
-            # --------- Checkout Buttons ---------
-            for idx, row in df.iterrows():
-                if row["checkout_time"] is None:
-                    if st.button("Checkout", key=f"chk_{row['visitor_id']}"):
-                        checkout_visitor(row["visitor_id"])
-                        st.rerun()
-
-    # ---------------- RIGHT : SUMMARY ----------------
+    # SUMMARY
     with col_right:
-        st.markdown(
-            '<div class="summary-title-row">📊 Summary</div>',
-            unsafe_allow_html=True
-        )
+        st.subheader("Summary (Today)")
 
         st.markdown(
             f"""
             <div class="summary-card">
-                <div class="summary-title">Visitors Today</div>
-                <div class="summary-value">{total_visitors}</div>
+                <div class="summary-title">Today's Bookings</div>
+                <div class="summary-value">{len(todays_bookings)}</div>
             </div>
             """,
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
 
-        st.markdown(
-            f"""
-            <div class="summary-card">
-                <div class="summary-title">Currently Inside</div>
-                <div class="summary-value">{currently_inside}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        st.subheader("By Department")
 
-        st.markdown(
-            f"""
-            <div class="summary-card">
-                <div class="summary-title">Checked Out Today</div>
-                <div class="summary-value">{checked_out_today}</div>
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
+        if not dept_count:
+            st.info("No bookings today.")
+        else:
+            for dept, count in dept_count.items():
+                st.markdown(
+                    f"""
+                    <div class="summary-card">
+                        <div class="summary-title">{dept}</div>
+                        <div class="summary-value">{count}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
+    # TABLE
+    with col_left:
+        st.subheader("Today's Booking List")
 
-# =====================================================
-# PAGE ROUTE
-# =====================================================
-if "company_id" not in st.session_state:
-    # example to test UI
-    st.session_state["company_id"] = 1
+        if not todays_bookings:
+            st.info("No bookings today.")
+        else:
+            df = pd.DataFrame(todays_bookings)
+            df["Date"] = pd.to_datetime(df["start_time"]).dt.date
+            df["Time"] = (
+                pd.to_datetime(df["start_time"]).dt.strftime("%I:%M %p")
+                + " - "
+                + pd.to_datetime(df["end_time"]).dt.strftime("%I:%M %p")
+            )
 
-render_visitor_dashboard()
+            df = df[["booked_by", "department", "Date", "Time", "purpose"]]
+            df.index = df.index + 1
+
+            st.dataframe(df, use_container_width=True, height=480)
