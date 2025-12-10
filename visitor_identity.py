@@ -49,7 +49,7 @@ def get_visitor(visitor_id):
 
 
 # ======================================================
-# Save Photo to S3 and DB
+# Save Photo and DB Update
 # ======================================================
 def save_photo_and_update(visitor, photo_bytes):
     s3 = boto3.client("s3")
@@ -126,7 +126,7 @@ Reception
 
 
 # ======================================================
-# UI – Pass Page
+# UI – Show Pass Page
 # ======================================================
 def show_pass_screen(visitor, photo_bytes, sent):
     st.markdown("<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>", unsafe_allow_html=True)
@@ -147,6 +147,7 @@ def show_pass_screen(visitor, photo_bytes, sent):
             <p><b>Company:</b> {visitor['from_company']}</p>
             <p><b>To Meet:</b> {visitor['person_to_meet']}</p>
             <p><b>Visitor ID:</b> #{visitor['visitor_id']}</p>
+            <p><b>Email Sent To:</b> {visitor['email']}</p>
             <p><b>Date:</b> {datetime.now().strftime("%d-%m-%Y %H:%M")}</p>
         </div>
     </div>
@@ -157,21 +158,17 @@ def show_pass_screen(visitor, photo_bytes, sent):
 
     st.write("")
     st.write("")
-    st.write("")
 
-    # buttons in center vertical
-    c1, _, _ = st.columns([1,1,1])
+    c1, c2, c3 = st.columns(3)
     if c1.button("➕ New Visitor"):
         st.session_state.pop("current_visitor_id", None)
         st.session_state["current_page"] = "visitor_details"
         st.rerun()
 
-    c2, _, _ = st.columns([1,1,1])
     if c2.button("📊 Dashboard"):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
-    c3, _, _ = st.columns([1,1,1])
     if c3.button("🚪 Logout"):
         st.session_state.clear()
         st.session_state["current_page"] = "visitor_login"
@@ -179,7 +176,7 @@ def show_pass_screen(visitor, photo_bytes, sent):
 
 
 # ======================================================
-# Page Entry
+# Identity Page
 # ======================================================
 def render_identity_page():
     if not st.session_state.get("admin_logged_in", False):
@@ -212,7 +209,6 @@ def render_identity_page():
         save_photo_and_update(visitor, photo_bytes)
         sent = send_email(visitor)
 
-        # go to pass screen
         st.session_state["visitor_photo_bytes"] = photo_bytes
         st.session_state["pass_email_sent"] = sent
         st.session_state["current_page"] = "visitor_pass"
@@ -220,7 +216,7 @@ def render_identity_page():
 
 
 # ======================================================
-# Router Support
+# Pass Page Router
 # ======================================================
 def render_pass_page():
     visitor = get_visitor(st.session_state["current_visitor_id"])
