@@ -4,33 +4,34 @@ from datetime import datetime
 import json
 import boto3
 
-# ======================================================
-# AWS + DB CONFIG
-# ======================================================
 
+# ======================================================
+# CONFIG
+# ======================================================
 AWS_REGION = "ap-south-1"
-AWS_SECRET_NAME = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
+AWS_SECRET_ARN = "arn:aws:secretsmanager:ap-south-1:034362058776:secret:Wheelbrand-zM6npS"
 HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
 LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png"
 
 
-# ---------------- AWS Secret ----------------
+# ======================================================
+# AWS Secrets Manager
+# ======================================================
 @st.cache_resource
 def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
-    secret = client.get_secret_value(SecretId=AWS_SECRET_NAME)
-    return json.loads(secret["SecretString"])
+    raw = client.get_secret_value(SecretId=AWS_SECRET_ARN)
+    return json.loads(raw["SecretString"])
 
 
-# ---------------- MySQL Connection ----------------
 @st.cache_resource
 def get_conn():
-    creds = get_credentials()
+    c = get_credentials()
     return mysql.connector.connect(
-        host=creds["DB_HOST"],
-        user=creds["DB_USER"],
-        password=creds["DB_PASSWORD"],
-        database=creds["DB_NAME"],
+        host=c["DB_HOST"],
+        user=c["DB_USER"],
+        password=c["DB_PASSWORD"],
+        database=c["DB_NAME"],
         autocommit=True
     )
 
@@ -38,69 +39,62 @@ def get_conn():
 # ======================================================
 # CSS
 # ======================================================
-
 def load_css():
     st.markdown(f"""
     <style>
+    /* Hide default header */
     .stApp > header {{visibility: hidden;}}
 
+    /* Header */
     .header-box {{
         background: {HEADER_GRADIENT};
         padding: 26px 45px;
         border-radius: 12px;
-        max-width: 1600px;
-        width: 100%;
-        margin: 0 auto 35px auto;
-
+        margin-bottom: 35px;
         display: flex;
         justify-content: space-between;
         align-items: center;
         box-shadow: 0px 4px 22px rgba(0,0,0,0.25);
     }}
-
     .header-title {{
         font-size: 38px;
         font-weight: 800;
         color: white;
         margin: 0;
     }}
-
     .header-logo {{
         height: 55px;
     }}
 
+    /* Summary Cards */
     .summary-card {{
         background: white;
         padding: 18px 20px;
         border-radius: 12px;
         margin-bottom: 18px;
-        text-align: left;
         box-shadow: 0px 4px 12px rgba(0,0,0,0.08);
     }}
-
     .summary-title {{
         font-size: 15px;
-        color: #666;
         font-weight: 600;
-        margin-bottom: 4px;
+        color: #666;
     }}
-
     .summary-value {{
-        font-size: 26px;
+        font-size: 28px;
         font-weight: 800;
         color: #4B2ECF;
     }}
 
-    .completed {{
-        background: #28a745;
-        padding: 6px 12px;
-        border-radius: 6px;
-        color: white;
-        font-size: 13px;
-        font-weight: 600;
-        display: inline-block;
+    /* Buttons */
+    .new-btn button {{
+        background: {HEADER_GRADIENT} !important;
+        color: white !important;
+        border-radius: 10px !important;
+        padding: 16px !important;
+        font-size: 18px !important;
+        font-weight: 700 !important;
+        width: 100% !important;
     }}
-
     .checkout-btn button {{
         background: {HEADER_GRADIENT} !important;
         color: white !important;
@@ -108,29 +102,27 @@ def load_css():
         padding: 8px 14px !important;
         font-size: 14px !important;
         font-weight: 600 !important;
-        border: none !important;
     }}
 
-    .new-btn button {{
-        background: {HEADER_GRADIENT} !important;
-        color: white !important;
-        border-radius: 10px !important;
-        padding: 18px !important;
-        font-size: 20px !important;
-        font-weight: 700 !important;
-        width: 100% !important;
+    .completed {{
+        background: #28a745;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        color: white;
+        font-weight: 600;
+        text-align: center;
+        display: inline-block;
     }}
     </style>
     """, unsafe_allow_html=True)
 
 
 # ======================================================
-# HEADER
+# Helpers
 # ======================================================
-
 def render_header():
-    company_name = st.session_state.get("company_name", "Your Company")
-
+    company_name = st.session_state.get("company_name", "Visitor Dashboard")
     st.markdown(f"""
         <div class="header-box">
             <div class="header-title">Welcome, {company_name}</div>
@@ -140,15 +132,18 @@ def render_header():
 
 
 # ======================================================
-# FETCH VISITORS — ONLY APPROVED + PASS GENERATED
+# DB Fetching
 # ======================================================
-
-def get_visitors(company_id):
+def get_visitors_today(company_id):
     conn = get_conn()
-    cursor = conn.cursor(dictionary=True)
-    cursor.execute("""
-        SELECT visitor_id, full_name, phone_number, person_to_meet,
-               registration_timestamp, checkout_time
+    cur = conn.cursor(dictionary=True)
+    cur.execute("""
+        SELECT visitor_id,
+               full_name,
+               phone_number,
+               person_to_meet,
+               registration_timestamp,
+               checkout_time
         FROM visitors
         WHERE company_id = %s
           AND status = 'approved'
@@ -156,71 +151,40 @@ def get_visitors(company_id):
           AND DATE(registration_timestamp) = CURDATE()
         ORDER BY registration_timestamp DESC
     """, (company_id,))
-    return cursor.fetchall()
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return rows
 
-
-# ======================================================
-# DASHBOARD STATS — APPROVED + PASS GENERATED
-# ======================================================
-
-def dashboard_stats(company_id):
-    conn = get_conn()
-    cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("""
-        SELECT COUNT(*) AS c 
-        FROM visitors 
-        WHERE company_id=%s 
-          AND status='approved'
-          AND pass_generated = 1
-          AND DATE(registration_timestamp)=CURDATE()
-    """, (company_id,))
-    visitors_today = cursor.fetchone()['c']
-
-    cursor.execute("""
-        SELECT COUNT(*) AS c 
-        FROM visitors
-        WHERE company_id=%s 
-          AND status='approved'
-          AND pass_generated = 1
-          AND checkout_time IS NULL
-          AND DATE(registration_timestamp)=CURDATE()
-    """, (company_id,))
-    inside_now = cursor.fetchone()['c']
-
-    cursor.execute("""
-        SELECT COUNT(*) AS c 
-        FROM visitors
-        WHERE company_id=%s 
-          AND status='approved'
-          AND pass_generated = 1
-          AND DATE(checkout_time)=CURDATE()
-    """, (company_id,))
-    checked_out_today = cursor.fetchone()['c']
-
-    return visitors_today, inside_now, checked_out_today, visitors_today
-
-
-# ======================================================
-# MARK CHECKOUT
-# ======================================================
 
 def mark_checkout(visitor_id):
     conn = get_conn()
-    cursor = conn.cursor()
-    cursor.execute(
-        "UPDATE visitors SET checkout_time=%s WHERE visitor_id=%s",
-        (datetime.now(), visitor_id)
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE visitors SET checkout_time = NOW() WHERE visitor_id = %s",
+        (visitor_id,)
     )
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 # ======================================================
-# MAIN DASHBOARD
+# Dashboard Stats
 # ======================================================
+def get_stats(visitors):
+    total = len(visitors)
+    inside = sum(1 for v in visitors if v["checkout_time"] is None)
+    out = total - inside
+    return total, inside, out
 
+
+# ======================================================
+# MAIN UI
+# ======================================================
 def render_visitor_dashboard():
 
-    if "admin_logged_in" not in st.session_state or not st.session_state["admin_logged_in"]:
+    if not st.session_state.get("admin_logged_in", False):
         st.error("Access Denied")
         st.stop()
 
@@ -228,38 +192,32 @@ def render_visitor_dashboard():
     render_header()
 
     company_id = st.session_state["company_id"]
+    visitors = get_visitors_today(company_id)
 
-    visitors_today, inside_now, checked_out_today, total_visitors = dashboard_stats(company_id)
+    total, inside, out = get_stats(visitors)
 
     left, right = st.columns([4, 1.4])
 
-    # ================= RIGHT SUMMARY =================
+    # Summary Panel
     with right:
         st.markdown("### 📊 Summary")
 
-        st.markdown(f"""
-            <div class="summary-card">
-                <div class="summary-title">Visitors Today</div>
-                <div class="summary-value">{visitors_today}</div>
-            </div>
-        """, unsafe_allow_html=True)
+        for title, value in [
+            ("Visitors Today", total),
+            ("Currently Inside", inside),
+            ("Checked Out Today", out),
+        ]:
+            st.markdown(
+                f"""
+                <div class="summary-card">
+                    <div class="summary-title">{title}</div>
+                    <div class="summary-value">{value}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
-        st.markdown(f"""
-            <div class="summary-card">
-                <div class="summary-title">Currently Inside</div>
-                <div class="summary-value">{inside_now}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown(f"""
-            <div class="summary-card">
-                <div class="summary-title">Checked Out Today</div>
-                <div class="summary-value">{checked_out_today}</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-
-    # ================= LEFT LIST =================
+    # Visitor List
     with left:
 
         st.markdown("<div class='new-btn'>", unsafe_allow_html=True)
@@ -270,13 +228,10 @@ def render_visitor_dashboard():
 
         st.markdown("## Visitor List")
 
-        visitors = get_visitors(company_id)
-
         if not visitors:
             st.info("No approved visitors today.")
             return
 
-        # Header
         header = st.columns([3, 2, 2, 3, 2, 2])
         header[0].markdown("### Name")
         header[1].markdown("### Phone")
@@ -287,28 +242,28 @@ def render_visitor_dashboard():
 
         st.markdown("---")
 
-        # Rows
         for v in visitors:
             vid = v["visitor_id"]
-            checkout_val = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
+            checkout = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
 
-            row = st.columns([3, 2, 2, 3, 2, 2])
+            cols = st.columns([3, 2, 2, 3, 2, 2])
+            cols[0].write(v["full_name"])
+            cols[1].write(v["phone_number"])
+            cols[2].write(v["person_to_meet"])
+            cols[3].write(v["registration_timestamp"].strftime("%d-%m-%Y %H:%M"))
+            cols[4].write(checkout)
 
-            row[0].write(v["full_name"])
-            row[1].write(v["phone_number"])
-            row[2].write(v["person_to_meet"])
-            row[3].write(v["registration_timestamp"].strftime("%d-%m-%Y %H:%M"))
-            row[4].write(checkout_val)
-
-            with row[5]:
-                if not v["checkout_time"]:
-                    if st.button("Checkout", key=f"checkout_{vid}"):
+            with cols[5]:
+                if v["checkout_time"]:
+                    st.markdown("<div class='completed'>Completed</div>", unsafe_allow_html=True)
+                else:
+                    if st.button("Checkout", key=f"co_{vid}"):
                         mark_checkout(vid)
                         st.rerun()
-                else:
-                    st.markdown("<div class='completed'>Completed</div>", unsafe_allow_html=True)
 
 
-# EXPORT FOR ROUTER
+# ======================================================
+# Router Support
+# ======================================================
 def render_dashboard():
     return render_visitor_dashboard()
