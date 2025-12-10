@@ -1,8 +1,8 @@
 import streamlit as st
 import mysql.connector
-from datetime import datetime
 import json
 import boto3
+from datetime import datetime
 
 
 # ======================================================
@@ -15,7 +15,7 @@ LOGO_URL = "https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images
 
 
 # ======================================================
-# AWS Secrets Manager
+# AWS CREDENTIALS
 # ======================================================
 @st.cache_resource
 def get_credentials():
@@ -42,10 +42,8 @@ def get_conn():
 def load_css():
     st.markdown(f"""
     <style>
-    /* Hide default header */
     .stApp > header {{visibility: hidden;}}
 
-    /* Header */
     .header-box {{
         background: {HEADER_GRADIENT};
         padding: 26px 45px;
@@ -66,7 +64,6 @@ def load_css():
         height: 55px;
     }}
 
-    /* Summary Cards */
     .summary-card {{
         background: white;
         padding: 18px 20px;
@@ -85,7 +82,6 @@ def load_css():
         color: #4B2ECF;
     }}
 
-    /* Buttons */
     .new-btn button {{
         background: {HEADER_GRADIENT} !important;
         color: white !important;
@@ -95,6 +91,7 @@ def load_css():
         font-weight: 700 !important;
         width: 100% !important;
     }}
+
     .checkout-btn button {{
         background: {HEADER_GRADIENT} !important;
         color: white !important;
@@ -119,7 +116,7 @@ def load_css():
 
 
 # ======================================================
-# Helpers
+# HEADER
 # ======================================================
 def render_header():
     company_name = st.session_state.get("company_name", "Visitor Dashboard")
@@ -132,7 +129,7 @@ def render_header():
 
 
 # ======================================================
-# DB Fetching
+# FETCH VISITORS
 # ======================================================
 def get_visitors_today(company_id):
     conn = get_conn()
@@ -145,11 +142,11 @@ def get_visitors_today(company_id):
                registration_timestamp,
                checkout_time
         FROM visitors
-        WHERE company_id = %s
-          AND status = 'approved'
-          AND pass_generated = 1
-          AND DATE(registration_timestamp) = CURDATE()
-        ORDER BY registration_timestamp DESC
+        WHERE company_id=%s
+          AND status='approved'
+          AND pass_generated=1
+          AND DATE(registration_timestamp)=CURDATE()
+        ORDER BY registration_timestamp DESC;
     """, (company_id,))
     rows = cur.fetchall()
     cur.close()
@@ -157,11 +154,11 @@ def get_visitors_today(company_id):
     return rows
 
 
-def mark_checkout(visitor_id):
+def checkout(visitor_id):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute(
-        "UPDATE visitors SET checkout_time = NOW() WHERE visitor_id = %s",
+        "UPDATE visitors SET checkout_time=NOW() WHERE visitor_id=%s",
         (visitor_id,)
     )
     conn.commit()
@@ -170,9 +167,9 @@ def mark_checkout(visitor_id):
 
 
 # ======================================================
-# Dashboard Stats
+# STATS
 # ======================================================
-def get_stats(visitors):
+def compute_stats(visitors):
     total = len(visitors)
     inside = sum(1 for v in visitors if v["checkout_time"] is None)
     out = total - inside
@@ -184,7 +181,7 @@ def get_stats(visitors):
 # ======================================================
 def render_visitor_dashboard():
 
-    if not st.session_state.get("admin_logged_in", False):
+    if not st.session_state.get("admin_logged_in"):
         st.error("Access Denied")
         st.stop()
 
@@ -194,32 +191,28 @@ def render_visitor_dashboard():
     company_id = st.session_state["company_id"]
     visitors = get_visitors_today(company_id)
 
-    total, inside, out = get_stats(visitors)
+    total, inside, out = compute_stats(visitors)
 
     left, right = st.columns([4, 1.4])
 
-    # Summary Panel
     with right:
         st.markdown("### 📊 Summary")
-
-        for title, value in [
+        for title, val in [
             ("Visitors Today", total),
             ("Currently Inside", inside),
-            ("Checked Out Today", out),
+            ("Checked Out Today", out)
         ]:
             st.markdown(
                 f"""
                 <div class="summary-card">
                     <div class="summary-title">{title}</div>
-                    <div class="summary-value">{value}</div>
+                    <div class="summary-value">{val}</div>
                 </div>
                 """,
-                unsafe_allow_html=True,
+                unsafe_allow_html=True
             )
 
-    # Visitor List
     with left:
-
         st.markdown("<div class='new-btn'>", unsafe_allow_html=True)
         if st.button("NEW VISITOR REGISTRATION"):
             st.session_state["current_page"] = "visitor_details"
@@ -244,26 +237,24 @@ def render_visitor_dashboard():
 
         for v in visitors:
             vid = v["visitor_id"]
-            checkout = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
+            checkout_text = v["checkout_time"].strftime("%d-%m-%Y %H:%M") if v["checkout_time"] else "—"
 
-            cols = st.columns([3, 2, 2, 3, 2, 2])
-            cols[0].write(v["full_name"])
-            cols[1].write(v["phone_number"])
-            cols[2].write(v["person_to_meet"])
-            cols[3].write(v["registration_timestamp"].strftime("%d-%m-%Y %H:%M"))
-            cols[4].write(checkout)
+            row = st.columns([3, 2, 2, 3, 2, 2])
+            row[0].write(v["full_name"])
+            row[1].write(v["phone_number"])
+            row[2].write(v["person_to_meet"])
+            row[3].write(v["registration_timestamp"].strftime("%d-%m-%Y %H:%M"))
+            row[4].write(checkout_text)
 
-            with cols[5]:
+            with row[5]:
                 if v["checkout_time"]:
                     st.markdown("<div class='completed'>Completed</div>", unsafe_allow_html=True)
                 else:
                     if st.button("Checkout", key=f"co_{vid}"):
-                        mark_checkout(vid)
+                        checkout(vid)
                         st.rerun()
 
 
-# ======================================================
-# Router Support
-# ======================================================
+# Export router entry
 def render_dashboard():
     return render_visitor_dashboard()
