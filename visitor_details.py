@@ -41,6 +41,41 @@ def get_fast_connection():
         st.stop()
 
 
+# ============================== INSERT VISITOR ==============================
+def save_visitor_and_get_id(visitor):
+    """
+    Insert visitor into 'visitors' table and return visitor_id.
+    """
+    conn = get_fast_connection()
+    cursor = conn.cursor()
+
+    query = """
+        INSERT INTO visitors (
+            full_name, phone_number, email,
+            visit_type, from_company, department, designation,
+            address_line_1, city, state, postal_code, country,
+            gender, purpose, person_to_meet,
+            has_bags, has_documents, has_electronic_items,
+            has_laptop, has_charger, has_power_bank,
+            registration_timestamp
+        )
+        VALUES (
+            %(name)s, %(phone)s, %(email)s,
+            %(visit_type)s, %(from_company)s, %(department)s, %(designation)s,
+            %(address_line_1)s, %(city)s, %(state)s, %(postal_code)s, %(country)s,
+            %(gender)s, %(purpose)s, %(person_to_meet)s,
+            %(has_bags)s, %(has_documents)s, %(has_electronic_items)s,
+            %(has_laptop)s, %(has_charger)s, %(has_power_bank)s,
+            NOW()
+        )
+    """
+
+    cursor.execute(query, visitor)
+    visitor_id = cursor.lastrowid
+    cursor.close()
+    return visitor_id
+
+
 # ============================== CSS ==============================
 def load_styles():
     st.markdown(
@@ -129,9 +164,9 @@ def render_header():
 def render_primary_form():
     d = st.session_state["visitor_data"]
 
-    name = st.text_input("Name *", d.get("name", ""), placeholder="Enter your full name")
-    phone = st.text_input("Phone *", d.get("phone", ""), placeholder="81234 56789")
-    email = st.text_input("Email *", d.get("email", ""), placeholder="mail@example.com")
+    name = st.text_input("Name *", d.get("name", ""))
+    phone = st.text_input("Phone *", d.get("phone", ""))
+    email = st.text_input("Email *", d.get("email", ""))
 
     st.markdown('<div class="primary-btn">', unsafe_allow_html=True)
 
@@ -194,6 +229,7 @@ def render_secondary_form():
             st.error("Person to Meet is required.")
             return
 
+        # update data
         st.session_state["visitor_data"].update(
             {
                 "visit_type": visit_type,
@@ -217,6 +253,12 @@ def render_secondary_form():
             }
         )
 
+        # ---------------- INSERT INTO DB ----------------
+        visitor_data = st.session_state["visitor_data"]
+        visitor_id = save_visitor_and_get_id(visitor_data)
+
+        # ---------------- PASS visitor_id TO NEXT PAGE ----------------
+        st.session_state["current_visitor_id"] = visitor_id
         st.session_state["current_page"] = "visitor_identity"
         st.rerun()
 
@@ -242,4 +284,3 @@ def render_details_page():
         render_primary_form()
     else:
         render_secondary_form()
-
