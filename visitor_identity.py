@@ -67,8 +67,7 @@ def save_photo_and_update(visitor, photo_bytes):
     s3 = boto3.client("s3")
     filename = (
         f"visitor_photos/{visitor['from_company'].replace(' ', '_').lower()}/"
-        f"{visitor['full_name'].replace(' ', '_').lower()}_"
-        f"{int(datetime.now().timestamp())}.jpg"
+        f"{visitor['full_name'].replace(' ', '_').lower()}_{int(datetime.now().timestamp())}.jpg"
     )
 
     s3.put_object(
@@ -104,15 +103,15 @@ def generate_pass_image(visitor, photo_bytes):
     card = Image.new("RGB", (W, H), "white")
     draw = ImageDraw.Draw(card)
 
-    # Fonts
     try:
-        font_title = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
-        font_text = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
+        font_title = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 48)
+        font_text = ImageFont.truetype(
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
     except:
         font_title = ImageFont.load_default()
         font_text = ImageFont.load_default()
 
-    # Logo
     try:
         logo_data = requests.get(LOGO_URL).content
         logo = Image.open(BytesIO(logo_data)).resize((200, 60))
@@ -143,7 +142,7 @@ def generate_pass_image(visitor, photo_bytes):
 
 
 # ========================
-# SEND EMAIL (Zoho or Google SMTP)
+# SEND EMAIL SMTP
 # ========================
 def send_email(visitor, pass_image):
     creds = get_credentials()
@@ -177,12 +176,13 @@ Reception
     msg.attach(MIMEText(body, "plain"))
 
     attachment = MIMEApplication(pass_image, _subtype="jpeg")
-    attachment.add_header("Content-Disposition", "attachment", filename="visitor_pass.jpg")
+    attachment.add_header("Content-Disposition",
+                          "attachment", filename="visitor_pass.jpg")
     msg.attach(attachment)
 
     server = None
+
     try:
-        # Use TLS if port 587, SSL if port 465
         if smtp_port == 465:
             server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
         else:
@@ -191,11 +191,11 @@ Reception
 
         server.login(sender_email, sender_password)
         server.sendmail(sender_email, receiver_email, msg.as_string())
-        logging.info(f"[VISITOR PASS] Email sent to {receiver_email}")
+
         return True, None
 
     except smtplib.SMTPAuthenticationError:
-        return False, "SMTP Authentication Failed (Check App Password)"
+        return False, "SMTP Authentication Failed"
     except Exception as e:
         return False, str(e)
     finally:
@@ -230,6 +230,7 @@ def render_identity_page():
             return
 
         photo_bytes = photo.getvalue()
+
         save_photo_and_update(visitor, photo_bytes)
         pass_image = generate_pass_image(visitor, photo_bytes)
         sent, err = send_email(visitor, pass_image)
@@ -239,6 +240,7 @@ def render_identity_page():
         else:
             st.error(f"Email failed: {err}")
 
+        visitor["photo_bytes"] = photo_bytes
         st.session_state["pass_data"] = visitor
         st.session_state["pass_image"] = pass_image
         st.session_state["current_page"] = "visitor_pass"
@@ -257,9 +259,11 @@ def render_pass_page():
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
-    st.markdown("<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>",
+                unsafe_allow_html=True)
 
     img_data = base64.b64encode(pass_image).decode()
+
     st.markdown(f"""
     <div style="width:480px;margin:auto;background:white;border-radius:14px;padding:20px;
                 box-shadow:0 4px 18px rgba(0,0,0,0.12);text-align:center;">
@@ -268,12 +272,27 @@ def render_pass_page():
     </div>
     """, unsafe_allow_html=True)
 
-    _, col1, col2, _ = st.columns([1,2,2,1])
-    if col1.button("📊 Dashboard", use_container_width=True):
-        st.session_state["current_page"] = "visitor_dashboard"
-        st.rerun()
+    st.write("")
+    st.write("")
 
-    if col2.button("🚪 Logout", use_container_width=True):
-        st.session_state.clear()
-        st.session_state["current_page"] = "visitor_login"
-        st.rerun()
+    col_space_left, col1, col2, col_space_right = st.columns([1, 2, 2, 1])
+
+    # ---- DASHBOARD BUTTON ----
+    with col1:
+        if st.button("📊 Dashboard", use_container_width=True):
+
+            st.session_state["visitor_data"] = {}
+            st.session_state["current_visitor_id"] = None
+            st.session_state["registration_step"] = "primary"
+            st.session_state["pass_data"] = None
+            st.session_state["pass_image"] = None
+
+            st.session_state["current_page"] = "visitor_dashboard"
+            st.rerun()
+
+    # ---- LOGOUT BUTTON ----
+    with col2:
+        if st.button("🚪 Logout", use_container_width=True):
+            st.session_state.clear()
+            st.session_state["current_page"] = "visitor_login"
+            st.rerun()
