@@ -4,7 +4,6 @@ from datetime import datetime
 import boto3
 import json
 
-
 # ====================================================
 # CONFIG
 # ====================================================
@@ -15,7 +14,7 @@ HEADER_GRADIENT = "linear-gradient(90deg, #4B2ECF, #7A42FF)"
 
 
 # ====================================================
-# SECRETS
+# AWS SECRETS
 # ====================================================
 @st.cache_resource
 def get_credentials():
@@ -24,6 +23,9 @@ def get_credentials():
     return json.loads(raw["SecretString"])
 
 
+# ====================================================
+# DB CONNECTION
+# ====================================================
 @st.cache_resource
 def get_conn():
     c = get_credentials()
@@ -44,7 +46,7 @@ def inject_css():
     <style>
     header[data-testid="stHeader"] {{display:none;}}
     .block-container {{padding-top:0;}}
-    
+
     .header-box {{
         background:{HEADER_GRADIENT};
         padding:24px 40px;
@@ -90,7 +92,7 @@ def inject_css():
 
 
 # ====================================================
-# FETCH DATA
+# DATA FETCHING
 # ====================================================
 def get_visitors(company_id):
     conn = get_conn()
@@ -145,15 +147,21 @@ def dashboard_counts(company_id):
 def checkout(visitor_id):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("UPDATE visitors SET checkout_time=%s WHERE visitor_id=%s",
-                (datetime.now(), visitor_id))
+    cur.execute("""
+        UPDATE visitors 
+        SET checkout_time=%s 
+        WHERE visitor_id=%s
+    """, (datetime.now(), visitor_id))
 
 
 # ====================================================
-# MAIN DASHBOARD
+# MAIN VISITOR DASHBOARD
 # ====================================================
 def render_dashboard():
-    
+
+    # -----------------------------------------
+    # AUTH CHECK
+    # -----------------------------------------
     if not st.session_state.get("admin_logged_in"):
         st.error("Unauthorized. Please login.")
         st.stop()
@@ -163,7 +171,9 @@ def render_dashboard():
     company = st.session_state.get("company_name", "Your Company")
     company_id = st.session_state.get("company_id")
 
-    # Header
+    # -----------------------------------------
+    # HEADER
+    # -----------------------------------------
     st.markdown(f"""
         <div class="header-box">
             <div class="head-title">Welcome, {company}</div>
@@ -171,11 +181,12 @@ def render_dashboard():
         </div>
     """, unsafe_allow_html=True)
 
-    
-    # Layout
+    # MAIN LAYOUT
     left, right = st.columns([4, 1.5])
 
-    # ---------- RIGHT SUMMARY ----------
+    # -----------------------------------------
+    # SUMMARY PANEL
+    # -----------------------------------------
     with right:
 
         st.markdown("### 📊 Summary")
@@ -193,12 +204,16 @@ def render_dashboard():
                 </div>
             """, unsafe_allow_html=True)
 
-    # ---------- LEFT CONTENT ----------
+    # -----------------------------------------
+    # LEFT CONTENT
+    # -----------------------------------------
     with left:
 
+        # NEW VISITOR BUTTON → GO TO PRIMARY DETAILS
         st.markdown("<div class='new-btn'>", unsafe_allow_html=True)
         if st.button("NEW VISITOR REGISTRATION"):
-            st.session_state["current_page"] = "visitor_details"
+            st.session_state["registration_step"] = "primary"
+            st.session_state["current_page"] = "visitor_primarydetails"
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -222,6 +237,7 @@ def render_dashboard():
 
         for v in data:
             vid = v["visitor_id"]
+
             checkout_time = (
                 v["checkout_time"].strftime("%d-%m-%Y %H:%M")
                 if v["checkout_time"] else "—"
