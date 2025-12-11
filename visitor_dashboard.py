@@ -4,6 +4,14 @@ from datetime import datetime
 import boto3
 import json
 
+# Try to use zoneinfo (Python 3.9+). Fallback gracefully if not available.
+try:
+    from zoneinfo import ZoneInfo
+    ZONE_IST = ZoneInfo("Asia/Kolkata")
+except Exception:
+    ZoneInfo = None
+    ZONE_IST = None
+
 # ====================================================
 # CONFIG
 # ====================================================
@@ -36,6 +44,56 @@ def get_conn():
         database=c["DB_NAME"],
         autocommit=True
     )
+
+
+# ====================================================
+# UTILS: datetime formatting to Asia/Kolkata (IST)
+# ====================================================
+def format_dt(dt):
+    """
+    Given a datetime object `dt` (naive or tz-aware), return a string
+    formatted as 'DD-MM-YYYY HH:MM' in Asia/Kolkata timezone.
+
+    - If dt is None -> return "—"
+    - If dt is naive -> assume UTC and convert to Asia/Kolkata
+      (this is common when DB stores UTC without tz info)
+    - If zoneinfo is not available, fall back to dt.strftime as-is.
+    """
+    if not dt:
+        return "—"
+
+    try:
+        # If dt is a string, attempt to parse (defensive)
+        if isinstance(dt, str):
+            try:
+                # try ISO parse first
+                dt = datetime.fromisoformat(dt)
+            except Exception:
+                # fallback: try common format
+                try:
+                    dt = datetime.strptime(dt, "%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    return str(dt)
+
+        # If zoneinfo available, convert properly
+        if ZONE_IST is not None:
+            if dt.tzinfo is None:
+                # assume UTC for naive datetimes from DB
+                from datetime import timezone
+                dt_utc = dt.replace(tzinfo=timezone.utc)
+            else:
+                dt_utc = dt
+
+            dt_ist = dt_utc.astimezone(ZONE_IST)
+            return dt_ist.strftime("%d-%m-%Y %H:%M")
+        else:
+            # zoneinfo not available: best-effort naive formatting
+            return dt.strftime("%d-%m-%Y %H:%M")
+    except Exception:
+        try:
+            return str(dt)
+        except Exception:
+            return "—"
 
 
 # ====================================================
@@ -106,7 +164,9 @@ def get_visitors(company_id):
           AND DATE(registration_timestamp)=CURDATE()
         ORDER BY registration_timestamp DESC
     """, (company_id,))
-    return cur.fetchall()
+    rows = cur.fetchall()
+    cur.close()
+    return rows
 
 
 def dashboard_counts(company_id):
@@ -141,17 +201,32 @@ def dashboard_counts(company_id):
     """, (company_id,))
     out = cur.fetchone()['c']
 
+    cur.close()
     return total, inside, out
 
 
 def checkout(visitor_id):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("""
-        UPDATE visitors 
-        SET checkout_time=%s 
-        WHERE visitor_id=%s
-    """, (datetime.now(), visitor_id))
+    # Use Asia/Kolkata now for checkout timestamp
+    try:
+        if ZONE_IST is not None:
+            now = datetime.now(tz=ZONE_IST)
+        else:
+            now = datetime.now()
+        cur.execute("""
+            UPDATE visitors 
+            SET checkout_time=%s 
+            WHERE visitor_id=%s
+        """, (now, visitor_id))
+        cur.close()
+    except Exception:
+        # Ensure cursor closed on error
+        try:
+            cur.close()
+        except:
+            pass
+        raise
 
 
 # ====================================================
@@ -238,17 +313,16 @@ def render_dashboard():
         for v in data:
             vid = v["visitor_id"]
 
-            checkout_time = (
-                v["checkout_time"].strftime("%d-%m-%Y %H:%M")
-                if v["checkout_time"] else "—"
-            )
+            # Format times to Asia/Kolkata
+            reg_ts = format_dt(v.get("registration_timestamp"))
+            checkout_time_str = format_dt(v.get("checkout_time"))
 
             row = st.columns([3, 2, 2, 3, 2, 2])
             row[0].write(v["full_name"])
             row[1].write(v["phone_number"])
             row[2].write(v["person_to_meet"])
-            row[3].write(v["registration_timestamp"].strftime("%d-%m-%Y %H:%M"))
-            row[4].write(checkout_time)
+            row[3].write(reg_ts)
+            row[4].write(checkout_time_str)
 
             with row[5]:
                 if not v["checkout_time"]:
