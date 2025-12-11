@@ -2,6 +2,8 @@ import streamlit as st
 import mysql.connector
 import boto3
 import json
+import smtplib
+from email.mime.text import MIMEText
 from datetime import datetime, date, time, timedelta
 from streamlit_calendar import calendar
 
@@ -26,7 +28,7 @@ PURPOSES = [
 ]
 
 
-# ================= DB =================
+# ================= SECRETS =================
 @st.cache_resource
 def get_credentials():
     client = boto3.client("secretsmanager", region_name=AWS_REGION)
@@ -34,6 +36,33 @@ def get_credentials():
     return json.loads(raw["SecretString"])
 
 
+# ================= EMAIL =================
+def send_email(to_email, subject, body):
+    creds = get_credentials()
+
+    try:
+        msg = MIMEText(body, "plain")
+        msg["Subject"] = subject
+        msg["From"] = creds["SMTP_USER"]
+        msg["To"] = to_email
+
+        if int(creds["SMTP_PORT"]) == 465:
+            server = smtplib.SMTP_SSL(creds["SMTP_HOST"], int(creds["SMTP_PORT"]))
+        else:
+            server = smtplib.SMTP(creds["SMTP_HOST"], int(creds["SMTP_PORT"]))
+            server.starttls()
+
+        server.login(creds["SMTP_USER"], creds["SMTP_PASSWORD"])
+        server.sendmail(creds["SMTP_USER"], to_email, msg.as_string())
+        server.quit()
+
+        return True
+    except Exception as e:
+        st.error(f"Email send failed: {e}")
+        return False
+
+
+# ================= DB =================
 @st.cache_resource
 def get_conn():
     c = get_credentials()
@@ -61,11 +90,37 @@ def get_my_bookings(uid):
 def save_booking(uid, d, s, e, dept, purpose):
     conn = get_conn()
     cur = conn.cursor()
+
+    # Insert booking
     cur.execute("""
         INSERT INTO conference_bookings
             (user_id, booking_date, start_time, end_time, department, purpose)
         VALUES (%s, %s, %s, %s, %s, %s)
     """, (uid, d, s, e, dept, purpose))
+
+    # Fetch user info
+    cur.execute("SELECT name, email FROM conference_users WHERE id=%s", (uid,))
+    u = cur.fetchone()
+
+    if u:
+        uname, email = u
+
+        subject = "Conference Room Booking Confirmation"
+        body = f"""
+Hello {uname},
+
+Your conference room booking is confirmed.
+
+📅 Date: {d.strftime('%d-%m-%Y')}
+⏰ Time: {s.strftime('%I:%M %p')} - {e.strftime('%I:%M %p')}
+🏢 Department: {dept}
+📝 Purpose: {purpose}
+
+Thank you,
+ZODOPT MeetEase Team
+"""
+
+        send_email(email, subject, body)
 
 
 def delete_booking(bid, uid):
@@ -191,7 +246,6 @@ def render_booking_page():
     with col_left:
         rows = get_my_bookings(uid)
 
-        # 🔥 filter to ONLY TODAY
         today_rows = [
             b for b in rows
             if b["booking_date"] == date.today()
@@ -202,7 +256,7 @@ def render_booking_page():
         calendar(
             events=events,
             options={
-                "initialView": "timeGridDay",   # 👈 Force today's view
+                "initialView": "timeGridDay",
                 "slotMinTime": "09:30:00",
                 "slotMaxTime": "19:00:00",
                 "slotDuration": "00:30:00",
@@ -220,8 +274,7 @@ def render_booking_page():
         # -------- BOOKING FORM --------
         st.subheader("Book a Slot")
 
-        # 👇 Only today allowed
-        sel_d = date.today()
+        sel_d = date.today()   # only today allowed
         opts = generate_slots(sel_d)
 
         with st.form("book"):
@@ -238,17 +291,16 @@ def render_booking_page():
                     sdt = datetime.combine(sd, datetime.strptime(s,"%I:%M %p").time())
                     edt = datetime.combine(sd, datetime.strptime(e,"%I:%M %p").time())
                     save_booking(uid, sd, sdt, edt, dept, pp)
-                    st.success("Booking Successful")
+                    st.success("Booking Successful — Email Sent!")
                     st.rerun()
 
-        # -------- SLIDING PANEL --------
+        # -------- TODAY'S BOOKINGS --------
         with st.expander("Today's Bookings", expanded=True):
 
             if not today_rows:
                 st.info("No bookings today")
             else:
                 for b in today_rows:
-                    # Each booking item
                     st.markdown("<div class='booking-item'>", unsafe_allow_html=True)
 
                     st.write(
@@ -262,6 +314,7 @@ def render_booking_page():
                         if st.button("Edit", key=f"e{b['id']}"):
                             st.session_state.edit_id = b['id']
                             st.rerun()
+
                     with c2:
                         if st.button("Cancel", key=f"c{b['id']}"):
                             delete_booking(b['id'], uid)
