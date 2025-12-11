@@ -97,7 +97,7 @@ def render_pass_page():
     st.markdown("<div class='pass-container'>", unsafe_allow_html=True)
 
     # --- LOGO ---
-    st.markdown(f"""
+    st.markdown("""
         <div class="pass-logo">
             <img src="https://raw.githubusercontent.com/ZODOPT-Tech/Wheelbrand/main/images/zodopt.png">
         </div>
@@ -142,15 +142,24 @@ def render_pass_page():
     # ===========================
     col_spacer_left, col_dash, col_log, col_spacer_right = st.columns([1, 2, 2, 1])
 
-    # Dashboard
+    # Dashboard Button
     with col_dash:
         st.markdown("<div class='action-btn'>", unsafe_allow_html=True)
         if st.button("📊 Dashboard", use_container_width=True):
+
+            # 🔥 CLEAR REGISTRATION DATA BEFORE GOING BACK
+            st.session_state["visitor_data"] = {}
+            st.session_state["current_visitor_id"] = None
+            st.session_state["registration_step"] = "primary"
+            st.session_state["pass_data"] = None
+            st.session_state["pass_image"] = None
+
+            # Go to dashboard
             st.session_state["current_page"] = "visitor_dashboard"
             st.rerun()
         st.markdown("</div>", unsafe_allow_html=True)
 
-    # Logout
+    # Logout Button
     with col_log:
         st.markdown("<div class='action-btn'>", unsafe_allow_html=True)
         if st.button("🚪 Logout", use_container_width=True):
