@@ -1,4 +1,3 @@
-
 import streamlit as st
 import mysql.connector
 import boto3
