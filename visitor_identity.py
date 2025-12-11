@@ -1,3 +1,4 @@
+
 import streamlit as st
 import mysql.connector
 import boto3
@@ -143,7 +144,7 @@ def generate_pass_image(visitor, photo_bytes):
 
 
 # ========================
-# SEND EMAIL (SMTP)
+# SEND EMAIL (Zoho or Google SMTP)
 # ========================
 def send_email(visitor, pass_image):
     creds = get_credentials()
@@ -182,6 +183,7 @@ Reception
 
     server = None
     try:
+        # Use TLS if port 587, SSL if port 465
         if smtp_port == 465:
             server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
         else:
@@ -206,7 +208,7 @@ Reception
 
 
 # ========================
-# IDENTITY PAGE UI
+# RENDER IDENTITY PAGE
 # ========================
 def render_identity_page():
     if not st.session_state.get("admin_logged_in"):
@@ -231,23 +233,21 @@ def render_identity_page():
         photo_bytes = photo.getvalue()
         save_photo_and_update(visitor, photo_bytes)
         pass_image = generate_pass_image(visitor, photo_bytes)
-
         sent, err = send_email(visitor, pass_image)
 
         if sent:
             st.success(f"Email sent to {visitor['email']}")
-            st.session_state["pass_data"] = visitor
-            st.session_state["pass_image"] = pass_image
-            st.session_state["current_page"] = "visitor_pass"
-            st.rerun()
         else:
             st.error(f"Email failed: {err}")
-            # Stop here, do not navigate
-            return
+
+        st.session_state["pass_data"] = visitor
+        st.session_state["pass_image"] = pass_image
+        st.session_state["current_page"] = "visitor_pass"
+        st.rerun()
 
 
 # ========================
-# PASS PAGE UI
+# RENDER PASS PAGE
 # ========================
 def render_pass_page():
     visitor = st.session_state.get("pass_data")
@@ -273,6 +273,7 @@ def render_pass_page():
     if col1.button("📊 Dashboard", use_container_width=True):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
+
     if col2.button("🚪 Logout", use_container_width=True):
         st.session_state.clear()
         st.session_state["current_page"] = "visitor_login"
