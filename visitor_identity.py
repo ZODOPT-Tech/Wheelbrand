@@ -33,7 +33,7 @@ def get_credentials():
 
 
 # ======================================================
-# DB Connection
+# MySQL Connection
 # ======================================================
 def db_conn():
     c = get_credentials()
@@ -47,7 +47,7 @@ def db_conn():
 
 
 # ======================================================
-# Fetch Visitor Details
+# Fetch a visitor row
 # ======================================================
 def get_visitor(visitor_id: int):
     conn = db_conn()
@@ -60,7 +60,7 @@ def get_visitor(visitor_id: int):
 
 
 # ======================================================
-# Save photo + DB update
+# Save photo → S3 + Update DB
 # ======================================================
 def save_photo_and_update(visitor, photo_bytes):
     s3 = boto3.client("s3")
@@ -72,6 +72,7 @@ def save_photo_and_update(visitor, photo_bytes):
         f"{int(datetime.now().timestamp())}.jpg"
     )
 
+    # Upload to S3
     s3.put_object(
         Bucket=S3_BUCKET,
         Key=filename,
@@ -81,23 +82,27 @@ def save_photo_and_update(visitor, photo_bytes):
 
     photo_url = f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{filename}"
 
+    # Insert DB
     conn = db_conn()
     cur = conn.cursor()
+
     cur.execute(
         "INSERT INTO visitor_identity (visitor_id, photo_url) VALUES (%s,%s)",
         (visitor["visitor_id"], photo_url)
     )
+
     cur.execute(
         "UPDATE visitors SET pass_generated=1, status='approved' WHERE visitor_id=%s",
         (visitor["visitor_id"],)
     )
+
     cur.close()
     conn.close()
     return photo_url
 
 
 # ======================================================
-# Visitor Pass Image Generation
+# Generate Visitor Pass Image
 # ======================================================
 def generate_pass_image(visitor, photo_bytes):
 
@@ -119,7 +124,7 @@ def generate_pass_image(visitor, photo_bytes):
         font_title = ImageFont.load_default()
         font_text = ImageFont.load_default()
 
-    # Logo
+    # Add Logo
     try:
         import requests
         logo_data = requests.get(LOGO_URL).content
@@ -131,6 +136,7 @@ def generate_pass_image(visitor, photo_bytes):
     draw.text((230, 140), "Visitor Pass", fill="#4B2ECF", font=font_title)
     card.paste(face_img, (235, 220))
 
+    # Details
     y = 500
     info = [
         ("Name", visitor["full_name"]),
@@ -151,30 +157,31 @@ def generate_pass_image(visitor, photo_bytes):
 
 
 # ======================================================
-# Email with Attachment (Google Workspace)
+# Send Email with Google Workspace SMTP
 # ======================================================
 def send_email(visitor, pass_image):
     creds = get_credentials()
 
     sender_email = creds["SMTP_USER"]
-    sender_password = creds["SMTP_PASSWORD"]
+    sender_password = creds["SMTP_PASSWORD"]   # App Password
     smtp_host = creds["SMTP_HOST"]
-    smtp_port = int(creds["SMTP_PORT"])     # 465 (SSL)
+    smtp_port = int(creds["SMTP_PORT"])        # 465 (SSL)
+
     receiver_email = visitor["email"]
 
     subject = f"Visitor Pass - {visitor['full_name']}"
     body = f"""
 Hello {visitor['full_name']},
 
-Your Visitor Pass has been generated.
+Your Visitor Pass has been generated successfully.
 
 Visitor ID : {visitor['visitor_id']}
 To Meet    : {visitor['person_to_meet']}
 Date       : {datetime.now().strftime("%d-%m-%Y %H:%M")}
 
-Your visitor pass is attached as an image.
+Your visitor pass is attached in the email.
 
-Thank You,
+Regards,
 Reception
 """
 
@@ -184,6 +191,7 @@ Reception
     msg["Subject"] = subject
     msg.attach(MIMEText(body, "plain"))
 
+    # Attachment
     attach = MIMEApplication(pass_image, _subtype="jpeg")
     attach.add_header("Content-Disposition", "attachment", filename="visitor_pass.jpg")
     msg.attach(attach)
@@ -191,28 +199,17 @@ Reception
     server = None
 
     try:
-        logging.debug(f"[VISITOR PASS] SMTP_SSL Connect: {smtp_host}:{smtp_port}")
         server = smtplib.SMTP_SSL(smtp_host, smtp_port, timeout=15)
         server.login(sender_email, sender_password)
         server.sendmail(sender_email, receiver_email, msg.as_string())
 
-        logging.info(f"[VISITOR PASS] Email sent: {receiver_email}")
         return True, None
 
     except smtplib.SMTPAuthenticationError:
-        err = "Invalid credentials (Check Google App Password)"
-        logging.exception(err)
-        return False, err
-
-    except smtplib.SMTPConnectError:
-        err = "Unable to connect to SMTP server"
-        logging.exception(err)
-        return False, err
+        return False, "Invalid Google Workspace App Password"
 
     except Exception as e:
-        err = str(e)
-        logging.exception(err)
-        return False, err
+        return False, str(e)
 
     finally:
         if server:
@@ -223,7 +220,7 @@ Reception
 
 
 # ======================================================
-# IDENTITY PAGE UI
+# IDENTITY CAPTURE PAGE
 # ======================================================
 def render_identity_page():
     if not st.session_state.get("admin_logged_in"):
@@ -234,6 +231,7 @@ def render_identity_page():
     visitor = get_visitor(vid)
 
     st.title("Capture Visitor Photo")
+
     st.write(f"**Name:** {visitor['full_name']}")
     st.write(f"**Company:** {visitor['from_company']}")
     st.write(f"**To Meet:** {visitor['person_to_meet']}")
@@ -242,11 +240,12 @@ def render_identity_page():
 
     if st.button("Save & Generate Pass"):
         if not photo:
-            st.error("Please capture a photo.")
+            st.error("Please capture a photo first.")
             return
 
         photo_bytes = photo.getvalue()
 
+        # Save & generate pass
         save_photo_and_update(visitor, photo_bytes)
         pass_image = generate_pass_image(visitor, photo_bytes)
 
@@ -255,16 +254,9 @@ def render_identity_page():
         if sent:
             st.success(f"Email sent to: {visitor['email']}")
         else:
-            st.error(f"Mail failed: {err}")
+            st.error(f"Email failed: {err}")
 
-        st.session_state["pass_data"] = {
-            "visitor_id": visitor["visitor_id"],
-            "full_name": visitor["full_name"],
-            "from_company": visitor["from_company"],
-            "person_to_meet": visitor["person_to_meet"],
-            "email": visitor["email"],
-            "photo_bytes": photo_bytes,
-        }
+        st.session_state["pass_data"] = visitor
         st.session_state["pass_image"] = pass_image
 
         st.session_state["current_page"] = "visitor_pass"
@@ -272,7 +264,7 @@ def render_identity_page():
 
 
 # ======================================================
-# PASS SCREEN UI
+# PASS VIEW PAGE
 # ======================================================
 def render_pass_page():
 
@@ -280,14 +272,12 @@ def render_pass_page():
     pass_image = st.session_state.get("pass_image")
 
     if not visitor or not pass_image:
-        st.error("Data not found.")
+        st.error("No pass to display.")
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
     st.markdown("<h2 style='text-align:center;color:#4B2ECF;'>Visitor Pass</h2>", unsafe_allow_html=True)
 
-    img_data = base64.b64.encode(pass_image).decode()
-    # Corrected base64
     img_data = base64.b64encode(pass_image).decode()
 
     st.markdown(f"""
@@ -303,13 +293,13 @@ def render_pass_page():
     </div>
     """, unsafe_allow_html=True)
 
-    _, col_dash, col_out, _ = st.columns([1, 2, 2, 1])
+    _, col1, col2, _ = st.columns([1, 2, 2, 1])
 
-    if col_dash.button("📊 Dashboard", use_container_width=True):
+    if col1.button("📊 Dashboard", use_container_width=True):
         st.session_state["current_page"] = "visitor_dashboard"
         st.rerun()
 
-    if col_out.button("🚪 Logout", use_container_width=True):
+    if col2.button("🚪 Logout", use_container_width=True):
         st.session_state.clear()
         st.session_state["current_page"] = "visitor_login"
         st.rerun()
